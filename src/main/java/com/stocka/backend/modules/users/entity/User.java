@@ -1,8 +1,18 @@
 package com.stocka.backend.modules.users.entity;
 
+import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.List;
+
+import org.hibernate.annotations.SQLRestriction;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
+
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.stocka.backend.modules.roles.entity.Role;
+
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -12,35 +22,41 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
-import java.util.Collection;
-import java.util.List;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.core.userdetails.UserDetails;
 
 @Entity
 @Table(name = "users")
+@SQLRestriction("deleted_at IS NULL")
 public class User implements UserDetails {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
     private Integer id;
 
     @Column(nullable = false)
-    private String fullName;
+    private String name;
 
-    @Column(unique = true, nullable = false)
+    @Column(nullable = false)
+    private String lastName;
+
+    @Column(nullable = false)
+    private boolean emailVerified = false;
+
+    @Column(nullable = false)
     private String username;
 
-    @Column(unique = true, nullable = false)
+    @Column(nullable = false)
     private String email;
 
     @JsonIgnore
     @Column(nullable = false)
     private String password;
 
-    @ManyToOne(cascade = CascadeType.REMOVE)
+    @ManyToOne
     @JoinColumn(name = "role_id", referencedColumnName = "id", nullable = false)
     private Role role;
+
+    @JsonIgnore
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
 
     public Integer getId() {
         return id;
@@ -51,12 +67,30 @@ public class User implements UserDetails {
         return this;
     }
 
-    public String getFullName() {
-        return fullName;
+    public String getName() {
+        return name;
     }
 
-    public User setFullName(String fullName) {
-        this.fullName = fullName;
+    public User setName(String name) {
+        this.name = name;
+        return this;
+    }
+
+    public String getLastName() {
+        return lastName;
+    }
+
+    public User setLastName(String lastName) {
+        this.lastName = lastName;
+        return this;
+    }
+
+    public boolean isEmailVerified() {
+        return emailVerified;
+    }
+
+    public User setEmailVerified(boolean emailVerified) {
+        this.emailVerified = emailVerified;
         return this;
     }
 
@@ -95,6 +129,15 @@ public class User implements UserDetails {
 
     public User setRole(Role role) {
         this.role = role;
+        return this;
+    }
+
+    public LocalDateTime getDeletedAt() {
+        return deletedAt;
+    }
+
+    public User setDeletedAt(LocalDateTime deletedAt) {
+        this.deletedAt = deletedAt;
         return this;
     }
 

@@ -3,6 +3,7 @@ package com.stocka.backend.modules.security.service;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import java.time.LocalDateTime;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -49,6 +50,11 @@ public class JwtService {
 
     private boolean isTokenExpired(String token) {
         return extractExpiration(token).before(new Date());
+    }
+
+    public LocalDateTime extractExpirationAsLocalDateTime(String token) {
+        Date expiration = extractExpiration(token);
+        return expiration.toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime();
     }
 
     private Date extractExpiration(String token) {

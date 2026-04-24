@@ -45,7 +45,8 @@ public class AdminSeeder implements ApplicationListener<ContextRefreshedEvent> {
     private void createOwnerAdministrator() {
         RegisterUserDto userDto = new RegisterUserDto()
                 .setUsername("joanmartorellcoll")
-                .setName("Joan Martorell Coll")
+                .setName("Joan")
+                .setLastName("Martorell Coll")
                 .setEmail("joanmartorellcoll03@gmail.com")
                 .setPassword("12345678")
                 .setRepeatPassword("12345678");
@@ -64,11 +65,13 @@ public class AdminSeeder implements ApplicationListener<ContextRefreshedEvent> {
         }
 
         User user = new User()
-                .setFullName(userDto.getName())
+                .setName(userDto.getName())
+                .setLastName(userDto.getLastName())
                 .setUsername(userDto.getUsername())
                 .setEmail(userDto.getEmail())
                 .setPassword(passwordEncoder.encode(userDto.getPassword()))
-                .setRole(optionalRole.get());
+                .setRole(optionalRole.get())
+                .setEmailVerified(true);
 
         userRepository.save(user);
         log.info("Owner admin creado: {}", userDto.getEmail());

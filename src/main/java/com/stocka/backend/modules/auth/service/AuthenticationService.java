@@ -1,13 +1,7 @@
 package com.stocka.backend.modules.auth.service;
 
-import com.stocka.backend.modules.auth.dto.LoginUserDto;
-import com.stocka.backend.modules.auth.dto.RegisterUserDto;
-import com.stocka.backend.modules.roles.entity.Role;
-import com.stocka.backend.modules.roles.entity.RoleEnum;
-import com.stocka.backend.modules.roles.repository.RoleRepository;
-import com.stocka.backend.modules.users.entity.User;
-import com.stocka.backend.modules.users.repository.UserRepository;
 import java.util.Optional;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -16,23 +10,40 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.stocka.backend.modules.auth.dto.LoginUserDto;
+import com.stocka.backend.modules.auth.dto.RegisterUserDto;
+import com.stocka.backend.modules.roles.entity.Role;
+import com.stocka.backend.modules.roles.entity.RoleEnum;
+import com.stocka.backend.modules.roles.repository.RoleRepository;
+import com.stocka.backend.modules.security.entity.InvalidatedToken;
+import com.stocka.backend.modules.security.repository.InvalidatedTokenRepository;
+import com.stocka.backend.modules.security.service.JwtService;
+import com.stocka.backend.modules.users.entity.User;
+import com.stocka.backend.modules.users.repository.UserRepository;
+
 @Service
 public class AuthenticationService {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
+    private final InvalidatedTokenRepository invalidatedTokenRepository;
+    private final JwtService jwtService;
 
     public AuthenticationService(
             UserRepository userRepository,
             RoleRepository roleRepository,
             PasswordEncoder passwordEncoder,
-            AuthenticationManager authenticationManager
+            AuthenticationManager authenticationManager,
+            InvalidatedTokenRepository invalidatedTokenRepository,
+            JwtService jwtService
     ) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
+        this.invalidatedTokenRepository = invalidatedTokenRepository;
+        this.jwtService = jwtService;
     }
 
     public User signup(RegisterUserDto input) {
@@ -55,19 +66,33 @@ public class AuthenticationService {
         }
 
         User user = new User()
-                .setFullName(input.getName())
+                .setName(input.getName())
+                .setLastName(input.getLastName())
                 .setUsername(input.getUsername())
                 .setEmail(input.getEmail())
                 .setPassword(passwordEncoder.encode(input.getPassword()))
-                .setRole(optionalRole.get());
+                .setRole(optionalRole.get())
+                .setEmailVerified(true);
 
         return userRepository.save(user);
+    }
+
+    public void logout(String token) {
+        invalidatedTokenRepository.deleteExpired(java.time.LocalDateTime.now());
+        InvalidatedToken invalidatedToken = new InvalidatedToken()
+                .setToken(token)
+                .setExpiresAt(jwtService.extractExpirationAsLocalDateTime(token));
+        invalidatedTokenRepository.save(invalidatedToken);
     }
 
     public User authenticate(LoginUserDto input) {
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(input.getEmail(), input.getPassword())
         );
-        return (User) authentication.getPrincipal();
+        User user = (User) authentication.getPrincipal();
+        if (!user.isEmailVerified()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "El email no ha sido verificado");
+        }
+        return user;
     }
 }

@@ -1,10 +1,13 @@
 package com.stocka.backend.modules.auth.controller;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.stocka.backend.modules.auth.dto.LoginResponseDto;
 import com.stocka.backend.modules.auth.dto.LoginUserDto;
@@ -22,6 +25,15 @@ public class AuthController {
     public AuthController(AuthenticationService authenticationService, JwtService jwtService) {
         this.authenticationService = authenticationService;
         this.jwtService = jwtService;
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(@RequestHeader("Authorization") String authHeader) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Token no proporcionado");
+        }
+        authenticationService.logout(authHeader.substring(7));
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/signup")

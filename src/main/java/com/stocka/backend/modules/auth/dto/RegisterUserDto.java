@@ -3,6 +3,7 @@ package com.stocka.backend.modules.auth.dto;
 public class RegisterUserDto {
     private String username;
     private String name;
+    private String lastName;
     private String email;
     private String password;
     private String repeatPassword;
@@ -22,6 +23,15 @@ public class RegisterUserDto {
 
     public RegisterUserDto setName(String name) {
         this.name = name;
+        return this;
+    }
+
+    public String getLastName() {
+        return lastName;
+    }
+
+    public RegisterUserDto setLastName(String lastName) {
+        this.lastName = lastName;
         return this;
     }
 

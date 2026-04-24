@@ -1,7 +1,9 @@
 package com.stocka.backend.modules.security.filter;
 
+import com.stocka.backend.modules.security.repository.InvalidatedTokenRepository;
 import com.stocka.backend.modules.security.service.AppUserDetailsService;
 import com.stocka.backend.modules.security.service.JwtService;
+import java.time.LocalDateTime;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -18,10 +20,16 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
     private final AppUserDetailsService userDetailsService;
+    private final InvalidatedTokenRepository invalidatedTokenRepository;
 
-    public JwtAuthenticationFilter(JwtService jwtService, AppUserDetailsService userDetailsService) {
+    public JwtAuthenticationFilter(
+            JwtService jwtService,
+            AppUserDetailsService userDetailsService,
+            InvalidatedTokenRepository invalidatedTokenRepository
+    ) {
         this.jwtService = jwtService;
         this.userDetailsService = userDetailsService;
+        this.invalidatedTokenRepository = invalidatedTokenRepository;
     }
 
     @Override
@@ -39,6 +47,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         try {
             String jwt = authHeader.substring(7);
+
+            if (invalidatedTokenRepository.existsByTokenAndExpiresAtAfter(jwt, LocalDateTime.now())) {
+                filterChain.doFilter(request, response);
+                return;
+            }
+
             String userEmail = jwtService.extractUsername(jwt);
 
             if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {

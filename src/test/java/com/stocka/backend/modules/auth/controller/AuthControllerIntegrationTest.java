@@ -1,0 +1,282 @@
+package com.stocka.backend.modules.auth.controller;
+
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.util.Map;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.WebApplicationContext;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.stocka.backend.modules.security.repository.InvalidatedTokenRepository;
+import com.stocka.backend.modules.users.repository.UserRepository;
+
+@SpringBootTest
+@DisplayName("Auth endpoints (integration)")
+class AuthControllerIntegrationTest {
+
+    @Autowired private WebApplicationContext context;
+    @Autowired private UserRepository userRepository;
+    @Autowired private InvalidatedTokenRepository invalidatedTokenRepository;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    private MockMvc mockMvc;
+
+    private static final String ADMIN_EMAIL    = "joanmartorellcoll03@gmail.com";
+    private static final String ADMIN_PASSWORD = "12345678";
+
+    @BeforeEach
+    void setUp() {
+        mockMvc = MockMvcBuilders
+                .webAppContextSetup(context)
+                .apply(springSecurity())
+                .build();
+
+        userRepository.findAll().forEach(user -> {
+            if (!user.getEmail().equals(ADMIN_EMAIL)) {
+                userRepository.delete(user);
+            }
+        });
+        invalidatedTokenRepository.deleteAll();
+    }
+
+    private String loginAndGetToken(String email, String password) throws Exception {
+        String body = objectMapper.writeValueAsString(Map.of(
+                "email", email,
+                "password", password
+        ));
+        MvcResult result = mockMvc.perform(post("/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andReturn();
+        Map<?, ?> response = objectMapper.readValue(result.getResponse().getContentAsString(), Map.class);
+        return (String) response.get("token");
+    }
+
+    // -------------------------------------------------------------------------
+    // POST /auth/signup
+    // -------------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("POST /auth/signup")
+    class Signup {
+
+        private static final Map<String, String> VALID_PAYLOAD = Map.of(
+                "name",           "Test",
+                "lastName",       "User",
+                "username",       "testuser",
+                "email",          "test@test.com",
+                "password",       "password123",
+                "repeatPassword", "password123"
+        );
+
+        @Test
+        @DisplayName("200 — should register and return the user without password")
+        void should_return200_when_inputIsValid() throws Exception {
+            mockMvc.perform(post("/auth/signup")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(VALID_PAYLOAD)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.email").value("test@test.com"))
+                    .andExpect(jsonPath("$.name").value("Test"))
+                    .andExpect(jsonPath("$.lastName").value("User"))
+                    .andExpect(jsonPath("$.password").doesNotExist());
+        }
+
+        @Test
+        @DisplayName("400 — should reject registration when passwords do not match")
+        void should_return400_when_passwordsDoNotMatch() throws Exception {
+            Map<String, String> payload = Map.of(
+                    "name", "Test", "lastName", "User", "username", "testuser",
+                    "email", "test@test.com", "password", "password123", "repeatPassword", "different"
+            );
+
+            mockMvc.perform(post("/auth/signup")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(payload)))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("409 — should reject registration when email is already in use")
+        void should_return409_when_emailAlreadyExists() throws Exception {
+            mockMvc.perform(post("/auth/signup")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(VALID_PAYLOAD)))
+                    .andExpect(status().isOk());
+
+            Map<String, String> duplicateEmail = Map.of(
+                    "name", "Other", "lastName", "User", "username", "other",
+                    "email", "test@test.com",
+                    "password", "password123", "repeatPassword", "password123"
+            );
+            mockMvc.perform(post("/auth/signup")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(duplicateEmail)))
+                    .andExpect(status().isConflict());
+        }
+
+        @Test
+        @DisplayName("409 — should reject registration when username is already taken")
+        void should_return409_when_usernameAlreadyExists() throws Exception {
+            mockMvc.perform(post("/auth/signup")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(VALID_PAYLOAD)))
+                    .andExpect(status().isOk());
+
+            Map<String, String> duplicateUsername = Map.of(
+                    "name", "Other", "lastName", "User", "username", "testuser",
+                    "email", "other@test.com",
+                    "password", "password123", "repeatPassword", "password123"
+            );
+            mockMvc.perform(post("/auth/signup")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(duplicateUsername)))
+                    .andExpect(status().isConflict());
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // POST /auth/login
+    // -------------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("POST /auth/login")
+    class Login {
+
+        @Test
+        @DisplayName("200 — should return JWT token and user when credentials are valid")
+        void should_return200WithToken_when_credentialsAreValid() throws Exception {
+            String body = objectMapper.writeValueAsString(Map.of(
+                    "email", ADMIN_EMAIL,
+                    "password", ADMIN_PASSWORD
+            ));
+
+            mockMvc.perform(post("/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.token").isNotEmpty())
+                    .andExpect(jsonPath("$.expiresIn").isNumber())
+                    .andExpect(jsonPath("$.user.email").value(ADMIN_EMAIL))
+                    .andExpect(jsonPath("$.user.password").doesNotExist());
+        }
+
+        @Test
+        @DisplayName("401 — should reject login when password is wrong")
+        void should_return401_when_passwordIsWrong() throws Exception {
+            String body = objectMapper.writeValueAsString(Map.of(
+                    "email", ADMIN_EMAIL,
+                    "password", "wrongpassword"
+            ));
+
+            mockMvc.perform(post("/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        @DisplayName("401 — should reject login when user does not exist")
+        void should_return401_when_userNotFound() throws Exception {
+            String body = objectMapper.writeValueAsString(Map.of(
+                    "email", "nobody@test.com",
+                    "password", "password123"
+            ));
+
+            mockMvc.perform(post("/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        @DisplayName("403 — should reject login when email is not verified")
+        void should_return403_when_emailNotVerified() throws Exception {
+            // signup creates the user with emailVerified=true; flip it manually
+            mockMvc.perform(post("/auth/signup")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(Map.of(
+                            "name", "Test", "lastName", "User", "username", "testuser",
+                            "email", "unverified@test.com",
+                            "password", "password123", "repeatPassword", "password123"
+                    ))));
+
+            userRepository.findByEmail("unverified@test.com")
+                    .ifPresent(u -> userRepository.save(u.setEmailVerified(false)));
+
+            String body = objectMapper.writeValueAsString(Map.of(
+                    "email", "unverified@test.com",
+                    "password", "password123"
+            ));
+
+            mockMvc.perform(post("/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isForbidden());
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // POST /auth/logout
+    // -------------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("POST /auth/logout")
+    class Logout {
+
+        @Test
+        @DisplayName("204 — should invalidate a valid token")
+        void should_return204_when_tokenIsValid() throws Exception {
+            String token = loginAndGetToken(ADMIN_EMAIL, ADMIN_PASSWORD);
+
+            mockMvc.perform(post("/auth/logout")
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isNoContent());
+        }
+
+        @Test
+        @DisplayName("401 — subsequent requests with the same token should be rejected after logout")
+        void should_rejectSubsequentRequests_after_logout() throws Exception {
+            String token = loginAndGetToken(ADMIN_EMAIL, ADMIN_PASSWORD);
+
+            mockMvc.perform(post("/auth/logout")
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isNoContent());
+
+            mockMvc.perform(get("/users/me")
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        @DisplayName("400 — should reject when Authorization header is missing")
+        void should_return400_when_authorizationHeaderMissing() throws Exception {
+            mockMvc.perform(post("/auth/logout"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("400 — should reject when Authorization header is not a Bearer token")
+        void should_return400_when_headerIsNotBearerToken() throws Exception {
+            mockMvc.perform(post("/auth/logout")
+                            .header("Authorization", "Basic dXNlcjpwYXNz"))
+                    .andExpect(status().isBadRequest());
+        }
+    }
+}
