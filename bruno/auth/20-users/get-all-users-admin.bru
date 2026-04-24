@@ -1,0 +1,15 @@
+meta {
+  name: Get /users (ADMIN)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/users
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}

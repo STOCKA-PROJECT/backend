@@ -1,0 +1,28 @@
+meta {
+  name: Create Admin (ADMIN should fail)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/admins
+  body: json
+  auth: basic
+}
+
+auth:basic {
+  username: {{adminEmail}}
+  password: {{adminPassword}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "fullName": "Another Admin",
+    "email": "another-admin@stocka.local",
+    "password": "123456"
+  }
+}
