@@ -1,0 +1,19 @@
+meta {
+  name: Accept Invitation
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/invitations/{{invitationToken}}/accept
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+vars:pre-request {
+  invitationToken: 13542460-3005-49c6-b307-bea63513a03c
+}

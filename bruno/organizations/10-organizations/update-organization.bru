@@ -1,0 +1,30 @@
+meta {
+  name: Update Organization
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/organizations/{{orgId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Betlem",
+    "slug": "betlem-martorell"
+  }
+}
+
+vars:pre-request {
+  orgId: 1
+}

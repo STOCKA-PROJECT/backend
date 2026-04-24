@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="es">
+<body>
+    <th:block th:replace="~{email/layout :: layout(~{::content})}">
+        <th:block th:fragment="content">
+            <h1 style="margin:0 0 16px 0;font-size:22px;font-weight:600;color:#111827;">
+                Te han invitado a <span th:text="${orgName}">Acme</span>
+            </h1>
+            <p style="margin:0 0 16px 0;">
+                <strong th:text="${inviterName}">Joan</strong> te ha invitado a unirte a la
+                organizaci&oacute;n <strong th:text="${orgName}">Acme</strong> en Stocka.
+            </p>
+            <p style="margin:0 0 24px 0;">
+                Haz clic en el bot&oacute;n para aceptar la invitaci&oacute;n:
+            </p>
+            <p style="margin:0 0 24px 0;text-align:center;">
+                <a th:href="${acceptUrl}"
+                   style="display:inline-block;background-color:#2563eb;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;">
+                    Aceptar invitaci&oacute;n
+                </a>
+            </p>
+            <p style="margin:0;color:#6b7280;font-size:13px;">
+                O copia este enlace en tu navegador:<br/>
+                <a th:href="${acceptUrl}" th:text="${acceptUrl}" style="color:#2563eb;word-break:break-all;">https://...</a>
+            </p>
+        </th:block>
+    </th:block>
+</body>
+</html>

@@ -1,0 +1,19 @@
+meta {
+  name: Reject Invitation
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/invitations/{{invitationToken}}/reject
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+vars:pre-request {
+  invitationToken: 13542460-3005-49c6-b307-bea63513a03c
+}

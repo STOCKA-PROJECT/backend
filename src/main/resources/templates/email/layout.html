@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="es">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Stocka</title>
+</head>
+<body th:fragment="layout(content)" style="margin:0;padding:0;background-color:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f7;padding:32px 0;">
+        <tr>
+            <td align="center">
+                <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+                    <tr>
+                        <td style="padding:24px 32px;background-color:#111827;color:#ffffff;font-size:20px;font-weight:600;">
+                            Stocka
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:32px;color:#1f2937;font-size:15px;line-height:1.55;">
+                            <th:block th:replace="${content}">Default content</th:block>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:16px 32px;background-color:#f9fafb;color:#6b7280;font-size:12px;text-align:center;">
+                            Recibiste este email porque alguien te invit&oacute; a una organizaci&oacute;n en Stocka.
+                            Si no esperabas esta invitaci&oacute;n, puedes ignorarla.
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

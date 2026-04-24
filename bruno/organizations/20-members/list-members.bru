@@ -1,0 +1,19 @@
+meta {
+  name: List Members
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/members
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+vars:pre-request {
+  orgId: 1
+}

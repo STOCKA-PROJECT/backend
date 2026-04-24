@@ -1,0 +1,19 @@
+meta {
+  name: Leave Organization
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{baseUrl}}/organizations/{{orgId}}/members/me
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+vars:pre-request {
+  orgId: 1
+}

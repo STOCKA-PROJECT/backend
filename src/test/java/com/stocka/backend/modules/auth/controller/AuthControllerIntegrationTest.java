@@ -31,6 +31,7 @@ class AuthControllerIntegrationTest {
     @Autowired private WebApplicationContext context;
     @Autowired private UserRepository userRepository;
     @Autowired private InvalidatedTokenRepository invalidatedTokenRepository;
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -46,12 +47,7 @@ class AuthControllerIntegrationTest {
                 .apply(springSecurity())
                 .build();
 
-        userRepository.findAll().forEach(user -> {
-            if (!user.getEmail().equals(ADMIN_EMAIL)) {
-                userRepository.delete(user);
-            }
-        });
-        invalidatedTokenRepository.deleteAll();
+        com.stocka.backend.modules.organizations.IntegrationTestSupport.cleanDatabase(jdbcTemplate);
     }
 
     private String loginAndGetToken(String email, String password) throws Exception {

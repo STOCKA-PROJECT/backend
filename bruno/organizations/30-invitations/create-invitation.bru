@@ -1,0 +1,30 @@
+meta {
+  name: Create Invitation
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/invitations
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "email": "test2@gmail.com",
+    "role": "MANAGER"
+  }
+}
+
+vars:pre-request {
+  orgId: 1
+}

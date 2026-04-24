@@ -1,0 +1,15 @@
+meta {
+  name: List My Invitations
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/invitations/me
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
