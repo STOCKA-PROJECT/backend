@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.stocka.backend.modules.users.dto.UpdateUserProfileDto;
+import com.stocka.backend.modules.users.entity.Language;
 import com.stocka.backend.modules.users.entity.User;
 import com.stocka.backend.modules.users.repository.UserRepository;
 
@@ -56,6 +57,10 @@ public class UserService {
 
         if (dto.getLastName() != null) {
             actor.setLastName(dto.getLastName());
+        }
+
+        if (dto.getLanguage() != null) {
+            actor.setLanguage(Language.fromString(dto.getLanguage()));
         }
 
         return userRepository.save(actor);

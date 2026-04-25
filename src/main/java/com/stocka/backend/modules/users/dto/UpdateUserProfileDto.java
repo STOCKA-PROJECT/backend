@@ -5,6 +5,7 @@ public class UpdateUserProfileDto {
     private String lastName;
     private String email;
     private String username;
+    private String language;
 
     public String getName() {
         return name;
@@ -39,6 +40,15 @@ public class UpdateUserProfileDto {
 
     public UpdateUserProfileDto setUsername(String username) {
         this.username = username;
+        return this;
+    }
+
+    public String getLanguage() {
+        return language;
+    }
+
+    public UpdateUserProfileDto setLanguage(String language) {
+        this.language = language;
         return this;
     }
 }

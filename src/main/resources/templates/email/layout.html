@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org" lang="es">
+<html xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="UTF-8"/>
     <title>Stocka</title>
@@ -21,8 +21,8 @@
                     </tr>
                     <tr>
                         <td style="padding:16px 32px;background-color:#f9fafb;color:#6b7280;font-size:12px;text-align:center;">
-                            Recibiste este email porque tienes una cuenta en Stocka.
-                            Si no esperabas este mensaje, puedes ignorarlo.
+                            <span th:text="#{email.layout.footer.account}">Recibiste este email porque tienes una cuenta en Stocka.</span>
+                            <span th:text="#{email.layout.footer.ignore}">Si no esperabas este mensaje, puedes ignorarlo.</span>
                         </td>
                     </tr>
                 </table>

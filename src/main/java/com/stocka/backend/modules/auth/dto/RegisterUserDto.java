@@ -7,6 +7,7 @@ public class RegisterUserDto {
     private String email;
     private String password;
     private String repeatPassword;
+    private String language;
 
     public String getUsername() {
         return username;
@@ -59,6 +60,15 @@ public class RegisterUserDto {
 
     public RegisterUserDto setRepeatPassword(String repeatPassword) {
         this.repeatPassword = repeatPassword;
+        return this;
+    }
+
+    public String getLanguage() {
+        return language;
+    }
+
+    public RegisterUserDto setLanguage(String language) {
+        this.language = language;
         return this;
     }
 }

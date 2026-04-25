@@ -1,7 +1,9 @@
 package com.stocka.backend.modules.notifications.email;
 
-public interface EmailService {
-    void sendInvitationEmail(String to, String inviterName, String orgName, String acceptUrl);
+import com.stocka.backend.modules.users.entity.Language;
 
-    void sendPasswordResetEmail(String to, String userName, String resetUrl);
+public interface EmailService {
+    void sendInvitationEmail(String to, String inviterName, String orgName, String acceptUrl, Language language);
+
+    void sendPasswordResetEmail(String to, String userName, String resetUrl, Language language);
 }

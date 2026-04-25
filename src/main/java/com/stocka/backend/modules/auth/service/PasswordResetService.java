@@ -76,7 +76,7 @@ public class PasswordResetService {
         tokenRepository.save(token);
 
         String resetUrl = buildResetUrl(rawToken);
-        emailService.sendPasswordResetEmail(user.getEmail(), user.getName(), resetUrl);
+        emailService.sendPasswordResetEmail(user.getEmail(), user.getName(), resetUrl, user.getLanguage());
     }
 
     public void resetPassword(ResetPasswordRequestDto dto) {

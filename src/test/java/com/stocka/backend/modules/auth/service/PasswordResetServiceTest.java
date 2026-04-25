@@ -40,6 +40,7 @@ import com.stocka.backend.modules.auth.dto.ResetPasswordRequestDto;
 import com.stocka.backend.modules.auth.entity.PasswordResetToken;
 import com.stocka.backend.modules.auth.repository.PasswordResetTokenRepository;
 import com.stocka.backend.modules.notifications.email.EmailService;
+import com.stocka.backend.modules.users.entity.Language;
 import com.stocka.backend.modules.users.entity.User;
 import com.stocka.backend.modules.users.repository.UserRepository;
 
@@ -159,7 +160,7 @@ class PasswordResetServiceTest {
             sut.requestReset(existingUser.getEmail());
 
             ArgumentCaptor<String> urlCaptor = ArgumentCaptor.forClass(String.class);
-            verify(emailService).sendPasswordResetEmail(eq(existingUser.getEmail()), eq(existingUser.getName()), urlCaptor.capture());
+            verify(emailService).sendPasswordResetEmail(eq(existingUser.getEmail()), eq(existingUser.getName()), urlCaptor.capture(), eq(Language.ES));
             String url = urlCaptor.getValue();
             assertTrue(url.startsWith("http://localhost:5173/reset-password?token="),
                     "url must point to frontend reset path: " + url);
@@ -196,7 +197,7 @@ class PasswordResetServiceTest {
 
             sut.requestReset(existingUser.getEmail());
 
-            verify(emailService).sendPasswordResetEmail(anyString(), anyString(), urlCaptor.capture());
+            verify(emailService).sendPasswordResetEmail(anyString(), anyString(), urlCaptor.capture(), any(Language.class));
             assertTrue(urlCaptor.getValue().startsWith("http://localhost:5173/reset-password?token="),
                     "should not produce // before reset-password: " + urlCaptor.getValue());
         }
@@ -219,6 +220,45 @@ class PasswordResetServiceTest {
             PasswordResetToken saved = captor.getValue();
             assertTrue(!saved.getExpiresAt().isBefore(before.plusMinutes(5).minusSeconds(2))
                     && !saved.getExpiresAt().isAfter(after.plusMinutes(5).plusSeconds(2)));
+        }
+
+        @Test
+        @DisplayName("should pass the user's language ES to emailService")
+        void should_passLanguageEs_toEmailService() {
+            existingUser.setLanguage(Language.ES);
+            when(userRepository.findByEmail(existingUser.getEmail())).thenReturn(Optional.of(existingUser));
+            ArgumentCaptor<Language> languageCaptor = ArgumentCaptor.forClass(Language.class);
+
+            sut.requestReset(existingUser.getEmail());
+
+            verify(emailService).sendPasswordResetEmail(anyString(), anyString(), anyString(), languageCaptor.capture());
+            assertEquals(Language.ES, languageCaptor.getValue());
+        }
+
+        @Test
+        @DisplayName("should pass the user's language EN to emailService")
+        void should_passLanguageEn_toEmailService() {
+            existingUser.setLanguage(Language.EN);
+            when(userRepository.findByEmail(existingUser.getEmail())).thenReturn(Optional.of(existingUser));
+            ArgumentCaptor<Language> languageCaptor = ArgumentCaptor.forClass(Language.class);
+
+            sut.requestReset(existingUser.getEmail());
+
+            verify(emailService).sendPasswordResetEmail(anyString(), anyString(), anyString(), languageCaptor.capture());
+            assertEquals(Language.EN, languageCaptor.getValue());
+        }
+
+        @Test
+        @DisplayName("should pass the user's language CA to emailService")
+        void should_passLanguageCa_toEmailService() {
+            existingUser.setLanguage(Language.CA);
+            when(userRepository.findByEmail(existingUser.getEmail())).thenReturn(Optional.of(existingUser));
+            ArgumentCaptor<Language> languageCaptor = ArgumentCaptor.forClass(Language.class);
+
+            sut.requestReset(existingUser.getEmail());
+
+            verify(emailService).sendPasswordResetEmail(anyString(), anyString(), anyString(), languageCaptor.capture());
+            assertEquals(Language.CA, languageCaptor.getValue());
         }
     }
 

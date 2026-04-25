@@ -18,6 +18,7 @@ import com.stocka.backend.modules.roles.repository.RoleRepository;
 import com.stocka.backend.modules.security.entity.InvalidatedToken;
 import com.stocka.backend.modules.security.repository.InvalidatedTokenRepository;
 import com.stocka.backend.modules.security.service.JwtService;
+import com.stocka.backend.modules.users.entity.Language;
 import com.stocka.backend.modules.users.entity.User;
 import com.stocka.backend.modules.users.repository.UserRepository;
 
@@ -51,6 +52,8 @@ public class AuthenticationService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Las contraseñas no coinciden");
         }
 
+        Language language = Language.fromString(input.getLanguage());
+
         if (userRepository.findByEmail(input.getEmail()).isPresent()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe un usuario con ese email");
         }
@@ -72,7 +75,8 @@ public class AuthenticationService {
                 .setEmail(input.getEmail())
                 .setPassword(passwordEncoder.encode(input.getPassword()))
                 .setRole(optionalRole.get())
-                .setEmailVerified(true);
+                .setEmailVerified(true)
+                .setLanguage(language);
 
         return userRepository.save(user);
     }

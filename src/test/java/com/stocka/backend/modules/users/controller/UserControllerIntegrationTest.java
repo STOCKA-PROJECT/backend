@@ -261,6 +261,81 @@ class UserControllerIntegrationTest {
                             .content("{}"))
                     .andExpect(status().isUnauthorized());
         }
+
+        // ----- language -----
+
+        @Test
+        @DisplayName("200 — patching language to EN updates the language column in DB")
+        void should_return200_when_patchingLanguageToEn() throws Exception {
+            mockMvc.perform(patch("/users/me")
+                            .header("Authorization", "Bearer " + userBToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of("language", "EN"))))
+                    .andExpect(status().isOk());
+
+            String stored = jdbcTemplate.queryForObject(
+                    "SELECT language FROM users WHERE email = ?",
+                    String.class, "userb@test.com");
+            org.junit.jupiter.api.Assertions.assertEquals("EN", stored);
+        }
+
+        @Test
+        @DisplayName("200 — patching language to CA updates the language column in DB")
+        void should_return200_when_patchingLanguageToCa() throws Exception {
+            mockMvc.perform(patch("/users/me")
+                            .header("Authorization", "Bearer " + userBToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of("language", "CA"))))
+                    .andExpect(status().isOk());
+
+            String stored = jdbcTemplate.queryForObject(
+                    "SELECT language FROM users WHERE email = ?",
+                    String.class, "userb@test.com");
+            org.junit.jupiter.api.Assertions.assertEquals("CA", stored);
+        }
+
+        @Test
+        @DisplayName("200 — patching language to ES is a no-op for a user already on ES")
+        void should_return200_when_patchingLanguageToEs() throws Exception {
+            mockMvc.perform(patch("/users/me")
+                            .header("Authorization", "Bearer " + userBToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of("language", "ES"))))
+                    .andExpect(status().isOk());
+
+            String stored = jdbcTemplate.queryForObject(
+                    "SELECT language FROM users WHERE email = ?",
+                    String.class, "userb@test.com");
+            org.junit.jupiter.api.Assertions.assertEquals("ES", stored);
+        }
+
+        @Test
+        @DisplayName("400 — patching language to an invalid value is rejected")
+        void should_return400_when_invalidLanguage() throws Exception {
+            mockMvc.perform(patch("/users/me")
+                            .header("Authorization", "Bearer " + userBToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of("language", "FR"))))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("200 — patching language alongside other fields updates everything atomically")
+        void should_return200_when_patchingLanguageAndOtherFields() throws Exception {
+            mockMvc.perform(patch("/users/me")
+                            .header("Authorization", "Bearer " + userBToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of(
+                                    "name", "Combo",
+                                    "language", "EN"))))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.name").value("Combo"));
+
+            String stored = jdbcTemplate.queryForObject(
+                    "SELECT language FROM users WHERE email = ?",
+                    String.class, "userb@test.com");
+            org.junit.jupiter.api.Assertions.assertEquals("EN", stored);
+        }
     }
 
     // -------------------------------------------------------------------------

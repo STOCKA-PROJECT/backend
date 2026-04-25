@@ -15,6 +15,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
+import com.stocka.backend.modules.users.entity.Language;
+
 @Service
 @ConditionalOnProperty(name = "app.email.provider", havingValue = "local", matchIfMissing = true)
 public class LocalEmailService implements EmailService {
@@ -36,10 +38,12 @@ public class LocalEmailService implements EmailService {
     }
 
     @Override
-    public void sendInvitationEmail(String to, String inviterName, String orgName, String acceptUrl) {
+    public void sendInvitationEmail(String to, String inviterName, String orgName, String acceptUrl, Language language) {
         RenderedEmail email = renderer.render(
                 "invitation",
-                inviterName + " te ha invitado a " + orgName + " en Stocka",
+                "email.invitation.subject",
+                new Object[]{inviterName, orgName},
+                language.toLocale(),
                 Map.of(
                         "inviterName", inviterName,
                         "orgName", orgName,
@@ -52,10 +56,12 @@ public class LocalEmailService implements EmailService {
     }
 
     @Override
-    public void sendPasswordResetEmail(String to, String userName, String resetUrl) {
+    public void sendPasswordResetEmail(String to, String userName, String resetUrl, Language language) {
         RenderedEmail email = renderer.render(
                 "password-reset",
-                "Restablece tu contraseña en Stocka",
+                "email.passwordReset.subject",
+                null,
+                language.toLocale(),
                 Map.of(
                         "userName", userName,
                         "resetUrl", resetUrl

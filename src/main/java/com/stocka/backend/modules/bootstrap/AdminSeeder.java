@@ -14,6 +14,7 @@ import com.stocka.backend.modules.auth.dto.RegisterUserDto;
 import com.stocka.backend.modules.roles.entity.Role;
 import com.stocka.backend.modules.roles.entity.RoleEnum;
 import com.stocka.backend.modules.roles.repository.RoleRepository;
+import com.stocka.backend.modules.users.entity.Language;
 import com.stocka.backend.modules.users.entity.User;
 import com.stocka.backend.modules.users.repository.UserRepository;
 
@@ -71,7 +72,8 @@ public class AdminSeeder implements ApplicationListener<ContextRefreshedEvent> {
                 .setEmail(userDto.getEmail())
                 .setPassword(passwordEncoder.encode(userDto.getPassword()))
                 .setRole(optionalRole.get())
-                .setEmailVerified(true);
+                .setEmailVerified(true)
+                .setLanguage(Language.ES);
 
         userRepository.save(user);
         log.info("Owner admin creado: {}", userDto.getEmail());

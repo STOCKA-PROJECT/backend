@@ -22,6 +22,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
@@ -39,7 +40,9 @@ import com.stocka.backend.modules.organizations.repository.OrganizationInvitatio
 import com.stocka.backend.modules.organizations.repository.OrganizationMemberRepository;
 import com.stocka.backend.modules.roles.entity.Role;
 import com.stocka.backend.modules.roles.entity.RoleEnum;
+import com.stocka.backend.modules.users.entity.Language;
 import com.stocka.backend.modules.users.entity.User;
+import com.stocka.backend.modules.users.repository.UserRepository;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("OrganizationInvitationService")
@@ -50,6 +53,7 @@ class OrganizationInvitationServiceTest {
     @Mock private OrganizationService organizationService;
     @Mock private OrganizationAuditService auditService;
     @Mock private EmailService emailService;
+    @Mock private UserRepository userRepository;
 
     private OrganizationInvitationService sut;
 
@@ -63,7 +67,7 @@ class OrganizationInvitationServiceTest {
     void setUp() {
         sut = new OrganizationInvitationService(
                 invitationRepository, memberRepository, organizationService, auditService,
-                emailService, 50L, "http://localhost:5173"
+                emailService, userRepository, 50L, "http://localhost:5173"
         );
         org = new Organization().setId(1).setName("Acme").setSlug("acme");
         owner = new User().setId(10).setEmail("owner@test.com").setName("Owner")
@@ -106,7 +110,7 @@ class OrganizationInvitationServiceTest {
                 assertEquals(owner, inv.getInvitedBy());
             }
             verify(emailService, atLeast(3))
-                    .sendInvitationEmail(anyString(), anyString(), anyString(), anyString());
+                    .sendInvitationEmail(anyString(), anyString(), anyString(), anyString(), any(Language.class));
             verify(auditService, atLeast(3))
                     .log(eq(org), eq(owner), eq(AuditAction.MEMBER_INVITED), eq(null), any());
         }
@@ -222,7 +226,7 @@ class OrganizationInvitationServiceTest {
         void should_throw429_when_rateLimitReached() {
             sut = new OrganizationInvitationService(
                     invitationRepository, memberRepository, organizationService, auditService,
-                    emailService, 2L, "http://localhost:5173"
+                    emailService, userRepository, 2L, "http://localhost:5173"
             );
             when(organizationService.findById(1)).thenReturn(org);
             mockActorAs(owner, OrganizationRoleEnum.OWNER);
@@ -246,7 +250,7 @@ class OrganizationInvitationServiceTest {
             when(invitationRepository.save(any(OrganizationInvitation.class)))
                     .thenAnswer(i -> i.getArgument(0));
             doThrow(new RuntimeException("smtp down"))
-                    .when(emailService).sendInvitationEmail(anyString(), anyString(), anyString(), anyString());
+                    .when(emailService).sendInvitationEmail(anyString(), anyString(), anyString(), anyString(), any(Language.class));
 
             OrganizationInvitation inv = sut.createInvitation(1,
                     new CreateInvitationDto().setEmail("x@test.com").setRole(OrganizationRoleEnum.USER),
@@ -254,6 +258,74 @@ class OrganizationInvitationServiceTest {
 
             assertNotNull(inv);
             verify(invitationRepository).save(any(OrganizationInvitation.class));
+        }
+
+        @Test
+        @DisplayName("should send invitation in invitee's language when invitee is a registered user (EN)")
+        void should_sendInvitation_inInviteeLanguage_when_inviteeRegistered() {
+            when(organizationService.findById(1)).thenReturn(org);
+            mockActorAs(owner, OrganizationRoleEnum.OWNER);
+            when(memberRepository.findByOrganization(org)).thenReturn(List.of());
+            when(invitationRepository.findByOrganizationAndEmailAndStatus(any(), any(), any()))
+                    .thenReturn(Optional.empty());
+            when(invitationRepository.save(any(OrganizationInvitation.class)))
+                    .thenAnswer(i -> i.getArgument(0));
+
+            User registeredInvitee = new User().setId(99).setEmail("invitee@test.com").setLanguage(Language.EN);
+            when(userRepository.findByEmail("invitee@test.com")).thenReturn(Optional.of(registeredInvitee));
+            ArgumentCaptor<Language> languageCaptor = ArgumentCaptor.forClass(Language.class);
+
+            sut.createInvitation(1,
+                    new CreateInvitationDto().setEmail("invitee@test.com").setRole(OrganizationRoleEnum.USER),
+                    owner);
+
+            verify(emailService).sendInvitationEmail(anyString(), anyString(), anyString(), anyString(), languageCaptor.capture());
+            assertEquals(Language.EN, languageCaptor.getValue());
+        }
+
+        @Test
+        @DisplayName("should default invitation language to ES when invitee email does not exist as a registered user")
+        void should_defaultLanguageEs_when_inviteeNotRegistered() {
+            when(organizationService.findById(1)).thenReturn(org);
+            mockActorAs(owner, OrganizationRoleEnum.OWNER);
+            when(memberRepository.findByOrganization(org)).thenReturn(List.of());
+            when(invitationRepository.findByOrganizationAndEmailAndStatus(any(), any(), any()))
+                    .thenReturn(Optional.empty());
+            when(invitationRepository.save(any(OrganizationInvitation.class)))
+                    .thenAnswer(i -> i.getArgument(0));
+
+            when(userRepository.findByEmail("ghost@test.com")).thenReturn(Optional.empty());
+            ArgumentCaptor<Language> languageCaptor = ArgumentCaptor.forClass(Language.class);
+
+            sut.createInvitation(1,
+                    new CreateInvitationDto().setEmail("ghost@test.com").setRole(OrganizationRoleEnum.USER),
+                    owner);
+
+            verify(emailService).sendInvitationEmail(anyString(), anyString(), anyString(), anyString(), languageCaptor.capture());
+            assertEquals(Language.ES, languageCaptor.getValue());
+        }
+
+        @Test
+        @DisplayName("should send invitation in invitee's language CA when invitee is registered with CA")
+        void should_sendInvitation_inCaLanguage_when_inviteeRegisteredCa() {
+            when(organizationService.findById(1)).thenReturn(org);
+            mockActorAs(owner, OrganizationRoleEnum.OWNER);
+            when(memberRepository.findByOrganization(org)).thenReturn(List.of());
+            when(invitationRepository.findByOrganizationAndEmailAndStatus(any(), any(), any()))
+                    .thenReturn(Optional.empty());
+            when(invitationRepository.save(any(OrganizationInvitation.class)))
+                    .thenAnswer(i -> i.getArgument(0));
+
+            User registeredInvitee = new User().setId(99).setEmail("invitee@test.com").setLanguage(Language.CA);
+            when(userRepository.findByEmail("invitee@test.com")).thenReturn(Optional.of(registeredInvitee));
+            ArgumentCaptor<Language> languageCaptor = ArgumentCaptor.forClass(Language.class);
+
+            sut.createInvitation(1,
+                    new CreateInvitationDto().setEmail("invitee@test.com").setRole(OrganizationRoleEnum.USER),
+                    owner);
+
+            verify(emailService).sendInvitationEmail(anyString(), anyString(), anyString(), anyString(), languageCaptor.capture());
+            assertEquals(Language.CA, languageCaptor.getValue());
         }
     }
 

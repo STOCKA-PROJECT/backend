@@ -27,6 +27,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.stocka.backend.modules.users.dto.UpdateUserProfileDto;
+import com.stocka.backend.modules.users.entity.Language;
 import com.stocka.backend.modules.users.entity.User;
 import com.stocka.backend.modules.users.repository.UserRepository;
 
@@ -361,6 +362,44 @@ class UserServiceTest {
 
             assertSame(actor, captor.getValue());
             assertSame(saved, result);
+        }
+
+        // ----- language -----
+
+        @Test
+        @DisplayName("should update language when language is provided")
+        void should_updateLanguage_when_provided() {
+            actor.setLanguage(Language.ES);
+            when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            User result = sut.updateProfile(actor, new UpdateUserProfileDto().setLanguage("EN"));
+
+            assertEquals(Language.EN, result.getLanguage());
+        }
+
+        @Test
+        @DisplayName("should leave language unchanged when null in dto (PATCH partial)")
+        void should_leaveLanguage_unchanged_when_null() {
+            actor.setLanguage(Language.CA);
+            when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            User result = sut.updateProfile(actor, new UpdateUserProfileDto().setName("X"));
+
+            assertEquals(Language.CA, result.getLanguage());
+        }
+
+        @Test
+        @DisplayName("should throw 400 when language is invalid")
+        void should_throw400_when_languageInvalid() {
+            actor.setLanguage(Language.ES);
+
+            ResponseStatusException ex = assertThrows(
+                    ResponseStatusException.class,
+                    () -> sut.updateProfile(actor, new UpdateUserProfileDto().setLanguage("XX"))
+            );
+
+            assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+            verify(userRepository, never()).save(any(User.class));
         }
     }
 }

@@ -24,7 +24,9 @@ import com.stocka.backend.modules.organizations.entity.OrganizationRoleEnum;
 import com.stocka.backend.modules.organizations.repository.OrganizationInvitationRepository;
 import com.stocka.backend.modules.organizations.repository.OrganizationMemberRepository;
 import com.stocka.backend.modules.organizations.security.OrganizationSecurity;
+import com.stocka.backend.modules.users.entity.Language;
 import com.stocka.backend.modules.users.entity.User;
+import com.stocka.backend.modules.users.repository.UserRepository;
 
 @Service
 public class OrganizationInvitationService {
@@ -36,6 +38,7 @@ public class OrganizationInvitationService {
     private final OrganizationService organizationService;
     private final OrganizationAuditService auditService;
     private final EmailService emailService;
+    private final UserRepository userRepository;
     private final long maxPendingInvitations;
     private final String frontendBaseUrl;
 
@@ -45,6 +48,7 @@ public class OrganizationInvitationService {
             OrganizationService organizationService,
             OrganizationAuditService auditService,
             EmailService emailService,
+            UserRepository userRepository,
             @Value("${app.organization.max-pending-invitations:50}") long maxPendingInvitations,
             @Value("${app.frontend.base-url:http://localhost:5173}") String frontendBaseUrl
     ) {
@@ -53,6 +57,7 @@ public class OrganizationInvitationService {
         this.organizationService = organizationService;
         this.auditService = auditService;
         this.emailService = emailService;
+        this.userRepository = userRepository;
         this.maxPendingInvitations = maxPendingInvitations;
         this.frontendBaseUrl = frontendBaseUrl;
     }
@@ -106,7 +111,10 @@ public class OrganizationInvitationService {
                 inviterName = actor.getEmail();
             }
             String acceptUrl = frontendBaseUrl + "/invitations/" + saved.getToken();
-            emailService.sendInvitationEmail(email, inviterName, org.getName(), acceptUrl);
+            Language inviteeLanguage = userRepository.findByEmail(email)
+                    .map(User::getLanguage)
+                    .orElse(Language.ES);
+            emailService.sendInvitationEmail(email, inviterName, org.getName(), acceptUrl, inviteeLanguage);
         } catch (Exception e) {
             log.warn("Failed to send invitation email to {}: {}", email, e.getMessage());
         }

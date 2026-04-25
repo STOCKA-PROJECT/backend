@@ -16,6 +16,8 @@ import com.stocka.backend.modules.roles.entity.Role;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -61,6 +63,10 @@ public class User implements UserDetails {
     @JsonIgnore
     @Column(name = "password_changed_at")
     private LocalDateTime passwordChangedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "language", nullable = false, length = 4, columnDefinition = "VARCHAR(4) NOT NULL DEFAULT 'ES'")
+    private Language language = Language.ES;
 
     public Integer getId() {
         return id;
@@ -151,6 +157,15 @@ public class User implements UserDetails {
 
     public User setPasswordChangedAt(LocalDateTime passwordChangedAt) {
         this.passwordChangedAt = passwordChangedAt;
+        return this;
+    }
+
+    public Language getLanguage() {
+        return language;
+    }
+
+    public User setLanguage(Language language) {
+        this.language = language;
         return this;
     }
 

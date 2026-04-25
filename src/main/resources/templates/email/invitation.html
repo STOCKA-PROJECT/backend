@@ -1,26 +1,28 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org" lang="es">
+<html xmlns:th="http://www.thymeleaf.org">
 <body>
     <th:block th:replace="~{email/layout :: layout(~{::content})}">
         <th:block th:fragment="content">
-            <h1 style="margin:0 0 16px 0;font-size:22px;font-weight:600;color:#111827;">
-                Te han invitado a <span th:text="${orgName}">Acme</span>
+            <h1 style="margin:0 0 16px 0;font-size:22px;font-weight:600;color:#111827;"
+                th:utext="#{email.invitation.title(${orgName})}">
+                Te han invitado a Acme
             </h1>
-            <p style="margin:0 0 16px 0;">
-                <strong th:text="${inviterName}">Joan</strong> te ha invitado a unirte a la
-                organizaci&oacute;n <strong th:text="${orgName}">Acme</strong> en Stocka.
+            <p style="margin:0 0 16px 0;"
+               th:utext="#{email.invitation.body(${inviterName}, ${orgName})}">
+                Joan te ha invitado a unirte a la organización Acme en Stocka.
             </p>
-            <p style="margin:0 0 24px 0;">
-                Haz clic en el bot&oacute;n para aceptar la invitaci&oacute;n:
+            <p style="margin:0 0 24px 0;" th:text="#{email.invitation.cta.intro}">
+                Haz clic en el botón para aceptar la invitación:
             </p>
             <p style="margin:0 0 24px 0;text-align:center;">
                 <a th:href="${acceptUrl}"
-                   style="display:inline-block;background-color:#2563eb;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;">
-                    Aceptar invitaci&oacute;n
+                   style="display:inline-block;background-color:#2563eb;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;"
+                   th:text="#{email.invitation.cta.button}">
+                    Aceptar invitación
                 </a>
             </p>
             <p style="margin:0;color:#6b7280;font-size:13px;">
-                O copia este enlace en tu navegador:<br/>
+                <span th:text="#{email.invitation.fallback}">O copia este enlace en tu navegador:</span><br/>
                 <a th:href="${acceptUrl}" th:text="${acceptUrl}" style="color:#2563eb;word-break:break-all;">https://...</a>
             </p>
         </th:block>

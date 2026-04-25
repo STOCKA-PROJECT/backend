@@ -1,7 +1,7 @@
 meta {
-  name: Signup User
+  name: Signup User (EN)
   type: http
-  seq: 1
+  seq: 6
 }
 
 post {
@@ -16,12 +16,12 @@ headers {
 
 body:json {
   {
-    "username": "test",
+    "username": "test_en",
     "name": "Test",
-    "lastName": "Test2",
-    "email": "{{userEmail}}",
+    "lastName": "English",
+    "email": "test.en@stocka.local",
     "password": "{{userPassword}}",
     "repeatPassword": "{{userPassword}}",
-    "language": "ES"
+    "language": "EN"
   }
 }

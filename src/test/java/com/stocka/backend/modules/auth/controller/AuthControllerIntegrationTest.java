@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.HashMap;
 import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -144,6 +145,113 @@ class AuthControllerIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(duplicateUsername)))
                     .andExpect(status().isConflict());
+        }
+
+        // ----- language -----
+
+        @Test
+        @DisplayName("200 — defaults language to ES when not provided in body")
+        void should_defaultLanguageToEs_when_notProvided() throws Exception {
+            mockMvc.perform(post("/auth/signup")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(VALID_PAYLOAD)))
+                    .andExpect(status().isOk());
+
+            String stored = jdbcTemplate.queryForObject(
+                    "SELECT language FROM users WHERE email = ?",
+                    String.class, "test@test.com");
+            org.junit.jupiter.api.Assertions.assertEquals("ES", stored);
+        }
+
+        @Test
+        @DisplayName("200 — persists language ES when provided explicitly")
+        void should_persistLanguageEs_when_provided() throws Exception {
+            Map<String, String> payload = new HashMap<>(VALID_PAYLOAD);
+            payload.put("language", "ES");
+            mockMvc.perform(post("/auth/signup")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(payload)))
+                    .andExpect(status().isOk());
+
+            String stored = jdbcTemplate.queryForObject(
+                    "SELECT language FROM users WHERE email = ?",
+                    String.class, "test@test.com");
+            org.junit.jupiter.api.Assertions.assertEquals("ES", stored);
+        }
+
+        @Test
+        @DisplayName("200 — persists language EN when provided")
+        void should_persistLanguageEn_when_provided() throws Exception {
+            Map<String, String> payload = new HashMap<>(VALID_PAYLOAD);
+            payload.put("language", "EN");
+            mockMvc.perform(post("/auth/signup")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(payload)))
+                    .andExpect(status().isOk());
+
+            String stored = jdbcTemplate.queryForObject(
+                    "SELECT language FROM users WHERE email = ?",
+                    String.class, "test@test.com");
+            org.junit.jupiter.api.Assertions.assertEquals("EN", stored);
+        }
+
+        @Test
+        @DisplayName("200 — persists language CA when provided")
+        void should_persistLanguageCa_when_provided() throws Exception {
+            Map<String, String> payload = new HashMap<>(VALID_PAYLOAD);
+            payload.put("language", "CA");
+            mockMvc.perform(post("/auth/signup")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(payload)))
+                    .andExpect(status().isOk());
+
+            String stored = jdbcTemplate.queryForObject(
+                    "SELECT language FROM users WHERE email = ?",
+                    String.class, "test@test.com");
+            org.junit.jupiter.api.Assertions.assertEquals("CA", stored);
+        }
+
+        @Test
+        @DisplayName("200 — accepts lowercase language code 'en' and persists as EN")
+        void should_acceptLowercaseLanguage_andPersistUppercase() throws Exception {
+            Map<String, String> payload = new HashMap<>(VALID_PAYLOAD);
+            payload.put("language", "en");
+            mockMvc.perform(post("/auth/signup")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(payload)))
+                    .andExpect(status().isOk());
+
+            String stored = jdbcTemplate.queryForObject(
+                    "SELECT language FROM users WHERE email = ?",
+                    String.class, "test@test.com");
+            org.junit.jupiter.api.Assertions.assertEquals("EN", stored);
+        }
+
+        @Test
+        @DisplayName("200 — defaults language to ES when blank string is provided")
+        void should_defaultLanguageToEs_when_blank() throws Exception {
+            Map<String, String> payload = new HashMap<>(VALID_PAYLOAD);
+            payload.put("language", "   ");
+            mockMvc.perform(post("/auth/signup")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(payload)))
+                    .andExpect(status().isOk());
+
+            String stored = jdbcTemplate.queryForObject(
+                    "SELECT language FROM users WHERE email = ?",
+                    String.class, "test@test.com");
+            org.junit.jupiter.api.Assertions.assertEquals("ES", stored);
+        }
+
+        @Test
+        @DisplayName("400 — rejects an invalid language code")
+        void should_return400_when_invalidLanguage() throws Exception {
+            Map<String, String> payload = new HashMap<>(VALID_PAYLOAD);
+            payload.put("language", "XX");
+            mockMvc.perform(post("/auth/signup")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(payload)))
+                    .andExpect(status().isBadRequest());
         }
     }
 

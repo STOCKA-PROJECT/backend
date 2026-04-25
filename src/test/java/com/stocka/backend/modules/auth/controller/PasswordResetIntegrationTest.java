@@ -34,6 +34,7 @@ import org.springframework.web.context.WebApplicationContext;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stocka.backend.modules.organizations.IntegrationTestSupport;
+import com.stocka.backend.modules.users.entity.Language;
 import com.stocka.backend.modules.users.entity.User;
 import com.stocka.backend.modules.users.repository.UserRepository;
 
@@ -93,6 +94,10 @@ class PasswordResetIntegrationTest {
     }
 
     private String readRawTokenFromEmail() throws IOException {
+        return extractToken(readLatestPasswordResetFile());
+    }
+
+    private String readLatestPasswordResetFile() throws IOException {
         File dir = new File(emailLocalDir);
         File[] files = dir.listFiles((d, name) -> name.startsWith("password-reset-") && name.endsWith(".html"));
         assertNotNull(files, "no email files written to " + emailLocalDir);
@@ -101,9 +106,12 @@ class PasswordResetIntegrationTest {
         for (File f : files) {
             if (f.lastModified() > latest.lastModified()) latest = f;
         }
-        String content = Files.readString(Path.of(latest.getAbsolutePath()));
-        Matcher m = Pattern.compile("token=([A-Za-z0-9_-]+)").matcher(content);
-        assertTrue(m.find(), "no token found in email body: " + content);
+        return Files.readString(Path.of(latest.getAbsolutePath()));
+    }
+
+    private static String extractToken(String emailContent) {
+        Matcher m = Pattern.compile("token=([A-Za-z0-9_-]+)").matcher(emailContent);
+        assertTrue(m.find(), "no token found in email body: " + emailContent);
         return m.group(1);
     }
 
@@ -179,6 +187,53 @@ class PasswordResetIntegrationTest {
                     Integer.class, raw);
             assertEquals(0, rawMatches, "raw token must NOT match any stored hash");
             assertEquals(1, countTokensWithHash(raw));
+        }
+
+        @Test
+        @DisplayName("when user.language=EN, the written email file is in English")
+        void should_writeEnglishEmail_when_userLanguageIsEn() throws Exception {
+            signupUser();
+            // flip the user's language directly via repo
+            User user = userRepository.findByEmail(EMAIL).orElseThrow();
+            userRepository.save(user.setLanguage(Language.EN));
+
+            triggerResetAndExtractRawToken();
+
+            String content = readLatestPasswordResetFile();
+            assertTrue(content.contains("Reset password"),
+                    "EN body should contain 'Reset password': " + content);
+            assertTrue(content.contains("Reset your Stocka password"),
+                    "EN subject should be embedded as a comment: " + content);
+            assertTrue(!content.contains("Restablecer contraseña"),
+                    "should NOT contain Spanish CTA when user is EN");
+        }
+
+        @Test
+        @DisplayName("when user.language=CA, the written email file is in Catalan")
+        void should_writeCatalanEmail_when_userLanguageIsCa() throws Exception {
+            signupUser();
+            User user = userRepository.findByEmail(EMAIL).orElseThrow();
+            userRepository.save(user.setLanguage(Language.CA));
+
+            triggerResetAndExtractRawToken();
+
+            String content = readLatestPasswordResetFile();
+            assertTrue(content.contains("Restablir contrasenya"),
+                    "CA body should contain 'Restablir contrasenya': " + content);
+            assertTrue(content.contains("Restableix la teva contrasenya a Stocka"),
+                    "CA subject should be embedded as a comment: " + content);
+        }
+
+        @Test
+        @DisplayName("when user.language=ES (default), the written email file is in Spanish")
+        void should_writeSpanishEmail_when_userLanguageIsEs() throws Exception {
+            signupUser();
+
+            triggerResetAndExtractRawToken();
+
+            String content = readLatestPasswordResetFile();
+            assertTrue(content.contains("Restablecer contraseña"),
+                    "ES body should contain 'Restablecer contraseña': " + content);
         }
     }
 
