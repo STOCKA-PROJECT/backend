@@ -6,27 +6,19 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.http.HttpStatus;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
-import com.stocka.backend.modules.auth.dto.RegisterUserDto;
-import com.stocka.backend.modules.roles.entity.Role;
-import com.stocka.backend.modules.roles.entity.RoleEnum;
-import com.stocka.backend.modules.roles.repository.RoleRepository;
+import com.stocka.backend.modules.users.dto.UpdateUserProfileDto;
 import com.stocka.backend.modules.users.entity.User;
 import com.stocka.backend.modules.users.repository.UserRepository;
 
 @Service
 public class UserService {
     private final UserRepository userRepository;
-    private final RoleRepository roleRepository;
-    private final PasswordEncoder passwordEncoder;
 
-    public UserService(UserRepository userRepository, RoleRepository roleRepository, PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository) {
         this.userRepository = userRepository;
-        this.roleRepository = roleRepository;
-        this.passwordEncoder = passwordEncoder;
     }
 
     public List<User> allUsers() {
@@ -35,42 +27,37 @@ public class UserService {
         return users;
     }
 
-    public User createAdmin(RegisterUserDto input) {
-        if (userRepository.findByEmail(input.getEmail()).isPresent()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe un usuario con ese email");
-        }
-
-        if (userRepository.findByUsername(input.getUsername()).isPresent()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe un usuario con ese username");
-        }
-
-        Optional<Role> optionalRole = roleRepository.findByName(RoleEnum.ADMIN);
-
-        if (optionalRole.isEmpty()) {
-            throw new IllegalStateException("Role ADMIN no existe en la base de datos");
-        }
-
-        User user = new User()
-                .setName(input.getName())
-                .setLastName(input.getLastName())
-                .setUsername(input.getUsername())
-                .setEmail(input.getEmail())
-                .setPassword(passwordEncoder.encode(input.getPassword()))
-                .setRole(optionalRole.get())
-                .setEmailVerified(true);
-
-        return userRepository.save(user);
-    }
-
     public void softDeleteCurrentUser(User user) {
         user.setDeletedAt(LocalDateTime.now());
         userRepository.save(user);
     }
 
-    public void softDeleteUserById(Integer id) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Usuario no encontrado"));
-        user.setDeletedAt(LocalDateTime.now());
-        userRepository.save(user);
+    public User updateProfile(User actor, UpdateUserProfileDto dto) {
+        if (dto.getEmail() != null && !dto.getEmail().equals(actor.getEmail())) {
+            Optional<User> existing = userRepository.findByEmail(dto.getEmail());
+            if (existing.isPresent() && !existing.get().getId().equals(actor.getId())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe un usuario con ese email");
+            }
+            actor.setEmail(dto.getEmail());
+            actor.setEmailVerified(false);
+        }
+
+        if (dto.getUsername() != null && !dto.getUsername().equals(actor.getUsernameValue())) {
+            Optional<User> existing = userRepository.findByUsername(dto.getUsername());
+            if (existing.isPresent() && !existing.get().getId().equals(actor.getId())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe un usuario con ese username");
+            }
+            actor.setUsername(dto.getUsername());
+        }
+
+        if (dto.getName() != null) {
+            actor.setName(dto.getName());
+        }
+
+        if (dto.getLastName() != null) {
+            actor.setLastName(dto.getLastName());
+        }
+
+        return userRepository.save(actor);
     }
 }

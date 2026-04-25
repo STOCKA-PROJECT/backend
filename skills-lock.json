@@ -1,6 +1,11 @@
 {
   "version": 1,
   "skills": {
+    "cloudflare": {
+      "source": "cloudflare/skills",
+      "sourceType": "github",
+      "computedHash": "c30b3df17961254af70f8f24799c04d37096503588416e39efd0bd3e83611fde"
+    },
     "java-coding-standards": {
       "source": "affaan-m/everything-claude-code",
       "sourceType": "github",
