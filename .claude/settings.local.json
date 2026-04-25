@@ -7,7 +7,8 @@
       "Bash(awk '/^Tests run:/ {print $0; total++} END {print \"files counted:\", total}' /home/joan/Stocka/backend/target/surefire-reports/*.txt)",
       "Bash(awk -F'\"' '{s+=$2} END{print \"Total tests:\", s}')",
       "Bash(awk -F'\"' '{s+=$2} END{print \"Total failures:\", s}')",
-      "Bash(awk -F'\"' '{s+=$2} END{print \"Total errors:\", s}')"
+      "Bash(awk -F'\"' '{s+=$2} END{print \"Total errors:\", s}')",
+      "Read(//home/joan/.claude/skills/**)"
     ]
   }
 }

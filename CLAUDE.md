@@ -188,3 +188,19 @@ A piece includes:
 ## Summary
 
 This backend serves as the central system for managing organizational assets in a structured, extensible way. It integrates relational data (MariaDB), object storage (Cloudflare R2), and a modern Java backend (Spring Boot), all packaged in a Dockerized environment for easy deployment.
+
+---
+
+## Skills a aplicar siempre
+
+En cualquier tarea que toque código de este repo, lee y aplica las siguientes skills. Su contenido se carga automáticamente abajo gracias a las `@`-references:
+
+- **Siempre** (cualquier cambio de código Java):
+  - @.claude/skills/java-coding-standards/SKILL.md
+  - @.claude/skills/java-springboot/SKILL.md
+- **Cuando escribas o modifiques tests** (`src/test/...`):
+  - @.claude/skills/java-junit/SKILL.md
+- **Cuando añadas o modifiques tipos públicos** (clases, interfaces, métodos `public`):
+  - @.claude/skills/java-docs/SKILL.md
+- **Solo si tocas integración con Cloudflare R2** (almacenamiento de imágenes/ficheros):
+  - @.claude/skills/cloudflare/SKILL.md
