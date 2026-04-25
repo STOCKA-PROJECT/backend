@@ -45,6 +45,24 @@ public class SmtpEmailService implements EmailService {
                 )
         );
 
+        sendRendered(to, email);
+    }
+
+    @Override
+    public void sendPasswordResetEmail(String to, String userName, String resetUrl) {
+        RenderedEmail email = renderer.render(
+                "password-reset",
+                "Restablece tu contraseña en Stocka",
+                Map.of(
+                        "userName", userName,
+                        "resetUrl", resetUrl
+                )
+        );
+
+        sendRendered(to, email);
+    }
+
+    private void sendRendered(String to, RenderedEmail email) {
         try {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, false, StandardCharsets.UTF_8.name());

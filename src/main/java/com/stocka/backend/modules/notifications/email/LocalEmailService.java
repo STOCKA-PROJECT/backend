@@ -48,15 +48,30 @@ public class LocalEmailService implements EmailService {
         );
 
         log.info("[LOCAL EMAIL] from={} to={} subject={}", fromAddress, to, email.subject());
-        writeToFile(to, email);
+        writeToFile("invitation", to, email);
     }
 
-    private void writeToFile(String to, RenderedEmail email) {
+    @Override
+    public void sendPasswordResetEmail(String to, String userName, String resetUrl) {
+        RenderedEmail email = renderer.render(
+                "password-reset",
+                "Restablece tu contraseña en Stocka",
+                Map.of(
+                        "userName", userName,
+                        "resetUrl", resetUrl
+                )
+        );
+
+        log.info("[LOCAL EMAIL] from={} to={} subject={}", fromAddress, to, email.subject());
+        writeToFile("password-reset", to, email);
+    }
+
+    private void writeToFile(String prefix, String to, RenderedEmail email) {
         try {
             Path dir = Paths.get(localDir);
             Files.createDirectories(dir);
             String safeTo = to.replaceAll("[^a-zA-Z0-9._@-]", "_");
-            String filename = "invitation-" + LocalDateTime.now().format(TIMESTAMP_FORMAT) + "-" + safeTo + ".html";
+            String filename = prefix + "-" + LocalDateTime.now().format(TIMESTAMP_FORMAT) + "-" + safeTo + ".html";
             Path file = dir.resolve(filename);
             String content = "<!-- Subject: " + email.subject() + " -->\n" + email.htmlBody();
             Files.writeString(file, content, StandardCharsets.UTF_8);

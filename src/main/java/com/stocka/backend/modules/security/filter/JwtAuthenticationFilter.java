@@ -3,6 +3,7 @@ package com.stocka.backend.modules.security.filter;
 import com.stocka.backend.modules.security.repository.InvalidatedTokenRepository;
 import com.stocka.backend.modules.security.service.AppUserDetailsService;
 import com.stocka.backend.modules.security.service.JwtService;
+import com.stocka.backend.modules.users.entity.User;
 import java.time.LocalDateTime;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -58,7 +59,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
 
-                if (jwtService.isTokenValid(jwt, userDetails)) {
+                if (jwtService.isTokenValid(jwt, userDetails) && isTokenIssuedAfterPasswordChange(jwt, userDetails)) {
                     UsernamePasswordAuthenticationToken authToken =
                             new UsernamePasswordAuthenticationToken(
                                     userDetails,
@@ -74,5 +75,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private boolean isTokenIssuedAfterPasswordChange(String jwt, UserDetails userDetails) {
+        if (!(userDetails instanceof User user) || user.getPasswordChangedAt() == null) {
+            return true;
+        }
+        LocalDateTime issuedAt = jwtService.extractIssuedAtAsLocalDateTime(jwt);
+        return !issuedAt.isBefore(user.getPasswordChangedAt());
     }
 }

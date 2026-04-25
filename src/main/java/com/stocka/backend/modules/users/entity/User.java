@@ -58,6 +58,10 @@ public class User implements UserDetails {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
+    @JsonIgnore
+    @Column(name = "password_changed_at")
+    private LocalDateTime passwordChangedAt;
+
     public Integer getId() {
         return id;
     }
@@ -138,6 +142,15 @@ public class User implements UserDetails {
 
     public User setDeletedAt(LocalDateTime deletedAt) {
         this.deletedAt = deletedAt;
+        return this;
+    }
+
+    public LocalDateTime getPasswordChangedAt() {
+        return passwordChangedAt;
+    }
+
+    public User setPasswordChangedAt(LocalDateTime passwordChangedAt) {
+        this.passwordChangedAt = passwordChangedAt;
         return this;
     }
 

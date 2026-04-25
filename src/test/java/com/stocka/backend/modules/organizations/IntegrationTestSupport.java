@@ -38,6 +38,7 @@ public final class IntegrationTestSupport {
         jdbc.execute("DELETE FROM organization_members");
         jdbc.execute("DELETE FROM organizations");
         jdbc.execute("DELETE FROM invalidated_tokens");
+        jdbc.execute("DELETE FROM password_reset_tokens");
         jdbc.update("DELETE FROM users WHERE email <> ?", ADMIN_EMAIL);
         jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
     }

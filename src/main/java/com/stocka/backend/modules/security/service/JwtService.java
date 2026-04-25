@@ -57,6 +57,11 @@ public class JwtService {
         return expiration.toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime();
     }
 
+    public LocalDateTime extractIssuedAtAsLocalDateTime(String token) {
+        Date issuedAt = extractClaim(token, Claims::getIssuedAt);
+        return issuedAt.toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime();
+    }
+
     private Date extractExpiration(String token) {
         return extractClaim(token, Claims::getExpiration);
     }

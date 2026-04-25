@@ -9,10 +9,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.stocka.backend.modules.auth.dto.ForgotPasswordRequestDto;
 import com.stocka.backend.modules.auth.dto.LoginResponseDto;
 import com.stocka.backend.modules.auth.dto.LoginUserDto;
 import com.stocka.backend.modules.auth.dto.RegisterUserDto;
+import com.stocka.backend.modules.auth.dto.ResetPasswordRequestDto;
 import com.stocka.backend.modules.auth.service.AuthenticationService;
+import com.stocka.backend.modules.auth.service.PasswordResetService;
 import com.stocka.backend.modules.security.service.JwtService;
 import com.stocka.backend.modules.users.entity.User;
 
@@ -20,10 +23,16 @@ import com.stocka.backend.modules.users.entity.User;
 @RequestMapping("/auth")
 public class AuthController {
     private final AuthenticationService authenticationService;
+    private final PasswordResetService passwordResetService;
     private final JwtService jwtService;
 
-    public AuthController(AuthenticationService authenticationService, JwtService jwtService) {
+    public AuthController(
+            AuthenticationService authenticationService,
+            PasswordResetService passwordResetService,
+            JwtService jwtService
+    ) {
         this.authenticationService = authenticationService;
+        this.passwordResetService = passwordResetService;
         this.jwtService = jwtService;
     }
 
@@ -53,5 +62,17 @@ public class AuthController {
                 .setUser(authenticatedUser);
 
         return ResponseEntity.ok(loginResponse);
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<Void> forgotPassword(@RequestBody ForgotPasswordRequestDto dto) {
+        passwordResetService.requestReset(dto.getEmail());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<Void> resetPassword(@RequestBody ResetPasswordRequestDto dto) {
+        passwordResetService.resetPassword(dto);
+        return ResponseEntity.noContent().build();
     }
 }
