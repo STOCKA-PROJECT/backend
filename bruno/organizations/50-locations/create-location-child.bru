@@ -1,0 +1,26 @@
+meta {
+  name: Create Location (child)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/locations
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Estantería A",
+    "parentId": {{locationId}}
+  }
+}

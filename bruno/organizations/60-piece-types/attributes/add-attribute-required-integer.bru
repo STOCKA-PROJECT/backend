@@ -1,0 +1,29 @@
+meta {
+  name: Add Attribute (required INTEGER) — flips existing pieces to PENDING
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/piece-types/{{pieceTypeId}}/attributes
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "stock",
+    "displayName": "Stock",
+    "type": "INTEGER",
+    "required": true,
+    "validators": { "min": 0 }
+  }
+}

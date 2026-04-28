@@ -1,0 +1,114 @@
+package com.stocka.backend.modules.pieces.entity;
+
+import java.time.LocalDateTime;
+import java.util.Date;
+
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.SQLRestriction;
+import org.hibernate.annotations.UpdateTimestamp;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.stocka.backend.modules.locations.entity.Location;
+import com.stocka.backend.modules.organizations.entity.Organization;
+import com.stocka.backend.modules.piecetypes.entity.PieceType;
+import com.stocka.backend.modules.users.entity.User;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Index;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+
+/**
+ * One inventory item ("artículo") inside an organization. Belongs to a {@link PieceType} that
+ * defines its dynamic attribute schema. Optional owner and location.
+ */
+@Entity
+@Table(
+        name = "pieces",
+        indexes = {
+                @Index(name = "idx_piece_org_status", columnList = "organization_id, status"),
+                @Index(name = "idx_piece_org_type", columnList = "organization_id, piece_type_id")
+        }
+)
+@SQLRestriction("deleted_at IS NULL")
+public class Piece {
+    @Id
+    @GeneratedValue(strategy = GenerationType.AUTO)
+    private Integer id;
+
+    @ManyToOne
+    @JoinColumn(name = "organization_id", referencedColumnName = "id", nullable = false)
+    private Organization organization;
+
+    @ManyToOne
+    @JoinColumn(name = "piece_type_id", referencedColumnName = "id", nullable = false)
+    private PieceType pieceType;
+
+    @Column(nullable = false, length = 255)
+    private String name;
+
+    @Column(columnDefinition = "TEXT")
+    private String description;
+
+    @ManyToOne
+    @JoinColumn(name = "owner_user_id", referencedColumnName = "id")
+    private User owner;
+
+    @ManyToOne
+    @JoinColumn(name = "location_id", referencedColumnName = "id")
+    private Location location;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10,
+            columnDefinition = "VARCHAR(10) NOT NULL DEFAULT 'PENDING'")
+    private PieceStatus status = PieceStatus.PENDING;
+
+    @CreationTimestamp
+    @Column(updatable = false, name = "created_at")
+    private Date createdAt;
+
+    @UpdateTimestamp
+    @Column(name = "updated_at")
+    private Date updatedAt;
+
+    @JsonIgnore
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
+    public Integer getId() { return id; }
+    public Piece setId(Integer id) { this.id = id; return this; }
+
+    public Organization getOrganization() { return organization; }
+    public Piece setOrganization(Organization organization) { this.organization = organization; return this; }
+
+    public PieceType getPieceType() { return pieceType; }
+    public Piece setPieceType(PieceType pieceType) { this.pieceType = pieceType; return this; }
+
+    public String getName() { return name; }
+    public Piece setName(String name) { this.name = name; return this; }
+
+    public String getDescription() { return description; }
+    public Piece setDescription(String description) { this.description = description; return this; }
+
+    public User getOwner() { return owner; }
+    public Piece setOwner(User owner) { this.owner = owner; return this; }
+
+    public Location getLocation() { return location; }
+    public Piece setLocation(Location location) { this.location = location; return this; }
+
+    public PieceStatus getStatus() { return status; }
+    public Piece setStatus(PieceStatus status) { this.status = status; return this; }
+
+    public Date getCreatedAt() { return createdAt; }
+    public Date getUpdatedAt() { return updatedAt; }
+
+    public LocalDateTime getDeletedAt() { return deletedAt; }
+    public Piece setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; return this; }
+}

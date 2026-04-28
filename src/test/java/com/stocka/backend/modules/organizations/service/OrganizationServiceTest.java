@@ -1,9 +1,12 @@
 package com.stocka.backend.modules.organizations.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
@@ -28,6 +31,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.stocka.backend.modules.common.dto.AvailabilityResponse;
+import com.stocka.backend.modules.common.dto.AvailabilityResponse.Reason;
 import com.stocka.backend.modules.organizations.dto.CreateOrganizationDto;
 import com.stocka.backend.modules.organizations.dto.UpdateOrganizationDto;
 import com.stocka.backend.modules.organizations.entity.AuditAction;
@@ -122,6 +127,77 @@ class OrganizationServiceTest {
                     () -> sut.create(dto, actor));
             assertEquals(HttpStatus.CONFLICT, ex.getStatusCode());
             verify(organizationRepository, never()).save(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("checkSlugAvailability")
+    class CheckSlugAvailability {
+
+        @org.junit.jupiter.params.ParameterizedTest(name = "[{index}] invalid: \"{0}\"")
+        @org.junit.jupiter.params.provider.NullAndEmptySource
+        @org.junit.jupiter.params.provider.ValueSource(strings = {
+                "ab",                                          // too short
+                "abcdefghijklmnopqrstuvwxyz0123456789-extra-x", // too long (41)
+                "Acme",                                        // uppercase
+                "ac me",                                       // space
+                "acme!",                                       // special char
+                "acmé",                                        // unicode
+                "acme_org"                                     // underscore not allowed
+        })
+        @DisplayName("should return INVALID_FORMAT for malformed slugs")
+        void should_returnInvalidFormat_when_malformed(String input) {
+            AvailabilityResponse res = sut.checkSlugAvailability(input);
+
+            assertFalse(res.available());
+            assertEquals(Reason.INVALID_FORMAT, res.reason());
+        }
+
+        @org.junit.jupiter.params.ParameterizedTest(name = "[{index}] reserved: {0}")
+        @org.junit.jupiter.params.provider.ValueSource(strings = {
+                "admin", "api", "www", "app", "auth", "health",
+                "users", "organizations", "invitations"
+        })
+        @DisplayName("should return RESERVED for reserved slugs")
+        void should_returnReserved_when_reserved(String input) {
+            AvailabilityResponse res = sut.checkSlugAvailability(input);
+
+            assertFalse(res.available());
+            assertEquals(Reason.RESERVED, res.reason());
+        }
+
+        @Test
+        @DisplayName("should return TAKEN when the slug already exists")
+        void should_returnTaken_when_slugExists() {
+            when(organizationRepository.existsBySlug("acme")).thenReturn(true);
+
+            AvailabilityResponse res = sut.checkSlugAvailability("acme");
+
+            assertFalse(res.available());
+            assertEquals(Reason.TAKEN, res.reason());
+        }
+
+        @Test
+        @DisplayName("should return available when format is valid, not reserved, and free")
+        void should_returnAvailable_when_validAndFree() {
+            when(organizationRepository.existsBySlug("acme")).thenReturn(false);
+
+            AvailabilityResponse res = sut.checkSlugAvailability("acme");
+
+            assertTrue(res.available());
+            assertNull(res.reason());
+        }
+
+        @Test
+        @DisplayName("should accept slugs at the boundary lengths (3 and 40)")
+        void should_returnAvailable_when_lengthAtBoundaries() {
+            String fortyChars = "abcdefghij-abcdefghij-abcdefghij-abcdefg";
+            assertEquals(40, fortyChars.length());
+            when(organizationRepository.existsBySlug("abc")).thenReturn(false);
+            when(organizationRepository.existsBySlug(fortyChars)).thenReturn(false);
+
+            assertTrue(sut.checkSlugAvailability("abc").available());
+            assertTrue(sut.checkSlugAvailability(fortyChars).available());
         }
     }
 

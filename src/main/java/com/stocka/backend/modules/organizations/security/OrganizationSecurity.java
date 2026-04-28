@@ -13,6 +13,12 @@ import com.stocka.backend.modules.organizations.repository.OrganizationRepositor
 import com.stocka.backend.modules.roles.entity.RoleEnum;
 import com.stocka.backend.modules.users.entity.User;
 
+/**
+ * Authorization helpers used from {@code @PreAuthorize} expressions on REST controllers.
+ *
+ * <p>Bean name {@code orgSecurity} so SpEL can reference it as
+ * {@code @PreAuthorize("@orgSecurity.canWritePieces(#orgId, principal)")}.
+ */
 @Component("orgSecurity")
 public class OrganizationSecurity {
     private final OrganizationRepository organizationRepository;
@@ -30,7 +36,8 @@ public class OrganizationSecurity {
         return hasAnyRole(orgId, principal, Set.of(
                 OrganizationRoleEnum.OWNER,
                 OrganizationRoleEnum.MANAGER,
-                OrganizationRoleEnum.USER
+                OrganizationRoleEnum.USER,
+                OrganizationRoleEnum.SPECTATOR
         ));
     }
 
@@ -43,6 +50,37 @@ public class OrganizationSecurity {
                 OrganizationRoleEnum.OWNER,
                 OrganizationRoleEnum.MANAGER
         ));
+    }
+
+    public boolean isSpectator(Integer orgId, Object principal) {
+        return hasAnyRole(orgId, principal, Set.of(OrganizationRoleEnum.SPECTATOR));
+    }
+
+    /**
+     * Anyone in the organization (including SPECTATOR) can read its content.
+     * Alias of {@link #isMember(Integer, Object)} kept for semantic clarity at call sites.
+     */
+    public boolean canReadOrgContent(Integer orgId, Object principal) {
+        return isMember(orgId, principal);
+    }
+
+    /**
+     * OWNER, MANAGER and USER can create/modify/delete pieces and their attachments.
+     * SPECTATOR cannot.
+     */
+    public boolean canWritePieces(Integer orgId, Object principal) {
+        return hasAnyRole(orgId, principal, Set.of(
+                OrganizationRoleEnum.OWNER,
+                OrganizationRoleEnum.MANAGER,
+                OrganizationRoleEnum.USER
+        ));
+    }
+
+    /**
+     * Only OWNER and MANAGER can create/modify/delete locations and piece types.
+     */
+    public boolean canManageOrgContent(Integer orgId, Object principal) {
+        return isOwnerOrManager(orgId, principal);
     }
 
     private boolean hasAnyRole(Integer orgId, Object principal, Set<OrganizationRoleEnum> allowed) {

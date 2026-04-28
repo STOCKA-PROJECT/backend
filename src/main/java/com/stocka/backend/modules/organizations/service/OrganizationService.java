@@ -14,6 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.stocka.backend.modules.common.dto.AvailabilityResponse;
+import com.stocka.backend.modules.common.dto.AvailabilityResponse.Reason;
 import com.stocka.backend.modules.organizations.dto.CreateOrganizationDto;
 import com.stocka.backend.modules.organizations.dto.UpdateOrganizationDto;
 import com.stocka.backend.modules.organizations.entity.AuditAction;
@@ -153,6 +155,25 @@ public class OrganizationService {
         organizationRepository.save(org);
 
         auditService.log(org, actor, AuditAction.ORG_DELETED, null, null);
+    }
+
+    /**
+     * Checks whether the given slug can be used for a new organization.
+     *
+     * @param slug candidate slug; may be {@code null}
+     * @return an {@link AvailabilityResponse} describing the result; never {@code null}
+     */
+    public AvailabilityResponse checkSlugAvailability(String slug) {
+        if (slug == null || !SLUG_PATTERN.matcher(slug).matches()) {
+            return AvailabilityResponse.unavailable(Reason.INVALID_FORMAT);
+        }
+        if (RESERVED_SLUGS.contains(slug)) {
+            return AvailabilityResponse.unavailable(Reason.RESERVED);
+        }
+        if (organizationRepository.existsBySlug(slug)) {
+            return AvailabilityResponse.unavailable(Reason.TAKEN);
+        }
+        return AvailabilityResponse.ok();
     }
 
     private void validateSlug(String slug, Integer currentOrgId) {

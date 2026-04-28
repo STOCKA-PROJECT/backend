@@ -1,0 +1,25 @@
+meta {
+  name: Update Piece (change owner)
+  type: http
+  seq: 8
+}
+
+patch {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces/{{pieceId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "ownerUserId": {{ownerUserId}}
+  }
+}

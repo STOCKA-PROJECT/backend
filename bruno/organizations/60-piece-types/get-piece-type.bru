@@ -1,0 +1,15 @@
+meta {
+  name: Get Piece Type
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/piece-types/{{pieceTypeId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}

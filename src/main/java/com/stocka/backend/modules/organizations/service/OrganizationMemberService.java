@@ -136,7 +136,7 @@ public class OrganizationMemberService {
             return true;
         }
         if (actorRole == OrganizationRoleEnum.MANAGER) {
-            return targetRole == OrganizationRoleEnum.USER;
+            return targetRole == OrganizationRoleEnum.USER || targetRole == OrganizationRoleEnum.SPECTATOR;
         }
         return false;
     }

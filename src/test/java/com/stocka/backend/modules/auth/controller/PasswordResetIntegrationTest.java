@@ -53,7 +53,7 @@ class PasswordResetIntegrationTest {
     private MockMvc mockMvc;
 
     private static final String EMAIL = "reset-user@test.com";
-    private static final String USERNAME = "reset-user";
+    private static final String USERNAME = "resetuser";
     private static final String OLD_PASSWORD = "password123";
     private static final String NEW_PASSWORD = "newPassword456";
 

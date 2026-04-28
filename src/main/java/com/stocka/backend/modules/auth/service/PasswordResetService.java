@@ -42,8 +42,7 @@ public class PasswordResetService {
             PasswordEncoder passwordEncoder,
             EmailService emailService,
             @Value("${app.password-reset.token-ttl-minutes:30}") long ttlMinutes,
-            @Value("${app.frontend.base-url}") String frontendBaseUrl
-    ) {
+            @Value("${app.frontend.base-url}") String frontendBaseUrl) {
         this.userRepository = userRepository;
         this.tokenRepository = tokenRepository;
         this.passwordEncoder = passwordEncoder;
@@ -86,8 +85,7 @@ public class PasswordResetService {
         if (dto.getNewPassword() == null || dto.getNewPassword().length() < MIN_PASSWORD_LENGTH) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "La contraseña debe tener al menos " + MIN_PASSWORD_LENGTH + " caracteres"
-            );
+                    "La contraseña debe tener al menos " + MIN_PASSWORD_LENGTH + " caracteres");
         }
         if (!dto.getNewPassword().equals(dto.getRepeatPassword())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Las contraseñas no coinciden");
@@ -127,7 +125,8 @@ public class PasswordResetService {
     }
 
     private String buildResetUrl(String rawToken) {
-        String base = frontendBaseUrl.endsWith("/") ? frontendBaseUrl.substring(0, frontendBaseUrl.length() - 1) : frontendBaseUrl;
-        return base + "/reset-password?token=" + rawToken;
+        String base = frontendBaseUrl.endsWith("/") ? frontendBaseUrl.substring(0, frontendBaseUrl.length() - 1)
+                : frontendBaseUrl;
+        return base + "/restablecer-password?token=" + rawToken;
     }
 }

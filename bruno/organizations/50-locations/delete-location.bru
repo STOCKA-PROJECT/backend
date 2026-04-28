@@ -1,0 +1,15 @@
+meta {
+  name: Delete Location (must be empty)
+  type: http
+  seq: 8
+}
+
+delete {
+  url: {{baseUrl}}/organizations/{{orgId}}/locations/{{locationId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}

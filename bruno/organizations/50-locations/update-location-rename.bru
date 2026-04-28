@@ -1,0 +1,25 @@
+meta {
+  name: Update Location (rename)
+  type: http
+  seq: 6
+}
+
+patch {
+  url: {{baseUrl}}/organizations/{{orgId}}/locations/{{locationId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Almacén renombrado"
+  }
+}

@@ -1,0 +1,25 @@
+meta {
+  name: Check Username Availability
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{baseUrl}}/auth/check-username?username=freshuser
+  body: none
+  auth: none
+}
+
+params:query {
+  username: freshuser
+}
+
+docs {
+  Returns { available: boolean, reason: "TAKEN" | "RESERVED" | "INVALID_FORMAT" | null }.
+
+  Try the following values to exercise each branch:
+    - freshuser     → available: true, reason: null
+    - test          → available: false, reason: TAKEN (after running signup-user.bru)
+    - admin         → available: false, reason: RESERVED
+    - Joan-Test!    → available: false, reason: INVALID_FORMAT
+}

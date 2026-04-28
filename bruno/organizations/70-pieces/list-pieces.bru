@@ -1,0 +1,15 @@
+meta {
+  name: List Pieces (paginated)
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces?page=0&size=20&sort=updatedAt,desc
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}

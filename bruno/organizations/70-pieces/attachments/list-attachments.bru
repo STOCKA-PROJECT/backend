@@ -1,0 +1,15 @@
+meta {
+  name: List Attachments (optional kind filter)
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces/{{pieceId}}/attachments
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}

@@ -1,0 +1,15 @@
+meta {
+  name: Delete Attribute
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{baseUrl}}/organizations/{{orgId}}/piece-types/{{pieceTypeId}}/attributes/{{attributeId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}

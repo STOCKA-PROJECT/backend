@@ -1,0 +1,15 @@
+meta {
+  name: Get Locations Tree
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/locations/tree
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}

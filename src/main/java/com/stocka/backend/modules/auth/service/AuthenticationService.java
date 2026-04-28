@@ -1,6 +1,8 @@
 package com.stocka.backend.modules.auth.service;
 
 import java.util.Optional;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -12,6 +14,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.stocka.backend.modules.auth.dto.LoginUserDto;
 import com.stocka.backend.modules.auth.dto.RegisterUserDto;
+import com.stocka.backend.modules.common.dto.AvailabilityResponse;
+import com.stocka.backend.modules.common.dto.AvailabilityResponse.Reason;
 import com.stocka.backend.modules.roles.entity.Role;
 import com.stocka.backend.modules.roles.entity.RoleEnum;
 import com.stocka.backend.modules.roles.repository.RoleRepository;
@@ -24,6 +28,15 @@ import com.stocka.backend.modules.users.repository.UserRepository;
 
 @Service
 public class AuthenticationService {
+
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-z0-9]{3,24}$");
+
+    private static final Set<String> RESERVED_USERNAMES = Set.of(
+            "admin", "api", "root", "support", "system", "stocka",
+            "auth", "users", "www", "app", "health",
+            "null", "undefined"
+    );
+
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
@@ -58,8 +71,16 @@ public class AuthenticationService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe un usuario con ese email");
         }
 
-        if (userRepository.findByUsername(input.getUsername()).isPresent()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe un usuario con ese username");
+        AvailabilityResponse usernameCheck = checkUsernameAvailability(input.getUsername());
+        if (!usernameCheck.available()) {
+            switch (usernameCheck.reason()) {
+                case INVALID_FORMAT -> throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, "El nombre de usuario no es válido");
+                case RESERVED -> throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, "Ese nombre de usuario está reservado");
+                case TAKEN -> throw new ResponseStatusException(
+                        HttpStatus.CONFLICT, "Ya existe un usuario con ese username");
+            }
         }
 
         Optional<Role> optionalRole = roleRepository.findByName(RoleEnum.USER);
@@ -79,6 +100,25 @@ public class AuthenticationService {
                 .setLanguage(language);
 
         return userRepository.save(user);
+    }
+
+    /**
+     * Checks whether the given username can be used to register a new user.
+     *
+     * @param username candidate username; may be {@code null}
+     * @return an {@link AvailabilityResponse} describing the result; never {@code null}
+     */
+    public AvailabilityResponse checkUsernameAvailability(String username) {
+        if (username == null || !USERNAME_PATTERN.matcher(username).matches()) {
+            return AvailabilityResponse.unavailable(Reason.INVALID_FORMAT);
+        }
+        if (RESERVED_USERNAMES.contains(username)) {
+            return AvailabilityResponse.unavailable(Reason.RESERVED);
+        }
+        if (userRepository.existsByUsername(username)) {
+            return AvailabilityResponse.unavailable(Reason.TAKEN);
+        }
+        return AvailabilityResponse.ok();
     }
 
     public void logout(String token) {

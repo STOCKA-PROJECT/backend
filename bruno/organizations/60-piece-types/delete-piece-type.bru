@@ -1,0 +1,15 @@
+meta {
+  name: Delete Piece Type (only if no pieces)
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{baseUrl}}/organizations/{{orgId}}/piece-types/{{pieceTypeId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}

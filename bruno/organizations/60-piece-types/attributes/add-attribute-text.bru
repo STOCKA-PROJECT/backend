@@ -1,0 +1,29 @@
+meta {
+  name: Add Attribute (TEXT)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/piece-types/{{pieceTypeId}}/attributes
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "marca",
+    "displayName": "Marca",
+    "type": "TEXT",
+    "required": false,
+    "validators": { "maxLength": 80 }
+  }
+}

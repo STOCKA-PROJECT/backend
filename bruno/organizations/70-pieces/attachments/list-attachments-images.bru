@@ -1,0 +1,15 @@
+meta {
+  name: List Attachments (only images)
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces/{{pieceId}}/attachments?kind=IMAGE
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}

@@ -1,0 +1,26 @@
+meta {
+  name: Create Piece (without required values → PENDING)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Yunque",
+    "pieceTypeId": {{pieceTypeId}}
+  }
+}

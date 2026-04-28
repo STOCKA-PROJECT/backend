@@ -1,0 +1,20 @@
+meta {
+  name: Upload Image (jpg/png/webp/gif, max 25 MB)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces/{{pieceId}}/attachments
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:multipart-form {
+  kind: IMAGE
+  file: @file()
+}

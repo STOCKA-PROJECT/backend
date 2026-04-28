@@ -77,6 +77,42 @@ On startup, `RoleSeeder` creates USER/ADMIN roles, then `AdminSeeder` creates a 
 | GET    | `/users`       | ADMIN         | List all users           |
 | POST   | `/admins`      | ADMIN         | Create admin user        |
 
+### Domain endpoints (under `/organizations/{orgId}/...`)
+
+Org membership roles: `OWNER`, `MANAGER`, `USER`, `SPECTATOR` (read-only).
+
+| Method | Path                                          | Access (org role)         | Description                     |
+|--------|-----------------------------------------------|---------------------------|---------------------------------|
+| POST   | `/locations`                                  | OWNER, MANAGER            | Create location (root or child) |
+| GET    | `/locations` / `/locations/tree` / `/{id}`    | any member incl. SPECTATOR| List/tree/detail                |
+| PATCH  | `/locations/{id}`                             | OWNER, MANAGER            | Rename / move (no cycles)       |
+| DELETE | `/locations/{id}`                             | OWNER, MANAGER            | Soft-delete (must be empty)     |
+| POST   | `/piece-types` (+`/{id}/attributes`)          | OWNER, MANAGER            | Create types and attributes     |
+| GET    | `/piece-types` / `/{id}`                      | any member                | List / detail                   |
+| PATCH  | `/piece-types/{id}` (+`/attributes/{attrId}`) | OWNER, MANAGER            | Rename, toggle required, etc.   |
+| DELETE | `/piece-types/{id}` (+`/attributes/{attrId}`) | OWNER, MANAGER            | Soft-delete (no pieces)         |
+| POST   | `/pieces`                                     | OWNER, MANAGER, USER      | Create piece                    |
+| GET    | `/pieces` (filters) / `/{id}`                 | any member                | Paginated list / detail         |
+| PATCH  | `/pieces/{id}`                                | OWNER, MANAGER, USER      | Update fields/values            |
+| DELETE | `/pieces/{id}`                                | OWNER, MANAGER, USER      | Soft-delete                     |
+| GET    | `/pieces/{id}/history`                        | any member                | Diff-based history              |
+| POST   | `/pieces/{id}/attachments`                    | OWNER, MANAGER, USER      | Upload IMAGE or DOCUMENT        |
+| GET    | `/pieces/{id}/attachments(?kind=)`            | any member                | List                            |
+| GET    | `/pieces/{id}/attachments/{aid}/download`     | any member                | 302 to presigned URL            |
+| DELETE | `/pieces/{id}/attachments/{aid}`              | OWNER, MANAGER, USER      | Soft-delete + best-effort R2 rm |
+
+### Storage (Cloudflare R2)
+
+Attachments live in Cloudflare R2 via the AWS S3 SDK v2 (`software.amazon.awssdk:s3`). In dev,
+the local fallback (`LocalR2StorageService`, active when `stocka.r2.use-local=true`, the default)
+writes files to `${stocka.r2.local-dir:/tmp/stocka-r2/}` and serves them through
+`LocalR2DownloadController` at `/dev/r2/**`. To use real R2 set `R2_USE_LOCAL=false` and
+`R2_BUCKET`, `R2_ENDPOINT`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`.
+
+Per-piece attachment limits (configurable via `stocka.pieces.attachment.*`):
+- IMAGE: jpg/png/webp/gif, max 25 MB, max 50 per piece.
+- DOCUMENT: any MIME (incl. images), max 100 MB, max 50 per piece.
+
 ## API Testing
 
 Bruno collections are in `bruno/`. See `bruno/README.md` for the recommended test sequence.

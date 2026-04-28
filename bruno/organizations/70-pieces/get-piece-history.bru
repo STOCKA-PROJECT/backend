@@ -1,0 +1,15 @@
+meta {
+  name: Get Piece History (paginated, desc)
+  type: http
+  seq: 11
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces/{{pieceId}}/history?page=0&size=20
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}

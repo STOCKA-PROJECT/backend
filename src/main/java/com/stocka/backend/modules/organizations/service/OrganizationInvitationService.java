@@ -50,8 +50,7 @@ public class OrganizationInvitationService {
             EmailService emailService,
             UserRepository userRepository,
             @Value("${app.organization.max-pending-invitations:50}") long maxPendingInvitations,
-            @Value("${app.frontend.base-url:http://localhost:5173}") String frontendBaseUrl
-    ) {
+            @Value("${app.frontend.base-url:http://localhost:3002}") String frontendBaseUrl) {
         this.invitationRepository = invitationRepository;
         this.memberRepository = memberRepository;
         this.organizationService = organizationService;
@@ -89,7 +88,8 @@ public class OrganizationInvitationService {
                     "Este usuario ya es miembro de la organización");
         }
 
-        if (invitationRepository.findByOrganizationAndEmailAndStatus(org, email, InvitationStatus.PENDING).isPresent()) {
+        if (invitationRepository.findByOrganizationAndEmailAndStatus(org, email, InvitationStatus.PENDING)
+                .isPresent()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Ya existe una invitación pendiente para este email");
         }
@@ -121,8 +121,7 @@ public class OrganizationInvitationService {
 
         auditService.log(org, actor, AuditAction.MEMBER_INVITED, null, Map.of(
                 "email", email,
-                "role", dto.getRole().name()
-        ));
+                "role", dto.getRole().name()));
         return saved;
     }
 
@@ -150,8 +149,7 @@ public class OrganizationInvitationService {
         invitationRepository.save(invitation);
 
         auditService.log(invitation.getOrganization(), actor, AuditAction.INVITATION_CANCELLED, null, Map.of(
-                "email", invitation.getEmail()
-        ));
+                "email", invitation.getEmail()));
     }
 
     public List<OrganizationInvitation> listMyInvitations(User actor) {
@@ -194,8 +192,7 @@ public class OrganizationInvitationService {
         OrganizationInvitation saved = invitationRepository.save(invitation);
 
         auditService.log(org, actor, AuditAction.INVITATION_ACCEPTED, actor, Map.of(
-                "role", invitation.getRole().name()
-        ));
+                "role", invitation.getRole().name()));
         return saved;
     }
 
@@ -218,8 +215,7 @@ public class OrganizationInvitationService {
         OrganizationInvitation saved = invitationRepository.save(invitation);
 
         auditService.log(invitation.getOrganization(), actor, AuditAction.INVITATION_REJECTED, actor, Map.of(
-                "email", invitation.getEmail()
-        ));
+                "email", invitation.getEmail()));
         return saved;
     }
 
@@ -237,7 +233,8 @@ public class OrganizationInvitationService {
         if (actorRole == OrganizationRoleEnum.OWNER) {
             return;
         }
-        if (actorRole == OrganizationRoleEnum.MANAGER && invitedRole == OrganizationRoleEnum.USER) {
+        if (actorRole == OrganizationRoleEnum.MANAGER
+                && (invitedRole == OrganizationRoleEnum.USER || invitedRole == OrganizationRoleEnum.SPECTATOR)) {
             return;
         }
         throw new ResponseStatusException(HttpStatus.FORBIDDEN,

@@ -1,6 +1,8 @@
 package com.stocka.backend.modules.auth.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -32,6 +34,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.stocka.backend.modules.auth.dto.LoginUserDto;
 import com.stocka.backend.modules.auth.dto.RegisterUserDto;
+import com.stocka.backend.modules.common.dto.AvailabilityResponse;
+import com.stocka.backend.modules.common.dto.AvailabilityResponse.Reason;
 import com.stocka.backend.modules.roles.entity.Role;
 import com.stocka.backend.modules.roles.entity.RoleEnum;
 import com.stocka.backend.modules.roles.repository.RoleRepository;
@@ -78,7 +82,6 @@ class AuthenticationServiceTest {
         @DisplayName("should return the saved user when input is valid")
         void should_returnSavedUser_when_inputIsValid() {
             when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
-            when(userRepository.findByUsername(any())).thenReturn(Optional.empty());
             when(roleRepository.findByName(RoleEnum.USER)).thenReturn(Optional.of(userRole));
             when(passwordEncoder.encode(any())).thenReturn("hashed");
             User expected = new User();
@@ -120,7 +123,7 @@ class AuthenticationServiceTest {
         @DisplayName("should throw 409 when username is already taken")
         void should_throwConflict_when_usernameAlreadyExists() {
             when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
-            when(userRepository.findByUsername(validDto.getUsername())).thenReturn(Optional.of(new User()));
+            when(userRepository.existsByUsername(validDto.getUsername())).thenReturn(true);
 
             ResponseStatusException ex = assertThrows(
                     ResponseStatusException.class,
@@ -131,10 +134,37 @@ class AuthenticationServiceTest {
         }
 
         @Test
+        @DisplayName("should throw 400 when username has invalid format")
+        void should_throwBadRequest_when_usernameInvalidFormat() {
+            validDto.setUsername("Joan-Test!");
+            when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
+
+            ResponseStatusException ex = assertThrows(
+                    ResponseStatusException.class,
+                    () -> sut.signup(validDto)
+            );
+
+            assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        }
+
+        @Test
+        @DisplayName("should throw 400 when username is reserved")
+        void should_throwBadRequest_when_usernameReserved() {
+            validDto.setUsername("admin");
+            when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
+
+            ResponseStatusException ex = assertThrows(
+                    ResponseStatusException.class,
+                    () -> sut.signup(validDto)
+            );
+
+            assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        }
+
+        @Test
         @DisplayName("should throw IllegalStateException when USER role does not exist in DB")
         void should_throwIllegalState_when_userRoleNotFound() {
             when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
-            when(userRepository.findByUsername(any())).thenReturn(Optional.empty());
             when(roleRepository.findByName(RoleEnum.USER)).thenReturn(Optional.empty());
 
             assertThrows(
@@ -147,7 +177,6 @@ class AuthenticationServiceTest {
         @DisplayName("should set emailVerified=true on the created user")
         void should_setEmailVerifiedTrue_on_createdUser() {
             when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
-            when(userRepository.findByUsername(any())).thenReturn(Optional.empty());
             when(roleRepository.findByName(RoleEnum.USER)).thenReturn(Optional.of(userRole));
             when(passwordEncoder.encode(any())).thenReturn("hashed");
             ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
@@ -162,7 +191,6 @@ class AuthenticationServiceTest {
         @DisplayName("should persist encoded password, not the raw one")
         void should_encodePassword_on_createdUser() {
             when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
-            when(userRepository.findByUsername(any())).thenReturn(Optional.empty());
             when(roleRepository.findByName(RoleEnum.USER)).thenReturn(Optional.of(userRole));
             when(passwordEncoder.encode("password123")).thenReturn("hashed_value");
             ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
@@ -171,6 +199,77 @@ class AuthenticationServiceTest {
             sut.signup(validDto);
 
             assertEquals("hashed_value", captor.getValue().getPassword());
+        }
+    }
+
+    @Nested
+    @DisplayName("checkUsernameAvailability")
+    class CheckUsernameAvailability {
+
+        @org.junit.jupiter.params.ParameterizedTest(name = "[{index}] invalid: \"{0}\"")
+        @org.junit.jupiter.params.provider.NullAndEmptySource
+        @org.junit.jupiter.params.provider.ValueSource(strings = {
+                "ab",                       // too short
+                "abcdefghijklmnopqrstuvwxy", // too long (25)
+                "Joan",                     // uppercase
+                "joan test",                // space
+                "joan-test",                // hyphen
+                "joan_test",                // underscore
+                "joan.test",                // dot
+                "joáñ",                     // unicode
+                "joan!"                     // special char
+        })
+        @DisplayName("should return INVALID_FORMAT for malformed usernames")
+        void should_returnInvalidFormat_when_malformed(String input) {
+            AvailabilityResponse res = sut.checkUsernameAvailability(input);
+
+            assertFalse(res.available());
+            assertEquals(Reason.INVALID_FORMAT, res.reason());
+        }
+
+        @org.junit.jupiter.params.ParameterizedTest(name = "[{index}] reserved: {0}")
+        @org.junit.jupiter.params.provider.ValueSource(strings = {
+                "admin", "api", "root", "support", "system", "stocka",
+                "auth", "users", "www", "app", "health"
+        })
+        @DisplayName("should return RESERVED for reserved usernames")
+        void should_returnReserved_when_reserved(String input) {
+            AvailabilityResponse res = sut.checkUsernameAvailability(input);
+
+            assertFalse(res.available());
+            assertEquals(Reason.RESERVED, res.reason());
+        }
+
+        @Test
+        @DisplayName("should return TAKEN when the username already exists")
+        void should_returnTaken_when_usernameExists() {
+            when(userRepository.existsByUsername("joantest")).thenReturn(true);
+
+            AvailabilityResponse res = sut.checkUsernameAvailability("joantest");
+
+            assertFalse(res.available());
+            assertEquals(Reason.TAKEN, res.reason());
+        }
+
+        @Test
+        @DisplayName("should return available when format is valid, not reserved, and free")
+        void should_returnAvailable_when_validAndFree() {
+            when(userRepository.existsByUsername("joantest")).thenReturn(false);
+
+            AvailabilityResponse res = sut.checkUsernameAvailability("joantest");
+
+            assertTrue(res.available());
+            assertNull(res.reason());
+        }
+
+        @Test
+        @DisplayName("should accept usernames at the boundary lengths (3 and 24)")
+        void should_returnAvailable_when_lengthAtBoundaries() {
+            when(userRepository.existsByUsername("abc")).thenReturn(false);
+            when(userRepository.existsByUsername("abcdefghijklmnopqrstuvwx")).thenReturn(false);
+
+            assertTrue(sut.checkUsernameAvailability("abc").available());
+            assertTrue(sut.checkUsernameAvailability("abcdefghijklmnopqrstuvwx").available());
         }
     }
 

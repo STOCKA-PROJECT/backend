@@ -13,8 +13,10 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.stocka.backend.modules.common.dto.AvailabilityResponse;
 import com.stocka.backend.modules.organizations.dto.CreateOrganizationDto;
 import com.stocka.backend.modules.organizations.dto.OrganizationResponseDto;
 import com.stocka.backend.modules.organizations.dto.UpdateOrganizationDto;
@@ -38,6 +40,18 @@ public class OrganizationController {
         User actor = currentUser();
         Organization org = organizationService.create(dto, actor);
         return ResponseEntity.ok(OrganizationResponseDto.from(org, OrganizationRoleEnum.OWNER));
+    }
+
+    /**
+     * Returns whether the given slug is available for a new organization.
+     *
+     * @param slug candidate slug
+     * @return availability result with reason when unavailable
+     */
+    @GetMapping("/check-slug")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<AvailabilityResponse> checkSlug(@RequestParam String slug) {
+        return ResponseEntity.ok(organizationService.checkSlugAvailability(slug));
     }
 
     @GetMapping

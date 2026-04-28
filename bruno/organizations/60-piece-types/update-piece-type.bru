@@ -1,0 +1,25 @@
+meta {
+  name: Update Piece Type (rename)
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/organizations/{{orgId}}/piece-types/{{pieceTypeId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Herramienta eléctrica"
+  }
+}

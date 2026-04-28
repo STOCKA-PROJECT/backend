@@ -1,0 +1,29 @@
+meta {
+  name: Check Slug Availability
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/organizations/check-slug?slug=fresh-slug
+  body: none
+  auth: bearer
+}
+
+params:query {
+  slug: fresh-slug
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  Returns { available: boolean, reason: "TAKEN" | "RESERVED" | "INVALID_FORMAT" | null }.
+
+  Try the following values to exercise each branch:
+    - fresh-slug    → available: true, reason: null
+    - belen         → available: false, reason: TAKEN (after running create-organization.bru)
+    - admin         → available: false, reason: RESERVED
+    - Bad Slug!     → available: false, reason: INVALID_FORMAT
+}

@@ -1,0 +1,32 @@
+meta {
+  name: Create Piece (with all required values → ACTIVE)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Martillo industrial",
+    "description": "Martillo de acero forjado",
+    "pieceTypeId": {{pieceTypeId}},
+    "ownerUserId": {{ownerUserId}},
+    "locationId": {{locationId}},
+    "attributeValues": [
+      { "attributeId": {{attributeId}}, "value": "rojo" }
+    ]
+  }
+}

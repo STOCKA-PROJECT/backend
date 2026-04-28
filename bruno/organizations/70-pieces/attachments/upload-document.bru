@@ -1,0 +1,20 @@
+meta {
+  name: Upload Document (any mime, max 100 MB — even an image is valid here)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces/{{pieceId}}/attachments
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:multipart-form {
+  kind: DOCUMENT
+  file: @file()
+}

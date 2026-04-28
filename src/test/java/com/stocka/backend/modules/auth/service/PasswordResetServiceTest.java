@@ -1,35 +1,34 @@
 package com.stocka.backend.modules.auth.service;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
-
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import org.mockito.InOrder;
 import org.mockito.Mock;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -48,10 +47,14 @@ import com.stocka.backend.modules.users.repository.UserRepository;
 @DisplayName("PasswordResetService")
 class PasswordResetServiceTest {
 
-    @Mock private UserRepository userRepository;
-    @Mock private PasswordResetTokenRepository tokenRepository;
-    @Mock private PasswordEncoder passwordEncoder;
-    @Mock private EmailService emailService;
+    @Mock
+    private UserRepository userRepository;
+    @Mock
+    private PasswordResetTokenRepository tokenRepository;
+    @Mock
+    private PasswordEncoder passwordEncoder;
+    @Mock
+    private EmailService emailService;
 
     private PasswordResetService sut;
 
@@ -65,8 +68,7 @@ class PasswordResetServiceTest {
                 passwordEncoder,
                 emailService,
                 30L,
-                "http://localhost:5173"
-        );
+                "http://localhost:3002");
         existingUser = new User()
                 .setId(42)
                 .setName("Joan")
@@ -160,11 +162,12 @@ class PasswordResetServiceTest {
             sut.requestReset(existingUser.getEmail());
 
             ArgumentCaptor<String> urlCaptor = ArgumentCaptor.forClass(String.class);
-            verify(emailService).sendPasswordResetEmail(eq(existingUser.getEmail()), eq(existingUser.getName()), urlCaptor.capture(), eq(Language.ES));
+            verify(emailService).sendPasswordResetEmail(eq(existingUser.getEmail()), eq(existingUser.getName()),
+                    urlCaptor.capture(), eq(Language.ES));
             String url = urlCaptor.getValue();
-            assertTrue(url.startsWith("http://localhost:5173/reset-password?token="),
+            assertTrue(url.startsWith("http://localhost:3002/restablecer-password?token="),
                     "url must point to frontend reset path: " + url);
-            assertTrue(url.length() > "http://localhost:5173/reset-password?token=".length(),
+            assertTrue(url.length() > "http://localhost:3002/restablecer-password?token=".length(),
                     "url must include a non-empty token");
         }
 
@@ -181,8 +184,7 @@ class PasswordResetServiceTest {
             assertNotEquals(
                     captor.getAllValues().get(0).getTokenHash(),
                     captor.getAllValues().get(1).getTokenHash(),
-                    "two consecutive tokens must not match"
-            );
+                    "two consecutive tokens must not match");
         }
 
         @Test
@@ -190,16 +192,16 @@ class PasswordResetServiceTest {
         void should_stripTrailingSlash_from_frontendBaseUrl() {
             sut = new PasswordResetService(
                     userRepository, tokenRepository, passwordEncoder, emailService,
-                    30L, "http://localhost:5173/"
-            );
+                    30L, "http://localhost:3002/");
             when(userRepository.findByEmail(existingUser.getEmail())).thenReturn(Optional.of(existingUser));
             ArgumentCaptor<String> urlCaptor = ArgumentCaptor.forClass(String.class);
 
             sut.requestReset(existingUser.getEmail());
 
-            verify(emailService).sendPasswordResetEmail(anyString(), anyString(), urlCaptor.capture(), any(Language.class));
-            assertTrue(urlCaptor.getValue().startsWith("http://localhost:5173/reset-password?token="),
-                    "should not produce // before reset-password: " + urlCaptor.getValue());
+            verify(emailService).sendPasswordResetEmail(anyString(), anyString(), urlCaptor.capture(),
+                    any(Language.class));
+            assertTrue(urlCaptor.getValue().startsWith("http://localhost:3002/restablecer-password?token="),
+                    "should not produce // before restablecer-password: " + urlCaptor.getValue());
         }
 
         @Test
@@ -207,8 +209,7 @@ class PasswordResetServiceTest {
         void should_useConfiguredTtl_for_expiresAt() {
             sut = new PasswordResetService(
                     userRepository, tokenRepository, passwordEncoder, emailService,
-                    5L, "http://localhost:5173"
-            );
+                    5L, "http://localhost:3002");
             when(userRepository.findByEmail(existingUser.getEmail())).thenReturn(Optional.of(existingUser));
             ArgumentCaptor<PasswordResetToken> captor = ArgumentCaptor.forClass(PasswordResetToken.class);
 
@@ -231,7 +232,8 @@ class PasswordResetServiceTest {
 
             sut.requestReset(existingUser.getEmail());
 
-            verify(emailService).sendPasswordResetEmail(anyString(), anyString(), anyString(), languageCaptor.capture());
+            verify(emailService).sendPasswordResetEmail(anyString(), anyString(), anyString(),
+                    languageCaptor.capture());
             assertEquals(Language.ES, languageCaptor.getValue());
         }
 
@@ -244,7 +246,8 @@ class PasswordResetServiceTest {
 
             sut.requestReset(existingUser.getEmail());
 
-            verify(emailService).sendPasswordResetEmail(anyString(), anyString(), anyString(), languageCaptor.capture());
+            verify(emailService).sendPasswordResetEmail(anyString(), anyString(), anyString(),
+                    languageCaptor.capture());
             assertEquals(Language.EN, languageCaptor.getValue());
         }
 
@@ -257,7 +260,8 @@ class PasswordResetServiceTest {
 
             sut.requestReset(existingUser.getEmail());
 
-            verify(emailService).sendPasswordResetEmail(anyString(), anyString(), anyString(), languageCaptor.capture());
+            verify(emailService).sendPasswordResetEmail(anyString(), anyString(), anyString(),
+                    languageCaptor.capture());
             assertEquals(Language.CA, languageCaptor.getValue());
         }
     }
@@ -292,8 +296,7 @@ class PasswordResetServiceTest {
 
             ResponseStatusException ex = assertThrows(
                     ResponseStatusException.class,
-                    () -> sut.resetPassword(dto)
-            );
+                    () -> sut.resetPassword(dto));
 
             assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
             verifyNoInteractions(tokenRepository, userRepository, passwordEncoder);
@@ -306,8 +309,7 @@ class PasswordResetServiceTest {
 
             ResponseStatusException ex = assertThrows(
                     ResponseStatusException.class,
-                    () -> sut.resetPassword(dto)
-            );
+                    () -> sut.resetPassword(dto));
 
             assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
             verifyNoInteractions(tokenRepository, userRepository, passwordEncoder);
@@ -320,8 +322,7 @@ class PasswordResetServiceTest {
 
             ResponseStatusException ex = assertThrows(
                     ResponseStatusException.class,
-                    () -> sut.resetPassword(dto)
-            );
+                    () -> sut.resetPassword(dto));
 
             assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
             verifyNoInteractions(tokenRepository, userRepository, passwordEncoder);
@@ -334,8 +335,7 @@ class PasswordResetServiceTest {
 
             ResponseStatusException ex = assertThrows(
                     ResponseStatusException.class,
-                    () -> sut.resetPassword(dto)
-            );
+                    () -> sut.resetPassword(dto));
 
             assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
             verifyNoInteractions(tokenRepository, userRepository, passwordEncoder);
@@ -348,8 +348,7 @@ class PasswordResetServiceTest {
 
             ResponseStatusException ex = assertThrows(
                     ResponseStatusException.class,
-                    () -> sut.resetPassword(dto)
-            );
+                    () -> sut.resetPassword(dto));
 
             assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
             verifyNoInteractions(tokenRepository, userRepository, passwordEncoder);
@@ -363,8 +362,7 @@ class PasswordResetServiceTest {
 
             ResponseStatusException ex = assertThrows(
                     ResponseStatusException.class,
-                    () -> sut.resetPassword(dto)
-            );
+                    () -> sut.resetPassword(dto));
 
             assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
             verify(userRepository, never()).save(any());
@@ -380,8 +378,7 @@ class PasswordResetServiceTest {
 
             ResponseStatusException ex = assertThrows(
                     ResponseStatusException.class,
-                    () -> sut.resetPassword(validDto())
-            );
+                    () -> sut.resetPassword(validDto()));
 
             assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
             verify(userRepository, never()).save(any());
@@ -396,8 +393,7 @@ class PasswordResetServiceTest {
 
             ResponseStatusException ex = assertThrows(
                     ResponseStatusException.class,
-                    () -> sut.resetPassword(validDto())
-            );
+                    () -> sut.resetPassword(validDto()));
 
             assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
             verify(userRepository, never()).save(any());

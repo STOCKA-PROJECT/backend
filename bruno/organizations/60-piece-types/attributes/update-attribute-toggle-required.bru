@@ -1,0 +1,25 @@
+meta {
+  name: Update Attribute (toggle required)
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{baseUrl}}/organizations/{{orgId}}/piece-types/{{pieceTypeId}}/attributes/{{attributeId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "required": false
+  }
+}

@@ -1,0 +1,48 @@
+meta {
+  name: Create Piece Type (with attributes)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/piece-types
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Herramienta",
+    "attributes": [
+      {
+        "name": "color",
+        "displayName": "Color",
+        "type": "SELECT",
+        "required": true,
+        "validators": { "options": ["rojo", "azul", "verde"] }
+      },
+      {
+        "name": "peso",
+        "displayName": "Peso (kg)",
+        "type": "DECIMAL",
+        "required": false,
+        "validators": { "min": 0, "max": 1000, "decimals": 2 }
+      },
+      {
+        "name": "fecha_compra",
+        "displayName": "Fecha de compra",
+        "type": "DATE",
+        "required": false,
+        "validators": { "allowFuture": false }
+      }
+    ]
+  }
+}

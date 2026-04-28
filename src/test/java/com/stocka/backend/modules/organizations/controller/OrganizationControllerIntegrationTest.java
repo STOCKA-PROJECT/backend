@@ -241,4 +241,61 @@ class OrganizationControllerIntegrationTest {
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk());
     }
+
+    // -------------------------------------------------------------------------
+    // GET /organizations/check-slug
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("GET /check-slug 401 — should require authentication")
+    void checkSlug_should_return401_when_noAuth() throws Exception {
+        mockMvc.perform(get("/organizations/check-slug").param("slug", "anything"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("GET /check-slug 200 — returns available=true for a free, valid slug")
+    void checkSlug_should_returnAvailable_when_slugIsFree() throws Exception {
+        mockMvc.perform(get("/organizations/check-slug")
+                        .param("slug", "fresh-slug")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.available").value(true))
+                .andExpect(jsonPath("$.reason").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("GET /check-slug 200 — returns reason=TAKEN when slug already exists")
+    void checkSlug_should_returnTaken_when_slugExists() throws Exception {
+        createOrgAs(adminToken, "Acme", "acme");
+
+        mockMvc.perform(get("/organizations/check-slug")
+                        .param("slug", "acme")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.available").value(false))
+                .andExpect(jsonPath("$.reason").value("TAKEN"));
+    }
+
+    @Test
+    @DisplayName("GET /check-slug 200 — returns reason=RESERVED for reserved slugs")
+    void checkSlug_should_returnReserved_when_slugIsReserved() throws Exception {
+        mockMvc.perform(get("/organizations/check-slug")
+                        .param("slug", "admin")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.available").value(false))
+                .andExpect(jsonPath("$.reason").value("RESERVED"));
+    }
+
+    @Test
+    @DisplayName("GET /check-slug 200 — returns reason=INVALID_FORMAT for malformed slugs")
+    void checkSlug_should_returnInvalidFormat_when_slugMalformed() throws Exception {
+        mockMvc.perform(get("/organizations/check-slug")
+                        .param("slug", "Bad Slug!")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.available").value(false))
+                .andExpect(jsonPath("$.reason").value("INVALID_FORMAT"));
+    }
 }

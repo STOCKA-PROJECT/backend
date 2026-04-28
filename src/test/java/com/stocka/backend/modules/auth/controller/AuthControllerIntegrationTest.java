@@ -383,4 +383,65 @@ class AuthControllerIntegrationTest {
                     .andExpect(status().isBadRequest());
         }
     }
+
+    // -------------------------------------------------------------------------
+    // GET /auth/check-username
+    // -------------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("GET /auth/check-username")
+    class CheckUsername {
+
+        @Test
+        @DisplayName("200 — returns available=true for a free, valid username")
+        void should_returnAvailable_when_usernameIsFree() throws Exception {
+            mockMvc.perform(get("/auth/check-username").param("username", "freshuser"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.available").value(true))
+                    .andExpect(jsonPath("$.reason").doesNotExist());
+        }
+
+        @Test
+        @DisplayName("200 — returns available=false / reason=TAKEN when the username already exists")
+        void should_returnTaken_when_usernameAlreadyExists() throws Exception {
+            Map<String, String> payload = Map.of(
+                    "name", "Test", "lastName", "User", "username", "alreadytaken",
+                    "email", "taken@test.com", "password", "password123", "repeatPassword", "password123"
+            );
+            mockMvc.perform(post("/auth/signup")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(payload)))
+                    .andExpect(status().isOk());
+
+            mockMvc.perform(get("/auth/check-username").param("username", "alreadytaken"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.available").value(false))
+                    .andExpect(jsonPath("$.reason").value("TAKEN"));
+        }
+
+        @Test
+        @DisplayName("200 — returns reason=RESERVED for reserved usernames")
+        void should_returnReserved_when_usernameIsReserved() throws Exception {
+            mockMvc.perform(get("/auth/check-username").param("username", "admin"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.available").value(false))
+                    .andExpect(jsonPath("$.reason").value("RESERVED"));
+        }
+
+        @Test
+        @DisplayName("200 — returns reason=INVALID_FORMAT for malformed usernames")
+        void should_returnInvalidFormat_when_usernameMalformed() throws Exception {
+            mockMvc.perform(get("/auth/check-username").param("username", "Joan-Test"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.available").value(false))
+                    .andExpect(jsonPath("$.reason").value("INVALID_FORMAT"));
+        }
+
+        @Test
+        @DisplayName("200 — endpoint is publicly accessible (no auth)")
+        void should_bePublic() throws Exception {
+            mockMvc.perform(get("/auth/check-username").param("username", "anyone"))
+                    .andExpect(status().isOk());
+        }
+    }
 }

@@ -47,6 +47,12 @@ class OrganizationSecurityTest {
                 .setRole(new Role().setName(RoleEnum.ADMIN));
     }
 
+    private void mockMembership(OrganizationRoleEnum role) {
+        when(organizationRepository.findById(1)).thenReturn(Optional.of(org));
+        when(memberRepository.findByUserAndOrganization(userPrincipal, org))
+                .thenReturn(Optional.of(new OrganizationMember().setRole(role)));
+    }
+
     @Nested
     @DisplayName("isMember")
     class IsMember {
@@ -163,6 +169,151 @@ class OrganizationSecurityTest {
             when(memberRepository.findByUserAndOrganization(userPrincipal, org))
                     .thenReturn(Optional.of(new OrganizationMember().setRole(OrganizationRoleEnum.USER)));
             assertFalse(sut.isOwnerOrManager(1, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return false for SPECTATOR")
+        void should_returnFalse_for_spectator() {
+            mockMembership(OrganizationRoleEnum.SPECTATOR);
+            assertFalse(sut.isOwnerOrManager(1, userPrincipal));
+        }
+    }
+
+    @Nested
+    @DisplayName("isSpectator")
+    class IsSpectator {
+
+        @Test
+        @DisplayName("should return true only for SPECTATOR")
+        void should_returnTrue_only_for_spectator() {
+            mockMembership(OrganizationRoleEnum.SPECTATOR);
+            assertTrue(sut.isSpectator(1, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return false for OWNER")
+        void should_returnFalse_for_owner() {
+            mockMembership(OrganizationRoleEnum.OWNER);
+            assertFalse(sut.isSpectator(1, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return false for non-member")
+        void should_returnFalse_for_nonMember() {
+            when(organizationRepository.findById(1)).thenReturn(Optional.of(org));
+            when(memberRepository.findByUserAndOrganization(any(), any())).thenReturn(Optional.empty());
+            assertFalse(sut.isSpectator(1, userPrincipal));
+        }
+    }
+
+    @Nested
+    @DisplayName("canReadOrgContent")
+    class CanReadOrgContent {
+
+        @Test
+        @DisplayName("should return true for SPECTATOR")
+        void should_returnTrue_for_spectator() {
+            mockMembership(OrganizationRoleEnum.SPECTATOR);
+            assertTrue(sut.canReadOrgContent(1, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return true for OWNER, MANAGER, USER and SPECTATOR")
+        void should_returnTrue_for_anyMember() {
+            for (OrganizationRoleEnum role : OrganizationRoleEnum.values()) {
+                mockMembership(role);
+                assertTrue(sut.canReadOrgContent(1, userPrincipal),
+                        "expected true for role " + role);
+            }
+        }
+
+        @Test
+        @DisplayName("should return false for non-member")
+        void should_returnFalse_for_nonMember() {
+            when(organizationRepository.findById(1)).thenReturn(Optional.of(org));
+            when(memberRepository.findByUserAndOrganization(any(), any())).thenReturn(Optional.empty());
+            assertFalse(sut.canReadOrgContent(1, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return true for global ADMIN")
+        void should_returnTrue_for_globalAdmin() {
+            when(organizationRepository.findById(1)).thenReturn(Optional.of(org));
+            assertTrue(sut.canReadOrgContent(1, adminPrincipal));
+        }
+    }
+
+    @Nested
+    @DisplayName("canWritePieces")
+    class CanWritePieces {
+
+        @Test
+        @DisplayName("should return true for OWNER")
+        void should_returnTrue_for_owner() {
+            mockMembership(OrganizationRoleEnum.OWNER);
+            assertTrue(sut.canWritePieces(1, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return true for MANAGER")
+        void should_returnTrue_for_manager() {
+            mockMembership(OrganizationRoleEnum.MANAGER);
+            assertTrue(sut.canWritePieces(1, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return true for USER")
+        void should_returnTrue_for_user() {
+            mockMembership(OrganizationRoleEnum.USER);
+            assertTrue(sut.canWritePieces(1, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return false for SPECTATOR")
+        void should_returnFalse_for_spectator() {
+            mockMembership(OrganizationRoleEnum.SPECTATOR);
+            assertFalse(sut.canWritePieces(1, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return false for non-member")
+        void should_returnFalse_for_nonMember() {
+            when(organizationRepository.findById(1)).thenReturn(Optional.of(org));
+            when(memberRepository.findByUserAndOrganization(any(), any())).thenReturn(Optional.empty());
+            assertFalse(sut.canWritePieces(1, userPrincipal));
+        }
+    }
+
+    @Nested
+    @DisplayName("canManageOrgContent")
+    class CanManageOrgContent {
+
+        @Test
+        @DisplayName("should return true for OWNER")
+        void should_returnTrue_for_owner() {
+            mockMembership(OrganizationRoleEnum.OWNER);
+            assertTrue(sut.canManageOrgContent(1, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return true for MANAGER")
+        void should_returnTrue_for_manager() {
+            mockMembership(OrganizationRoleEnum.MANAGER);
+            assertTrue(sut.canManageOrgContent(1, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return false for USER")
+        void should_returnFalse_for_user() {
+            mockMembership(OrganizationRoleEnum.USER);
+            assertFalse(sut.canManageOrgContent(1, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return false for SPECTATOR")
+        void should_returnFalse_for_spectator() {
+            mockMembership(OrganizationRoleEnum.SPECTATOR);
+            assertFalse(sut.canManageOrgContent(1, userPrincipal));
         }
     }
 }

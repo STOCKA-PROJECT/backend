@@ -1,0 +1,27 @@
+meta {
+  name: Update Piece (set attribute values)
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces/{{pieceId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "attributeValues": [
+      { "attributeId": {{attributeId}}, "value": "azul" }
+    ]
+  }
+}

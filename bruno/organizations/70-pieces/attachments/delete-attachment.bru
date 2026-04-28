@@ -1,0 +1,15 @@
+meta {
+  name: Delete Attachment (soft + best-effort R2 delete)
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces/{{pieceId}}/attachments/{{attachmentId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}

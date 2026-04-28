@@ -1,0 +1,25 @@
+meta {
+  name: Update Location (move to root)
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{baseUrl}}/organizations/{{orgId}}/locations/{{locationId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "moveToRoot": true
+  }
+}

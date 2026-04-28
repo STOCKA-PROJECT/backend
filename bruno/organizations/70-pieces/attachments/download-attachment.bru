@@ -1,0 +1,15 @@
+meta {
+  name: Download Attachment (302 redirect to presigned URL)
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces/{{pieceId}}/attachments/{{attachmentId}}/download
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
