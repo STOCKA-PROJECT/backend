@@ -5,13 +5,15 @@ import java.util.List;
 /**
  * Body of {@code POST /organizations/{orgId}/pieces}.
  *
- * <p>{@code attributeValues} may omit attributes; missing required ones make the piece end up in
- * {@code PENDING}. Sending {@code value=null} or an empty string is equivalent to "not provided".
+ * <p>{@code pieceTypeIds} must contain at least one type id; the piece inherits the union of all
+ * those types' attributes. {@code attributeValues} may omit attributes — required ones that are
+ * not provided make the piece end up in {@code PENDING}. Sending {@code value=null} or an empty
+ * string is equivalent to "not provided".
  */
 public class CreatePieceDto {
     private String name;
     private String description;
-    private Integer pieceTypeId;
+    private List<Integer> pieceTypeIds;
     private Integer ownerUserId;
     private Integer locationId;
     private List<AttributeValueInputDto> attributeValues;
@@ -22,8 +24,8 @@ public class CreatePieceDto {
     public String getDescription() { return description; }
     public CreatePieceDto setDescription(String v) { this.description = v; return this; }
 
-    public Integer getPieceTypeId() { return pieceTypeId; }
-    public CreatePieceDto setPieceTypeId(Integer v) { this.pieceTypeId = v; return this; }
+    public List<Integer> getPieceTypeIds() { return pieceTypeIds; }
+    public CreatePieceDto setPieceTypeIds(List<Integer> v) { this.pieceTypeIds = v; return this; }
 
     public Integer getOwnerUserId() { return ownerUserId; }
     public CreatePieceDto setOwnerUserId(Integer v) { this.ownerUserId = v; return this; }

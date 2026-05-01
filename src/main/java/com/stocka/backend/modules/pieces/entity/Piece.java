@@ -2,6 +2,8 @@ package com.stocka.backend.modules.pieces.entity;
 
 import java.time.LocalDateTime;
 import java.util.Date;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.SQLRestriction;
@@ -17,24 +19,28 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 /**
- * One inventory item ("artículo") inside an organization. Belongs to a {@link PieceType} that
- * defines its dynamic attribute schema. Optional owner and location.
+ * One inventory item ("artículo") inside an organization. Belongs to one or more
+ * {@link PieceType}s that together define its dynamic attribute schema. Optional owner and
+ * location.
  */
 @Entity
 @Table(
         name = "pieces",
         indexes = {
-                @Index(name = "idx_piece_org_status", columnList = "organization_id, status"),
-                @Index(name = "idx_piece_org_type", columnList = "organization_id, piece_type_id")
+                @Index(name = "idx_piece_org_status", columnList = "organization_id, status")
         }
 )
 @SQLRestriction("deleted_at IS NULL")
@@ -47,9 +53,17 @@ public class Piece {
     @JoinColumn(name = "organization_id", referencedColumnName = "id", nullable = false)
     private Organization organization;
 
-    @ManyToOne
-    @JoinColumn(name = "piece_type_id", referencedColumnName = "id", nullable = false)
-    private PieceType pieceType;
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(
+            name = "piece_piece_types",
+            joinColumns = @JoinColumn(name = "piece_id", referencedColumnName = "id"),
+            inverseJoinColumns = @JoinColumn(name = "piece_type_id", referencedColumnName = "id"),
+            uniqueConstraints = @UniqueConstraint(
+                    name = "uk_piece_piece_types_piece_type",
+                    columnNames = {"piece_id", "piece_type_id"}
+            )
+    )
+    private Set<PieceType> pieceTypes = new LinkedHashSet<>();
 
     @Column(nullable = false, length = 255)
     private String name;
@@ -88,8 +102,11 @@ public class Piece {
     public Organization getOrganization() { return organization; }
     public Piece setOrganization(Organization organization) { this.organization = organization; return this; }
 
-    public PieceType getPieceType() { return pieceType; }
-    public Piece setPieceType(PieceType pieceType) { this.pieceType = pieceType; return this; }
+    public Set<PieceType> getPieceTypes() { return pieceTypes; }
+    public Piece setPieceTypes(Set<PieceType> pieceTypes) {
+        this.pieceTypes = pieceTypes == null ? new LinkedHashSet<>() : pieceTypes;
+        return this;
+    }
 
     public String getName() { return name; }
     public Piece setName(String name) { this.name = name; return this; }

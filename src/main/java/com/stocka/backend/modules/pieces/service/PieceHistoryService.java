@@ -74,6 +74,14 @@ public class PieceHistoryService {
         return record(piece, actor, PieceHistoryAction.ATTACHMENT_REMOVED, "attachment", filename, null);
     }
 
+    /**
+     * Records a change in the set of types attached to {@code piece}. Both arguments are the
+     * comma-separated, lexicographically-sorted type names so the diff stays human-readable.
+     */
+    public PieceHistory recordPieceTypesChanged(Piece piece, User actor, String oldTypes, String newTypes) {
+        return record(piece, actor, PieceHistoryAction.PIECE_TYPES_CHANGED, "pieceTypes", oldTypes, newTypes);
+    }
+
     private String idOrNull(Integer id) {
         return id == null ? null : id.toString();
     }

@@ -34,7 +34,7 @@ public class PieceTypeUsageAdapter implements PieceTypeUsage {
 
     @Override
     public long countPiecesOfType(PieceType pieceType) {
-        return pieceRepository.countByPieceType(pieceType);
+        return pieceRepository.countByPieceTypesContaining(pieceType);
     }
 
     @Override

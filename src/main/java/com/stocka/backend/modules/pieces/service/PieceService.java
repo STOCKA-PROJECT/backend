@@ -4,9 +4,12 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -40,12 +43,17 @@ import com.stocka.backend.modules.piecetypes.service.PieceTypeService;
 import com.stocka.backend.modules.users.entity.User;
 import com.stocka.backend.modules.users.repository.UserRepository;
 
+import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.Predicate;
 
 /**
  * CRUD and lookup for {@link Piece}. Validates cross-org references, normalizes attribute values
  * through the strategy registry, recalculates status on every mutation, and records every
  * relevant change in the piece history.
+ *
+ * <p>A piece can be attached to one or more {@link PieceType}s; its attribute schema is the
+ * union of all attributes across the attached types. The status is {@link PieceStatus#ACTIVE}
+ * only when every required attribute from every attached type has a non-blank value.
  */
 @Service
 public class PieceService {
@@ -90,10 +98,7 @@ public class PieceService {
     @Transactional
     public Piece create(Integer orgId, CreatePieceDto dto) {
         Organization org = organizationService.findById(orgId);
-        if (dto.getPieceTypeId() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El tipo de artículo es obligatorio");
-        }
-        PieceType type = pieceTypeService.findInOrg(orgId, dto.getPieceTypeId());
+        Set<PieceType> types = resolveTypes(orgId, dto.getPieceTypeIds());
 
         String name = sanitizeName(dto.getName());
         Location location = resolveLocation(org, dto.getLocationId(), false);
@@ -101,7 +106,7 @@ public class PieceService {
 
         Piece piece = new Piece()
                 .setOrganization(org)
-                .setPieceType(type)
+                .setPieceTypes(types)
                 .setName(name)
                 .setDescription(emptyToNull(dto.getDescription()))
                 .setLocation(location)
@@ -109,11 +114,11 @@ public class PieceService {
                 .setStatus(PieceStatus.PENDING);
         piece = pieceRepository.save(piece);
 
-        List<PieceTypeAttribute> attrs = pieceTypeService.attributesOf(type);
+        Map<Integer, PieceTypeAttribute> attrPool = collectAttributePool(types);
         Map<Integer, PieceAttributeValue> persistedValues = new HashMap<>();
         if (dto.getAttributeValues() != null) {
             for (AttributeValueInputDto input : dto.getAttributeValues()) {
-                PieceTypeAttribute attribute = requireAttributeOfType(attrs, input.attributeId());
+                PieceTypeAttribute attribute = requireAttributeInPool(attrPool, input.attributeId());
                 String normalized = validationRegistry.validate(attribute, input.value());
                 if (normalized != null) {
                     PieceAttributeValue value = new PieceAttributeValue()
@@ -125,7 +130,7 @@ public class PieceService {
             }
         }
 
-        PieceStatus status = statusCalculator.compute(attrs, persistedValues);
+        PieceStatus status = statusCalculator.compute(attrPool.values(), persistedValues);
         piece.setStatus(status);
         piece = pieceRepository.save(piece);
 
@@ -158,7 +163,11 @@ public class PieceService {
         Specification<Piece> spec = (root, query, cb) -> {
             List<Predicate> preds = new ArrayList<>();
             preds.add(cb.equal(root.get("organization"), org));
-            if (pieceTypeId != null) preds.add(cb.equal(root.get("pieceType").get("id"), pieceTypeId));
+            if (pieceTypeId != null) {
+                Join<Object, Object> typeJoin = root.join("pieceTypes");
+                preds.add(cb.equal(typeJoin.get("id"), pieceTypeId));
+                if (query != null) query.distinct(true);
+            }
             if (locationId != null) preds.add(cb.equal(root.get("location").get("id"), locationId));
             if (ownerUserId != null) preds.add(cb.equal(root.get("owner").get("id"), ownerUserId));
             if (status != null) preds.add(cb.equal(root.get("status"), status));
@@ -198,6 +207,10 @@ public class PieceService {
             }
         }
 
+        if (dto.getPieceTypeIds() != null) {
+            applyTypesUpdate(orgId, piece, dto.getPieceTypeIds(), actor);
+        }
+
         if (Boolean.TRUE.equals(dto.getClearOwner())) {
             if (piece.getOwner() != null) {
                 Integer oldId = piece.getOwner().getId();
@@ -230,7 +243,7 @@ public class PieceService {
             }
         }
 
-        List<PieceTypeAttribute> attrs = pieceTypeService.attributesOf(piece.getPieceType());
+        Map<Integer, PieceTypeAttribute> attrPool = collectAttributePool(piece.getPieceTypes());
         Map<Integer, PieceAttributeValue> currentValues = new HashMap<>();
         for (PieceAttributeValue v : valueRepository.findByPiece(piece)) {
             currentValues.put(v.getAttribute().getId(), v);
@@ -238,7 +251,7 @@ public class PieceService {
 
         if (dto.getAttributeValues() != null) {
             for (AttributeValueInputDto input : dto.getAttributeValues()) {
-                PieceTypeAttribute attribute = requireAttributeOfType(attrs, input.attributeId());
+                PieceTypeAttribute attribute = requireAttributeInPool(attrPool, input.attributeId());
                 String normalized = validationRegistry.validate(attribute, input.value());
                 PieceAttributeValue existing = currentValues.get(attribute.getId());
                 String oldValue = existing == null ? null : existing.getValue();
@@ -264,7 +277,7 @@ public class PieceService {
             }
         }
 
-        PieceStatus newStatus = statusCalculator.compute(attrs, currentValues);
+        PieceStatus newStatus = statusCalculator.compute(attrPool.values(), currentValues);
         if (newStatus != oldStatus) {
             piece.setStatus(newStatus);
             historyService.recordStatusChanged(piece, actor, oldStatus, newStatus);
@@ -282,14 +295,15 @@ public class PieceService {
     }
 
     /**
-     * Bulk recompute the status of every piece of {@code type} after the type's schema changed.
-     * Records {@code STATUS_CHANGED} entries only for pieces that actually moved.
+     * Bulk recompute the status of every piece that includes {@code type} in its type set after
+     * the type's schema changed. Each piece's status is based on the union of all its types'
+     * required attributes — not just {@code type}'s. Records {@code STATUS_CHANGED} entries
+     * only for pieces that actually moved.
      */
     @Transactional
     public void recalcStatusForType(PieceType type) {
-        List<Piece> pieces = pieceRepository.findByPieceType(type);
+        List<Piece> pieces = pieceRepository.findByPieceTypesContaining(type);
         if (pieces.isEmpty()) return;
-        List<PieceTypeAttribute> attrs = pieceTypeService.attributesOf(type);
         List<PieceAttributeValue> all = valueRepository.findByPieceIn(pieces);
         Map<Integer, Map<Integer, PieceAttributeValue>> byPiece = new LinkedHashMap<>();
         for (PieceAttributeValue v : all) {
@@ -298,8 +312,9 @@ public class PieceService {
         }
         User actor = currentUser();
         for (Piece p : pieces) {
+            Map<Integer, PieceTypeAttribute> attrPool = collectAttributePool(p.getPieceTypes());
             Map<Integer, PieceAttributeValue> values = byPiece.getOrDefault(p.getId(), Map.of());
-            PieceStatus newStatus = statusCalculator.compute(attrs, values);
+            PieceStatus newStatus = statusCalculator.compute(attrPool.values(), values);
             if (newStatus != p.getStatus()) {
                 PieceStatus oldStatus = p.getStatus();
                 p.setStatus(newStatus);
@@ -309,16 +324,91 @@ public class PieceService {
         }
     }
 
-    private PieceTypeAttribute requireAttributeOfType(List<PieceTypeAttribute> attrs, Integer attributeId) {
+    /**
+     * Resolves a non-empty list of type ids, all in {@code orgId}, into a deduplicated set in
+     * caller-provided order (LinkedHashSet). Unknown ids or duplicates produce 400.
+     */
+    private Set<PieceType> resolveTypes(Integer orgId, List<Integer> typeIds) {
+        if (typeIds == null || typeIds.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Debes asignar al menos un tipo de artículo");
+        }
+        Set<Integer> seen = new LinkedHashSet<>();
+        Set<PieceType> resolved = new LinkedHashSet<>();
+        for (Integer id : typeIds) {
+            if (id == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "El identificador del tipo no puede ser nulo");
+            }
+            if (!seen.add(id)) continue;
+            resolved.add(pieceTypeService.findInOrg(orgId, id));
+        }
+        return resolved;
+    }
+
+    /**
+     * Replaces the piece's set of types with {@code newTypeIds}, removing attribute values whose
+     * attribute belonged exclusively to a type that is no longer attached. Records the change in
+     * the history when something actually moved.
+     */
+    private void applyTypesUpdate(Integer orgId, Piece piece, List<Integer> newTypeIds, User actor) {
+        Set<PieceType> newTypes = resolveTypes(orgId, newTypeIds);
+        Set<Integer> oldIds = piece.getPieceTypes().stream()
+                .map(PieceType::getId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<Integer> nextIds = newTypes.stream()
+                .map(PieceType::getId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (oldIds.equals(nextIds)) {
+            return;
+        }
+        String oldNames = formatTypeNames(piece.getPieceTypes());
+        piece.setPieceTypes(newTypes);
+        pieceRepository.save(piece);
+
+        // Drop values whose attribute is no longer covered by any of the new types.
+        Map<Integer, PieceTypeAttribute> retainedPool = collectAttributePool(newTypes);
+        for (PieceAttributeValue v : valueRepository.findByPiece(piece)) {
+            if (!retainedPool.containsKey(v.getAttribute().getId())) {
+                valueRepository.delete(v);
+            }
+        }
+        historyService.recordPieceTypesChanged(piece, actor, oldNames, formatTypeNames(newTypes));
+    }
+
+    /**
+     * Builds the union of attributes across {@code types} keyed by attribute id. When the same
+     * attribute id appears in multiple types (impossible with the current schema but coded
+     * defensively) the first occurrence wins.
+     */
+    private Map<Integer, PieceTypeAttribute> collectAttributePool(Set<PieceType> types) {
+        Map<Integer, PieceTypeAttribute> pool = new LinkedHashMap<>();
+        for (PieceType t : types) {
+            for (PieceTypeAttribute attr : pieceTypeService.attributesOf(t)) {
+                pool.putIfAbsent(attr.getId(), attr);
+            }
+        }
+        return pool;
+    }
+
+    private PieceTypeAttribute requireAttributeInPool(Map<Integer, PieceTypeAttribute> pool, Integer attributeId) {
         if (attributeId == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Falta el id del atributo en uno de los valores");
         }
-        return attrs.stream()
-                .filter(a -> attributeId.equals(a.getId()))
-                .findFirst()
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "El atributo " + attributeId + " no pertenece al tipo del artículo"));
+        PieceTypeAttribute attr = pool.get(attributeId);
+        if (attr == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "El atributo " + attributeId + " no pertenece a ninguno de los tipos del artículo");
+        }
+        return attr;
+    }
+
+    private String formatTypeNames(Set<PieceType> types) {
+        return types.stream()
+                .map(PieceType::getName)
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .collect(Collectors.joining(", "));
     }
 
     private Location resolveLocation(Organization org, Integer locationId, boolean allowNullForUpdate) {

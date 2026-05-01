@@ -76,7 +76,21 @@
       "Bash(curl -s -o /dev/null -w 'health: %{http_code}\\\\n' http://localhost:9095/health)",
       "Bash(curl -s -o /dev/null -w 'proxy 3002: %{http_code}\\\\n' http://localhost:3002/api/health)",
       "Bash(curl -s -o /dev/null -w 'login proxy: %{http_code}\\\\n' -X POST http://localhost:3002/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"x\",\"password\":\"x\"}')",
-      "Bash(curl -s -o /dev/null -w 'login direct: %{http_code}\\\\n' -X POST http://localhost:9095/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"x\",\"password\":\"x\"}')"
+      "Bash(curl -s -o /dev/null -w 'login direct: %{http_code}\\\\n' -X POST http://localhost:9095/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"x\",\"password\":\"x\"}')",
+      "Bash(node -e \"const d=require\\('/home/joan/Stocka/frontend/i18n/locales/es.json'\\); console.log\\('TOP:', Object.keys\\(d\\)\\); console.log\\('COMMON:', Object.keys\\(d.common||{}\\)\\); console.log\\('DASHBOARD:', Object.keys\\(d.dashboard||{}\\)\\);\")",
+      "Bash(node -e \"const d=require\\('/home/joan/Stocka/frontend/i18n/locales/es.json'\\); console.log\\('COMMON full:', JSON.stringify\\(d.common,null,2\\)\\); console.log\\('---'\\); console.log\\('ERRORS:', JSON.stringify\\(d.errors,null,2\\)\\);\")",
+      "Bash(node -e \"const d=require\\('/home/joan/Stocka/frontend/i18n/locales/es.json'\\); console.log\\('LAST KEY OF DASHBOARD:', Object.keys\\(d.dashboard\\).pop\\(\\)\\);\")",
+      "Bash(node /tmp/inject_i18n.cjs)",
+      "Bash(node -e \"const d=require\\('/home/joan/Stocka/frontend/i18n/locales/es.json'\\); console.log\\('OK pieces:', !!d.dashboard.pieces\\); console.log\\('OK pagination:', !!d.dashboard.pagination\\); console.log\\('OK common.save:', !!d.common.save\\); console.log\\('SAMPLE:', d.dashboard.pieces.actions.new, '|', d.dashboard.pieces.tabs.info, '|', d.dashboard.pieces.history.action.PIECE_UPDATED\\);\")",
+      "Bash(node_modules/.bin/eslint app/stores/pieces.ts app/types/api.ts app/components/dashboard/Pieces*.vue app/components/dashboard/Pagination.vue app/components/dashboard/PieceAttributeField.vue app/components/dashboard/PieceFormDialog.vue app/components/dashboard/PieceInfoPanel.vue app/components/dashboard/PieceAttachmentsPanel.vue app/components/dashboard/PieceHistoryPanel.vue app/pages/dashboard/articulos/index.vue app/pages/dashboard/articulos/[id].vue server/routes/dev/r2/[...path].ts)",
+      "Bash(node_modules/.bin/nuxt prepare *)",
+      "Bash(./mvnw -DskipTests compile)",
+      "Bash(./mvnw -DskipTests clean compile)",
+      "Bash(./mvnw -pl . -q test -Dtest='PiecesFeatureIntegrationTest,PieceStatusCalculatorTest,PieceHistoryServiceTest,AttributeValueValidatorsTest')",
+      "Bash(./mvnw -q test -Dtest='PiecesFeatureIntegrationTest,PieceStatusCalculatorTest,PieceHistoryServiceTest,AttributeValueValidatorsTest')",
+      "Bash(git -C /home/joan/Stocka/backend log --oneline -5)",
+      "Bash(git -C /home/joan/Stocka/backend stash)",
+      "Bash(./mvnw -q test -Dtest='PiecesFeatureIntegrationTest')"
     ]
   }
 }

@@ -159,7 +159,7 @@ class PiecesFeatureIntegrationTest {
                                   Integer attributeId, String value) throws Exception {
         Map<String, Object> body = new java.util.HashMap<>();
         body.put("name", name);
-        body.put("pieceTypeId", typeId);
+        body.put("pieceTypeIds", List.of(typeId));
         if (attributeId != null) {
             body.put("attributeValues", List.of(Map.of("attributeId", attributeId, "value", value)));
         }
@@ -349,7 +349,7 @@ class PiecesFeatureIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
                                     "name", "Forbidden",
-                                    "pieceTypeId", typeId
+                                    "pieceTypeIds", List.of(typeId)
                             ))))
                     .andExpect(status().isForbidden());
 
@@ -358,7 +358,7 @@ class PiecesFeatureIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
                                     "name", "Forbidden",
-                                    "pieceTypeId", typeId
+                                    "pieceTypeIds", List.of(typeId)
                             ))))
                     .andExpect(status().isForbidden());
         }
@@ -373,7 +373,7 @@ class PiecesFeatureIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
                                     "name", "Anvil",
-                                    "pieceTypeId", typeId
+                                    "pieceTypeIds", List.of(typeId)
                             ))))
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.status").value("PENDING"))
@@ -415,7 +415,7 @@ class PiecesFeatureIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
                                     "name", "Bad",
-                                    "pieceTypeId", heavyTypeId,
+                                    "pieceTypeIds", List.of(heavyTypeId),
                                     "attributeValues", List.of(Map.of("attributeId", heavyAttrId, "value", "not a number"))
                             ))))
                     .andExpect(status().isBadRequest());
@@ -435,7 +435,7 @@ class PiecesFeatureIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
                                     "name", "Bad",
-                                    "pieceTypeId", typeId,
+                                    "pieceTypeIds", List.of(typeId),
                                     "ownerUserId", outsiderId
                             ))))
                     .andExpect(status().isBadRequest());
@@ -466,7 +466,7 @@ class PiecesFeatureIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
                                     "name", "Anvil",
-                                    "pieceTypeId", typeId
+                                    "pieceTypeIds", List.of(typeId)
                             ))))
                     .andExpect(status().isCreated());
 
@@ -577,7 +577,7 @@ class PiecesFeatureIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
                                     "name", "Hammer",
-                                    "pieceTypeId", typeId
+                                    "pieceTypeIds", List.of(typeId)
                             ))))
                     .andExpect(status().isCreated())
                     .andReturn();
@@ -607,6 +607,150 @@ class PiecesFeatureIntegrationTest {
                     .andExpect(jsonPath("$.content[?(@.action == 'ATTRIBUTE_VALUE_CHANGED')].length()").exists())
                     .andExpect(jsonPath("$.content[?(@.action == 'STATUS_CHANGED')].length()").exists())
                     .andExpect(jsonPath("$.content[?(@.action == 'ATTACHMENT_ADDED')].length()").exists());
+        }
+    }
+
+    @Nested
+    @DisplayName("Multi-type pieces")
+    class MultiType {
+
+        @Test
+        @DisplayName("piece with two types aggregates required attributes from both for status calc")
+        void status_aggregatesRequiredFromAllTypes() throws Exception {
+            Integer toolType = createSimpleTypeAs(ownerToken, "Tool", true);
+            Integer toolAttr = firstAttributeIdOfType(toolType);
+
+            Map<String, Object> heavyAttr = Map.of(
+                    "name", "weight", "displayName", "Weight",
+                    "type", "INTEGER", "required", true);
+            MvcResult heavyR = mockMvc.perform(post("/organizations/" + orgId + "/piece-types")
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of(
+                                    "name", "Heavy", "attributes", List.of(heavyAttr)
+                            ))))
+                    .andExpect(status().isCreated())
+                    .andReturn();
+            Integer heavyType = (Integer) om.readValue(heavyR.getResponse().getContentAsString(), Map.class).get("id");
+            Integer heavyAttrId = firstAttributeIdOfType(heavyType);
+
+            // Only fills the Tool attribute → Heavy.weight is missing → PENDING
+            MvcResult r = mockMvc.perform(post("/organizations/" + orgId + "/pieces")
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of(
+                                    "name", "Sledgehammer",
+                                    "pieceTypeIds", List.of(toolType, heavyType),
+                                    "attributeValues", List.of(Map.of("attributeId", toolAttr, "value", "red"))
+                            ))))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.status").value("PENDING"))
+                    .andExpect(jsonPath("$.pieceTypes.length()").value(2))
+                    .andReturn();
+            Integer pieceId = (Integer) om.readValue(r.getResponse().getContentAsString(), Map.class).get("id");
+
+            // Set the missing required value → flips to ACTIVE
+            mockMvc.perform(patch("/organizations/" + orgId + "/pieces/" + pieceId)
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of(
+                                    "attributeValues", List.of(Map.of("attributeId", heavyAttrId, "value", "12"))
+                            ))))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status").value("ACTIVE"));
+        }
+
+        @Test
+        @DisplayName("create with empty pieceTypeIds returns 400")
+        void emptyTypes_returns400() throws Exception {
+            mockMvc.perform(post("/organizations/" + orgId + "/pieces")
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of(
+                                    "name", "NoType",
+                                    "pieceTypeIds", List.of()
+                            ))))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("attribute value targeting an attribute outside the piece's types returns 400")
+        void attribute_outsideTypes_returns400() throws Exception {
+            Integer toolType = createSimpleTypeAs(ownerToken, "Tool", false);
+            Integer otherType = createSimpleTypeAs(ownerToken, "Other", false);
+            Integer otherAttr = firstAttributeIdOfType(otherType);
+
+            mockMvc.perform(post("/organizations/" + orgId + "/pieces")
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of(
+                                    "name", "Mismatch",
+                                    "pieceTypeIds", List.of(toolType),
+                                    "attributeValues", List.of(Map.of("attributeId", otherAttr, "value", "x"))
+                            ))))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("PATCH replacing pieceTypeIds drops attribute values that are no longer covered")
+        void patchTypes_dropsOrphanValues() throws Exception {
+            Integer typeA = createSimpleTypeAs(ownerToken, "TypeA", false);
+            Integer typeAAttr = firstAttributeIdOfType(typeA);
+            Integer typeB = createSimpleTypeAs(ownerToken, "TypeB", false);
+
+            Integer pieceId = createPieceAs(ownerToken, typeA, "Hammer", typeAAttr, "red");
+
+            // Replace typeA with typeB — the old value should disappear from the response.
+            mockMvc.perform(patch("/organizations/" + orgId + "/pieces/" + pieceId)
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of(
+                                    "pieceTypeIds", List.of(typeB)
+                            ))))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.pieceTypes.length()").value(1))
+                    .andExpect(jsonPath("$.pieceTypes[0].id").value(typeB))
+                    .andExpect(jsonPath("$.attributeValues.length()").value(0));
+
+            // History should record PIECE_TYPES_CHANGED.
+            mockMvc.perform(get("/organizations/" + orgId + "/pieces/" + pieceId + "/history")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content[?(@.action == 'PIECE_TYPES_CHANGED')].length()").exists());
+        }
+
+        @Test
+        @DisplayName("listing filtered by typeId returns pieces that contain that type")
+        void list_filterByType_acrossMultiType() throws Exception {
+            Integer typeA = createSimpleTypeAs(ownerToken, "TypeA", false);
+            Integer typeAAttr = firstAttributeIdOfType(typeA);
+            Integer typeB = createSimpleTypeAs(ownerToken, "TypeB", false);
+
+            // Piece1: typeA only
+            createPieceAs(ownerToken, typeA, "OnlyA", typeAAttr, "red");
+
+            // Piece2: typeA + typeB
+            mockMvc.perform(post("/organizations/" + orgId + "/pieces")
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of(
+                                    "name", "AandB",
+                                    "pieceTypeIds", List.of(typeA, typeB)
+                            ))))
+                    .andExpect(status().isCreated());
+
+            // Filter by typeB → only the multi-type piece
+            mockMvc.perform(get("/organizations/" + orgId + "/pieces?typeId=" + typeB)
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content.length()").value(1))
+                    .andExpect(jsonPath("$.content[0].name").value("AandB"));
+
+            // Filter by typeA → both
+            mockMvc.perform(get("/organizations/" + orgId + "/pieces?typeId=" + typeA)
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content.length()").value(2));
         }
     }
 

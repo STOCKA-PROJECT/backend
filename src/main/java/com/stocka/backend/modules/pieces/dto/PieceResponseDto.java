@@ -12,8 +12,7 @@ public record PieceResponseDto(
         Integer organizationId,
         String name,
         String description,
-        Integer pieceTypeId,
-        String pieceTypeName,
+        List<PieceTypeRefDto> pieceTypes,
         Integer ownerUserId,
         Integer locationId,
         PieceStatus status,
@@ -25,13 +24,16 @@ public record PieceResponseDto(
     public static PieceResponseDto from(Piece piece,
                                         List<PieceAttributeValueResponseDto> values,
                                         List<PieceAttachmentResponseDto> attachments) {
+        List<PieceTypeRefDto> types = piece.getPieceTypes().stream()
+                .sorted((a, b) -> a.getName().compareToIgnoreCase(b.getName()))
+                .map(PieceTypeRefDto::from)
+                .toList();
         return new PieceResponseDto(
                 piece.getId(),
                 piece.getOrganization().getId(),
                 piece.getName(),
                 piece.getDescription(),
-                piece.getPieceType().getId(),
-                piece.getPieceType().getName(),
+                types,
                 piece.getOwner() == null ? null : piece.getOwner().getId(),
                 piece.getLocation() == null ? null : piece.getLocation().getId(),
                 piece.getStatus(),

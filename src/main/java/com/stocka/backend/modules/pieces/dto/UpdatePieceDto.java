@@ -9,12 +9,17 @@ import java.util.List;
  * ({@link #setClearOwner(Boolean)} / {@link #setClearLocation(Boolean)}) so {@code null} can be
  * unambiguously interpreted as "do not touch".
  *
+ * <p>{@code pieceTypeIds}, when not {@code null}, replaces the full set of types attached to the
+ * piece. The list must contain at least one id. Removing a type also removes any attribute
+ * values for attributes that exclusively belonged to it; the resulting status is recomputed.
+ *
  * <p>{@code attributeValues}, when present, replaces the values for the listed attributes (other
  * attributes' values are kept as-is). Sending {@code value=null}/empty for an attribute clears it.
  */
 public class UpdatePieceDto {
     private String name;
     private String description;
+    private List<Integer> pieceTypeIds;
     private Integer ownerUserId;
     private Boolean clearOwner;
     private Integer locationId;
@@ -26,6 +31,9 @@ public class UpdatePieceDto {
 
     public String getDescription() { return description; }
     public UpdatePieceDto setDescription(String v) { this.description = v; return this; }
+
+    public List<Integer> getPieceTypeIds() { return pieceTypeIds; }
+    public UpdatePieceDto setPieceTypeIds(List<Integer> v) { this.pieceTypeIds = v; return this; }
 
     public Integer getOwnerUserId() { return ownerUserId; }
     public UpdatePieceDto setOwnerUserId(Integer v) { this.ownerUserId = v; return this; }
