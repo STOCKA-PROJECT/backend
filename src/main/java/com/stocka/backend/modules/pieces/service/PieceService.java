@@ -18,6 +18,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.stocka.backend.modules.common.error.ApiException;
+import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.locations.entity.Location;
 import com.stocka.backend.modules.locations.repository.LocationRepository;
 import com.stocka.backend.modules.organizations.entity.Organization;
@@ -135,7 +137,7 @@ public class PieceService {
     public Piece findInOrg(Integer orgId, Integer pieceId) {
         Organization org = organizationService.findById(orgId);
         return pieceRepository.findByIdAndOrganization(pieceId, org)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artículo no encontrado"));
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.PIECES_NOT_FOUND));
     }
 
     public List<PieceAttributeValue> valuesOf(Piece piece) {

@@ -27,6 +27,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.stocka.backend.modules.common.error.ApiException;
+import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.notifications.email.EmailService;
 import com.stocka.backend.modules.organizations.dto.CreateInvitationDto;
 import com.stocka.backend.modules.organizations.entity.AuditAction;
@@ -247,12 +249,14 @@ class OrganizationInvitationServiceTest {
                         when(invitationRepository.countByOrganizationAndStatus(org, InvitationStatus.PENDING))
                                         .thenReturn(2L);
 
-                        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                        ApiException ex = assertThrows(ApiException.class,
                                         () -> sut.createInvitation(1,
                                                         new CreateInvitationDto().setEmail("x@test.com")
                                                                         .setRole(OrganizationRoleEnum.USER),
                                                         owner));
-                        assertEquals(HttpStatus.TOO_MANY_REQUESTS, ex.getStatusCode());
+                        assertEquals(HttpStatus.TOO_MANY_REQUESTS, ex.getStatus());
+                        assertEquals(ErrorCodes.ORGANIZATIONS_INVITATION_LIMIT_REACHED, ex.getCode());
+                        assertEquals(2L, ex.getParams().get("max"));
                 }
 
                 @Test
@@ -507,9 +511,10 @@ class OrganizationInvitationServiceTest {
                                         .setExpiresAt(LocalDateTime.now().minusDays(1));
                         when(invitationRepository.findByToken("tok")).thenReturn(Optional.of(inv));
 
-                        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                        ApiException ex = assertThrows(ApiException.class,
                                         () -> sut.acceptInvitation("tok", invitee));
-                        assertEquals(HttpStatus.GONE, ex.getStatusCode());
+                        assertEquals(HttpStatus.GONE, ex.getStatus());
+                        assertEquals(ErrorCodes.ORGANIZATIONS_INVITATION_EXPIRED, ex.getCode());
                         assertEquals(InvitationStatus.EXPIRED, inv.getStatus());
                 }
 

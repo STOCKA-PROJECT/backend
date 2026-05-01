@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.stocka.backend.modules.common.error.ApiException;
+import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.service.OrganizationService;
 import com.stocka.backend.modules.piecetypes.dto.AttributeValidatorsDto;
@@ -84,9 +86,9 @@ public class PieceTypeService {
     public PieceType findInOrg(Integer orgId, Integer typeId) {
         Organization org = organizationService.findById(orgId);
         PieceType type = pieceTypeRepository.findById(typeId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tipo no encontrado"));
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.PIECE_TYPES_NOT_FOUND));
         if (!type.getOrganization().getId().equals(org.getId())) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Tipo no encontrado");
+            throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.PIECE_TYPES_NOT_FOUND);
         }
         return type;
     }

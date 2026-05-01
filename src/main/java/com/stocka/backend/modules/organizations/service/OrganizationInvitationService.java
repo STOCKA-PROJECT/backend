@@ -13,6 +13,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.stocka.backend.modules.common.error.ApiException;
+import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.notifications.email.EmailService;
 import com.stocka.backend.modules.organizations.dto.CreateInvitationDto;
 import com.stocka.backend.modules.organizations.entity.AuditAction;
@@ -75,8 +77,10 @@ public class OrganizationInvitationService {
         validateActorCanInviteWithRole(actorRole, dto.getRole());
 
         if (invitationRepository.countByOrganizationAndStatus(org, InvitationStatus.PENDING) >= maxPendingInvitations) {
-            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
-                    "La organización ha alcanzado el máximo de invitaciones pendientes");
+            throw new ApiException(
+                    HttpStatus.TOO_MANY_REQUESTS,
+                    ErrorCodes.ORGANIZATIONS_INVITATION_LIMIT_REACHED,
+                    Map.of("max", maxPendingInvitations));
         }
 
         String email = dto.getEmail().trim().toLowerCase();
@@ -174,7 +178,7 @@ public class OrganizationInvitationService {
         if (invitation.getExpiresAt().isBefore(LocalDateTime.now())) {
             invitation.setStatus(InvitationStatus.EXPIRED);
             invitationRepository.save(invitation);
-            throw new ResponseStatusException(HttpStatus.GONE, "La invitación ha expirado");
+            throw new ApiException(HttpStatus.GONE, ErrorCodes.ORGANIZATIONS_INVITATION_EXPIRED);
         }
 
         Organization org = invitation.getOrganization();

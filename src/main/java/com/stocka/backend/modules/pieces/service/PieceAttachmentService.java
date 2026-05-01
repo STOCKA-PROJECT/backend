@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.stocka.backend.modules.common.error.ApiException;
+import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.pieces.entity.Piece;
 import com.stocka.backend.modules.pieces.entity.PieceAttachment;
 import com.stocka.backend.modules.pieces.entity.PieceAttachmentKind;
@@ -61,10 +64,10 @@ public class PieceAttachmentService {
     @Transactional
     public PieceAttachment upload(Integer orgId, Integer pieceId, PieceAttachmentKind kind, MultipartFile file) {
         if (kind == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El tipo de adjunto es obligatorio (IMAGE o DOCUMENT)");
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.UPLOAD_INVALID_KIND);
         }
         if (file == null || file.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El archivo es obligatorio");
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_REQUIRED, Map.of("field", "file"));
         }
         Piece piece = pieceService.findInOrg(orgId, pieceId);
 
@@ -135,27 +138,37 @@ public class PieceAttachmentService {
     private void validateForKind(Piece piece, PieceAttachmentKind kind, String mime, long size) {
         if (kind == PieceAttachmentKind.IMAGE) {
             if (!limits.getAllowedImageMimes().contains(mime)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Tipo de imagen no permitido: " + mime + ". Formatos válidos: jpg, png, webp, gif");
+                throw new ApiException(
+                        HttpStatus.BAD_REQUEST,
+                        ErrorCodes.UPLOAD_INVALID_KIND,
+                        Map.of("mime", mime));
             }
             if (size > limits.getMaxImageBytes()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "La imagen excede el tamaño máximo permitido (" + limits.getMaxImageBytes() + " bytes)");
+                throw new ApiException(
+                        HttpStatus.BAD_REQUEST,
+                        ErrorCodes.UPLOAD_TOO_LARGE,
+                        Map.of("max", limits.getMaxImageBytes()));
             }
             long current = attachmentRepository.countByPieceAndKind(piece, PieceAttachmentKind.IMAGE);
             if (current >= limits.getMaxImagesPerPiece()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Se ha alcanzado el límite de " + limits.getMaxImagesPerPiece() + " imágenes por artículo");
+                throw new ApiException(
+                        HttpStatus.BAD_REQUEST,
+                        ErrorCodes.UPLOAD_TOO_LARGE,
+                        Map.of("max", limits.getMaxImagesPerPiece()));
             }
         } else {
             if (size > limits.getMaxDocumentBytes()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "El documento excede el tamaño máximo permitido (" + limits.getMaxDocumentBytes() + " bytes)");
+                throw new ApiException(
+                        HttpStatus.BAD_REQUEST,
+                        ErrorCodes.UPLOAD_TOO_LARGE,
+                        Map.of("max", limits.getMaxDocumentBytes()));
             }
             long current = attachmentRepository.countByPieceAndKind(piece, PieceAttachmentKind.DOCUMENT);
             if (current >= limits.getMaxDocumentsPerPiece()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Se ha alcanzado el límite de " + limits.getMaxDocumentsPerPiece() + " documentos por artículo");
+                throw new ApiException(
+                        HttpStatus.BAD_REQUEST,
+                        ErrorCodes.UPLOAD_TOO_LARGE,
+                        Map.of("max", limits.getMaxDocumentsPerPiece()));
             }
         }
     }

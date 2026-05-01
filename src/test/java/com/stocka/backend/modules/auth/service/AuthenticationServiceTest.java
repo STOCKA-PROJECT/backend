@@ -30,12 +30,13 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.web.server.ResponseStatusException;
 
 import com.stocka.backend.modules.auth.dto.LoginUserDto;
 import com.stocka.backend.modules.auth.dto.RegisterUserDto;
 import com.stocka.backend.modules.common.dto.AvailabilityResponse;
 import com.stocka.backend.modules.common.dto.AvailabilityResponse.Reason;
+import com.stocka.backend.modules.common.error.ApiException;
+import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.roles.entity.Role;
 import com.stocka.backend.modules.roles.entity.RoleEnum;
 import com.stocka.backend.modules.roles.repository.RoleRepository;
@@ -94,71 +95,76 @@ class AuthenticationServiceTest {
         }
 
         @Test
-        @DisplayName("should throw 400 when passwords do not match")
+        @DisplayName("should throw 400 + auth.passwords_mismatch when passwords do not match")
         void should_throwBadRequest_when_passwordsDoNotMatch() {
             validDto.setRepeatPassword("different");
 
-            ResponseStatusException ex = assertThrows(
-                    ResponseStatusException.class,
+            ApiException ex = assertThrows(
+                    ApiException.class,
                     () -> sut.signup(validDto)
             );
 
-            assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+            assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+            assertEquals(ErrorCodes.AUTH_PASSWORDS_MISMATCH, ex.getCode());
         }
 
         @Test
-        @DisplayName("should throw 409 when email is already registered")
+        @DisplayName("should throw 409 + users.email_taken when email is already registered")
         void should_throwConflict_when_emailAlreadyExists() {
             when(userRepository.findByEmail(validDto.getEmail())).thenReturn(Optional.of(new User()));
 
-            ResponseStatusException ex = assertThrows(
-                    ResponseStatusException.class,
+            ApiException ex = assertThrows(
+                    ApiException.class,
                     () -> sut.signup(validDto)
             );
 
-            assertEquals(HttpStatus.CONFLICT, ex.getStatusCode());
+            assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+            assertEquals(ErrorCodes.USERS_EMAIL_TAKEN, ex.getCode());
         }
 
         @Test
-        @DisplayName("should throw 409 when username is already taken")
+        @DisplayName("should throw 409 + users.username_taken when username is already taken")
         void should_throwConflict_when_usernameAlreadyExists() {
             when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
             when(userRepository.existsByUsername(validDto.getUsername())).thenReturn(true);
 
-            ResponseStatusException ex = assertThrows(
-                    ResponseStatusException.class,
+            ApiException ex = assertThrows(
+                    ApiException.class,
                     () -> sut.signup(validDto)
             );
 
-            assertEquals(HttpStatus.CONFLICT, ex.getStatusCode());
+            assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+            assertEquals(ErrorCodes.USERS_USERNAME_TAKEN, ex.getCode());
         }
 
         @Test
-        @DisplayName("should throw 400 when username has invalid format")
+        @DisplayName("should throw 400 + users.username_invalid when username has invalid format")
         void should_throwBadRequest_when_usernameInvalidFormat() {
             validDto.setUsername("Joan-Test!");
             when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
 
-            ResponseStatusException ex = assertThrows(
-                    ResponseStatusException.class,
+            ApiException ex = assertThrows(
+                    ApiException.class,
                     () -> sut.signup(validDto)
             );
 
-            assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+            assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+            assertEquals(ErrorCodes.USERS_USERNAME_INVALID, ex.getCode());
         }
 
         @Test
-        @DisplayName("should throw 400 when username is reserved")
+        @DisplayName("should throw 400 + users.username_reserved when username is reserved")
         void should_throwBadRequest_when_usernameReserved() {
             validDto.setUsername("admin");
             when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
 
-            ResponseStatusException ex = assertThrows(
-                    ResponseStatusException.class,
+            ApiException ex = assertThrows(
+                    ApiException.class,
                     () -> sut.signup(validDto)
             );
 
-            assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+            assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+            assertEquals(ErrorCodes.USERS_USERNAME_RESERVED, ex.getCode());
         }
 
         @Test
@@ -293,21 +299,22 @@ class AuthenticationServiceTest {
         }
 
         @Test
-        @DisplayName("should throw 403 when email is not verified")
+        @DisplayName("should throw 403 + auth.email_not_verified when email is not verified")
         void should_throwForbidden_when_emailNotVerified() {
             User user = new User().setEmailVerified(false);
             Authentication auth = mock(Authentication.class);
             when(auth.getPrincipal()).thenReturn(user);
             when(authenticationManager.authenticate(any())).thenReturn(auth);
 
-            ResponseStatusException ex = assertThrows(
-                    ResponseStatusException.class,
+            ApiException ex = assertThrows(
+                    ApiException.class,
                     () -> sut.authenticate(new LoginUserDto()
                             .setEmail("joan@test.com")
                             .setPassword("password123"))
             );
 
-            assertEquals(HttpStatus.FORBIDDEN, ex.getStatusCode());
+            assertEquals(HttpStatus.FORBIDDEN, ex.getStatus());
+            assertEquals(ErrorCodes.AUTH_EMAIL_NOT_VERIFIED, ex.getCode());
         }
 
         @Test

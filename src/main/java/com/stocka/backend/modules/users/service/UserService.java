@@ -7,8 +7,11 @@ import java.util.Optional;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.stocka.backend.modules.organizations.entity.OrganizationMember;
+import com.stocka.backend.modules.organizations.repository.OrganizationMemberRepository;
 import com.stocka.backend.modules.users.dto.UpdateUserProfileDto;
 import com.stocka.backend.modules.users.entity.Language;
 import com.stocka.backend.modules.users.entity.User;
@@ -17,9 +20,11 @@ import com.stocka.backend.modules.users.repository.UserRepository;
 @Service
 public class UserService {
     private final UserRepository userRepository;
+    private final OrganizationMemberRepository memberRepository;
 
-    public UserService(UserRepository userRepository) {
+    public UserService(UserRepository userRepository, OrganizationMemberRepository memberRepository) {
         this.userRepository = userRepository;
+        this.memberRepository = memberRepository;
     }
 
     public List<User> allUsers() {
@@ -28,8 +33,16 @@ public class UserService {
         return users;
     }
 
+    @Transactional
     public void softDeleteCurrentUser(User user) {
-        user.setDeletedAt(LocalDateTime.now());
+        LocalDateTime now = LocalDateTime.now();
+        for (OrganizationMember m : memberRepository.findByUser(user)) {
+            if (m.getDeletedAt() == null) {
+                m.setDeletedAt(now);
+                memberRepository.save(m);
+            }
+        }
+        user.setDeletedAt(now);
         userRepository.save(user);
     }
 

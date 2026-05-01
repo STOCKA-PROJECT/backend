@@ -10,12 +10,13 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 import com.stocka.backend.modules.auth.dto.LoginUserDto;
 import com.stocka.backend.modules.auth.dto.RegisterUserDto;
 import com.stocka.backend.modules.common.dto.AvailabilityResponse;
 import com.stocka.backend.modules.common.dto.AvailabilityResponse.Reason;
+import com.stocka.backend.modules.common.error.ApiException;
+import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.roles.entity.Role;
 import com.stocka.backend.modules.roles.entity.RoleEnum;
 import com.stocka.backend.modules.roles.repository.RoleRepository;
@@ -62,24 +63,24 @@ public class AuthenticationService {
 
     public User signup(RegisterUserDto input) {
         if (!input.getPassword().equals(input.getRepeatPassword())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Las contraseñas no coinciden");
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.AUTH_PASSWORDS_MISMATCH);
         }
 
         Language language = Language.fromString(input.getLanguage());
 
         if (userRepository.findByEmail(input.getEmail()).isPresent()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe un usuario con ese email");
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.USERS_EMAIL_TAKEN);
         }
 
         AvailabilityResponse usernameCheck = checkUsernameAvailability(input.getUsername());
         if (!usernameCheck.available()) {
             switch (usernameCheck.reason()) {
-                case INVALID_FORMAT -> throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST, "El nombre de usuario no es válido");
-                case RESERVED -> throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST, "Ese nombre de usuario está reservado");
-                case TAKEN -> throw new ResponseStatusException(
-                        HttpStatus.CONFLICT, "Ya existe un usuario con ese username");
+                case INVALID_FORMAT -> throw new ApiException(
+                        HttpStatus.BAD_REQUEST, ErrorCodes.USERS_USERNAME_INVALID);
+                case RESERVED -> throw new ApiException(
+                        HttpStatus.BAD_REQUEST, ErrorCodes.USERS_USERNAME_RESERVED);
+                case TAKEN -> throw new ApiException(
+                        HttpStatus.CONFLICT, ErrorCodes.USERS_USERNAME_TAKEN);
             }
         }
 
@@ -135,7 +136,7 @@ public class AuthenticationService {
         );
         User user = (User) authentication.getPrincipal();
         if (!user.isEmailVerified()) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "El email no ha sido verificado");
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.AUTH_EMAIL_NOT_VERIFIED);
         }
         return user;
     }
