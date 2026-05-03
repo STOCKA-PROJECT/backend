@@ -29,6 +29,8 @@
     <properties>
         <java.version>25</java.version>
         <aws.sdk.version>2.28.16</aws.sdk.version>
+        <sentry.version>8.16.0</sentry.version>
+        <sentry.maven.plugin.version>0.5.0</sentry.maven.plugin.version>
     </properties>
 
     <dependencyManagement>
@@ -37,6 +39,13 @@
                 <groupId>software.amazon.awssdk</groupId>
                 <artifactId>bom</artifactId>
                 <version>${aws.sdk.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.sentry</groupId>
+                <artifactId>sentry-bom</artifactId>
+                <version>${sentry.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -135,6 +144,19 @@
             <artifactId>s3</artifactId>
         </dependency>
 
+        <!--
+            SENTRY (error monitoring).
+            NOTE: As of Sentry SDK 8.16.0 there is no Spring Boot 4 starter
+            (only sentry-spring-boot-starter-jakarta for Boot 3).
+            Until Sentry ships Boot 4 support we wire the Logback appender
+            manually in logback-spring.xml; the SDK core is pulled in
+            transitively by sentry-logback.
+        -->
+        <dependency>
+            <groupId>io.sentry</groupId>
+            <artifactId>sentry-logback</artifactId>
+        </dependency>
+
         <!-- TESTS -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -171,7 +193,62 @@
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
 
+            <!--
+                Sentry Maven plugin — uploads source bundle so stack traces in Sentry
+                show the source code. Skipped when SENTRY_AUTH_TOKEN is not set
+                (e.g. local dev / CI without secrets) so the build keeps working.
+            -->
+            <plugin>
+                <groupId>io.sentry</groupId>
+                <artifactId>sentry-maven-plugin</artifactId>
+                <version>${sentry.maven.plugin.version}</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <org>stocka</org>
+                    <project>stocka-backend</project>
+                    <authToken>${env.SENTRY_AUTH_TOKEN}</authToken>
+                    <skip>${sentry.skip}</skip>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>sentry-upload-source-bundle</id>
+                        <goals>
+                            <goal>uploadSourceBundle</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
         </plugins>
     </build>
+
+    <profiles>
+        <!--
+            Auto-skip the Sentry source-bundle upload when SENTRY_AUTH_TOKEN is unset.
+            Activated by *absence* of the env var so local builds don't fail.
+        -->
+        <profile>
+            <id>sentry-skip-without-token</id>
+            <activation>
+                <property>
+                    <name>!env.SENTRY_AUTH_TOKEN</name>
+                </property>
+            </activation>
+            <properties>
+                <sentry.skip>true</sentry.skip>
+            </properties>
+        </profile>
+        <profile>
+            <id>sentry-enabled-with-token</id>
+            <activation>
+                <property>
+                    <name>env.SENTRY_AUTH_TOKEN</name>
+                </property>
+            </activation>
+            <properties>
+                <sentry.skip>false</sentry.skip>
+            </properties>
+        </profile>
+    </profiles>
 
 </project>

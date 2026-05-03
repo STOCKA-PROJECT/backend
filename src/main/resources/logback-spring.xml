@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Logback config for the Stocka backend.
+
+    We extend Spring Boot's default Logback setup (console + file patterns,
+    log levels) and bolt on the Sentry appender. Settings are pulled from
+    application.properties via <springProperty> so the same values configured
+    there (and overridable via env vars) drive Sentry too.
+
+    Sentry is fully disabled when sentry.dsn is empty, so local/dev runs
+    without a DSN behave exactly like before this file existed.
+-->
+<configuration>
+
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <springProperty scope="context" name="sentry.dsn"               source="sentry.dsn"               defaultValue=""/>
+    <springProperty scope="context" name="sentry.environment"       source="sentry.environment"       defaultValue="local"/>
+    <springProperty scope="context" name="sentry.release"           source="sentry.release"           defaultValue=""/>
+    <springProperty scope="context" name="sentry.sendDefaultPii"    source="sentry.send-default-pii"  defaultValue="true"/>
+    <springProperty scope="context" name="sentry.tracesSampleRate"  source="sentry.traces-sample-rate" defaultValue="0.0"/>
+    <springProperty scope="context" name="sentry.minEventLevel"     source="sentry.logging.minimum-event-level" defaultValue="ERROR"/>
+    <springProperty scope="context" name="sentry.minBreadcrumbLevel" source="sentry.logging.minimum-breadcrumb-level" defaultValue="WARN"/>
+
+    <appender name="SENTRY" class="io.sentry.logback.SentryAppender">
+        <options>
+            <dsn>${sentry.dsn}</dsn>
+            <environment>${sentry.environment}</environment>
+            <release>${sentry.release}</release>
+            <sendDefaultPii>${sentry.sendDefaultPii}</sendDefaultPii>
+            <tracesSampleRate>${sentry.tracesSampleRate}</tracesSampleRate>
+        </options>
+        <minimumEventLevel>${sentry.minEventLevel}</minimumEventLevel>
+        <minimumBreadcrumbLevel>${sentry.minBreadcrumbLevel}</minimumBreadcrumbLevel>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="SENTRY"/>
+    </root>
+
+</configuration>
