@@ -90,7 +90,9 @@
       "Bash(./mvnw -q test -Dtest='PiecesFeatureIntegrationTest,PieceStatusCalculatorTest,PieceHistoryServiceTest,AttributeValueValidatorsTest')",
       "Bash(git -C /home/joan/Stocka/backend log --oneline -5)",
       "Bash(git -C /home/joan/Stocka/backend stash)",
-      "Bash(./mvnw -q test -Dtest='PiecesFeatureIntegrationTest')"
+      "Bash(./mvnw -q test -Dtest='PiecesFeatureIntegrationTest')",
+      "Bash(grep -E \"\\\\.\\(java|properties|yml|yaml\\)$\")",
+      "Bash(./mvnw dependency:resolve -DincludeGroupIds=com.resend,com.svix,org.springframework.retry -q)"
     ]
   }
 }

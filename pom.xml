@@ -100,6 +100,28 @@
             <artifactId>spring-boot-starter-thymeleaf</artifactId>
         </dependency>
 
+        <!-- RESEND (transactional email provider) -->
+        <dependency>
+            <groupId>com.resend</groupId>
+            <artifactId>resend-java</artifactId>
+            <version>4.11.0</version>
+        </dependency>
+
+        <!-- SVIX (Resend webhook signature verification) -->
+        <dependency>
+            <groupId>com.svix</groupId>
+            <artifactId>svix</artifactId>
+            <version>1.45.0</version>
+        </dependency>
+
+        <!-- SPRING RETRY (exponential backoff for Resend transient errors).
+             Uses Spring AOP (already on the classpath via spring-context). -->
+        <dependency>
+            <groupId>org.springframework.retry</groupId>
+            <artifactId>spring-retry</artifactId>
+            <version>2.0.11</version>
+        </dependency>
+
         <!-- SWAGGER / OPENAPI (UI in dev) -->
         <dependency>
             <groupId>org.springdoc</groupId>

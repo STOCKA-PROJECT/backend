@@ -76,6 +76,7 @@ On startup, `RoleSeeder` creates USER/ADMIN roles, then `AdminSeeder` creates a 
 | GET    | `/users/me`    | Authenticated | Current user profile     |
 | GET    | `/users`       | ADMIN         | List all users           |
 | POST   | `/admins`      | ADMIN         | Create admin user        |
+| POST   | `/webhooks/resend` | Public (Svix-signed) | Resend webhook events (only when `EMAIL_PROVIDER=resend`) |
 
 ### Domain endpoints (under `/organizations/{orgId}/...`)
 
@@ -100,6 +101,32 @@ Org membership roles: `OWNER`, `MANAGER`, `USER`, `SPECTATOR` (read-only).
 | GET    | `/pieces/{id}/attachments(?kind=)`            | any member                | List                            |
 | GET    | `/pieces/{id}/attachments/{aid}/download`     | any member                | 302 to presigned URL            |
 | DELETE | `/pieces/{id}/attachments/{aid}`              | OWNER, MANAGER, USER      | Soft-delete + best-effort R2 rm |
+
+### Email providers
+
+Three interchangeable providers behind a single `EmailService` interface, selected via
+`app.email.provider` (`EMAIL_PROVIDER` env var):
+
+| Provider | When to use | Behavior |
+|----------|-------------|----------|
+| `local` (default) | Local dev | Renders the email and writes the HTML to `${EMAIL_LOCAL_DIR:target/emails}` |
+| `smtp`            | Self-hosted SMTP / MailHog | Sends through `JavaMailSender` |
+| `resend`          | Production / staging | Sends through Resend HTTP API with idempotency keys + Spring Retry exponential backoff; webhooks land at `POST /webhooks/resend` |
+
+Templates (Thymeleaf, under `resources/templates/email/`) and i18n bundles
+(`messages_{es,ca,en}.properties`) are shared across providers.
+
+Resend variables:
+- `EMAIL_PROVIDER=resend`
+- `EMAIL_FROM=onboarding@resend.dev` — sandbox: only delivers to your Resend account email.
+  Verify a domain at https://resend.com/domains and switch to `Stocka <no-reply@your-domain>`.
+- `RESEND_API_KEY=re_...` — required.
+- `RESEND_WEBHOOK_SECRET=whsec_...` — **optional**. When empty/unset, the `/webhooks/resend`
+  endpoint is not registered (sending still works). Set it to the Svix signing secret from
+  the Resend webhook config to enable the endpoint. Format: `whsec_` followed by standard
+  base64 (alphabet `[A-Za-z0-9+/]`, no underscores) — copy verbatim from the Resend dashboard.
+- `RESEND_MAX_RETRIES` (default `3`) and `RESEND_INITIAL_BACKOFF_MS` (default `500`) tune the
+  retry policy applied to HTTP 429 / 5xx / network errors.
 
 ### Storage (Cloudflare R2)
 

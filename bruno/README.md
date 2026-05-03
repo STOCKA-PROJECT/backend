@@ -31,6 +31,11 @@ Notas:
 - En dev, R2 usa el fallback local (`stocka.r2.use-local=true`); para usar Cloudflare R2 real, define `R2_USE_LOCAL=false` y `R2_BUCKET / R2_ENDPOINT / R2_ACCESS_KEY / R2_SECRET_KEY`.
 - `SPECTATOR` puede consultar todo el contenido de la organización pero no escribir nada.
 
+## Webhooks
+
+- `webhooks/resend-webhook` — POST `/webhooks/resend`. Solo activo cuando `EMAIL_PROVIDER=resend`.
+  Verifica la firma Svix; sin firma válida responde `401`. Ver instrucciones dentro del propio `.bru` para pruebas con dominio público (ngrok / tailscale funnel).
+
 ## Formato de errores
 
 Todos los errores devuelven `application/problem+json` siguiendo RFC 7807, extendido con un campo `code` estable que el frontend usa para resolver la traducción (`errors.<code>` en `i18n/locales/{es,ca,en}.json`).
