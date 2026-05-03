@@ -32,6 +32,7 @@ public class ResendEmailService implements EmailService {
 
     static final String INVITATION_KEY_PREFIX = "org-invitation/";
     static final String PASSWORD_RESET_KEY_PREFIX = "password-reset/";
+    static final String EMAIL_VERIFICATION_KEY_PREFIX = "email-verification/";
     private static final int IDEMPOTENCY_HASH_HEX_LENGTH = 32;
 
     private final EmailTemplateRenderer renderer;
@@ -80,6 +81,23 @@ public class ResendEmailService implements EmailService {
         );
 
         String idempotencyKey = PASSWORD_RESET_KEY_PREFIX + sha256Hex(resetUrl, IDEMPOTENCY_HASH_HEX_LENGTH);
+        dispatch(to, email, idempotencyKey);
+    }
+
+    @Override
+    public void sendEmailVerification(String to, String userName, String verifyUrl, Language language) {
+        RenderedEmail email = renderer.render(
+                "email-verification",
+                "email.verification.subject",
+                null,
+                language.toLocale(),
+                Map.of(
+                        "userName", userName,
+                        "verifyUrl", verifyUrl
+                )
+        );
+
+        String idempotencyKey = EMAIL_VERIFICATION_KEY_PREFIX + sha256Hex(verifyUrl, IDEMPOTENCY_HASH_HEX_LENGTH);
         dispatch(to, email, idempotencyKey);
     }
 

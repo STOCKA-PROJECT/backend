@@ -23,14 +23,12 @@ import org.springframework.web.context.WebApplicationContext;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stocka.backend.modules.security.repository.InvalidatedTokenRepository;
-import com.stocka.backend.modules.users.repository.UserRepository;
 
 @SpringBootTest
 @DisplayName("Auth endpoints (integration)")
 class AuthControllerIntegrationTest {
 
     @Autowired private WebApplicationContext context;
-    @Autowired private UserRepository userRepository;
     @Autowired private InvalidatedTokenRepository invalidatedTokenRepository;
     @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
@@ -83,7 +81,7 @@ class AuthControllerIntegrationTest {
         );
 
         @Test
-        @DisplayName("200 — should register and return the user without password")
+        @DisplayName("200 — should register and return the user without password (emailVerified=false)")
         void should_return200_when_inputIsValid() throws Exception {
             mockMvc.perform(post("/auth/signup")
                             .contentType(MediaType.APPLICATION_JSON)
@@ -92,6 +90,7 @@ class AuthControllerIntegrationTest {
                     .andExpect(jsonPath("$.email").value("test@test.com"))
                     .andExpect(jsonPath("$.name").value("Test"))
                     .andExpect(jsonPath("$.lastName").value("User"))
+                    .andExpect(jsonPath("$.emailVerified").value(false))
                     .andExpect(jsonPath("$.password").doesNotExist());
         }
 
@@ -310,19 +309,17 @@ class AuthControllerIntegrationTest {
         }
 
         @Test
-        @DisplayName("403 — should reject login when email is not verified")
+        @DisplayName("403 — should reject login when email is not verified (signup default)")
         void should_return403_when_emailNotVerified() throws Exception {
-            // signup creates the user with emailVerified=true; flip it manually
+            // signup leaves the user with emailVerified=false until the verification link is clicked
             mockMvc.perform(post("/auth/signup")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(Map.of(
                             "name", "Test", "lastName", "User", "username", "testuser",
                             "email", "unverified@test.com",
                             "password", "password123", "repeatPassword", "password123"
-                    ))));
-
-            userRepository.findByEmail("unverified@test.com")
-                    .ifPresent(u -> userRepository.save(u.setEmailVerified(false)));
+                    ))))
+                    .andExpect(status().isOk());
 
             String body = objectMapper.writeValueAsString(Map.of(
                     "email", "unverified@test.com",

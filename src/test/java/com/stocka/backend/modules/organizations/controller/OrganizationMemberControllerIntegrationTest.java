@@ -63,9 +63,9 @@ class OrganizationMemberControllerIntegrationTest {
         cleanDatabase();
 
         adminToken = login(mockMvc, om, ADMIN_EMAIL, ADMIN_PASSWORD);
-        managerToken = signupAndLogin(mockMvc, om, "manager@test.com", "manager");
-        userToken = signupAndLogin(mockMvc, om, "user@test.com", "regularuser");
-        outsiderToken = signupAndLogin(mockMvc, om, "outsider@test.com", "outsider");
+        managerToken = signupAndLogin(mockMvc, om, jdbcTemplate, "manager@test.com", "manager");
+        userToken = signupAndLogin(mockMvc, om, jdbcTemplate, "user@test.com", "regularuser");
+        outsiderToken = signupAndLogin(mockMvc, om, jdbcTemplate, "outsider@test.com", "outsider");
 
         // Create org as admin → admin becomes OWNER
         Map<String, Object> org = createOrg();
@@ -171,7 +171,7 @@ class OrganizationMemberControllerIntegrationTest {
     void delete_manager_cannotRemoveManager() throws Exception {
         // Create another manager
         Organization orgEntity = organizationRepository.findById(orgId).orElseThrow();
-        signupAndLogin(mockMvc, om, "mgr2@test.com", "mgr2");
+        signupAndLogin(mockMvc, om, jdbcTemplate, "mgr2@test.com", "mgr2");
         Integer mgr2Id = memberRepository.save(new OrganizationMember()
                 .setUser(userByEmail("mgr2@test.com"))
                 .setOrganization(orgEntity)

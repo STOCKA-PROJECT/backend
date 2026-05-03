@@ -56,6 +56,7 @@ class AuthenticationServiceTest {
     @Mock private AuthenticationManager authenticationManager;
     @Mock private InvalidatedTokenRepository invalidatedTokenRepository;
     @Mock private JwtService jwtService;
+    @Mock private EmailVerificationService emailVerificationService;
 
     @InjectMocks
     private AuthenticationService sut;
@@ -92,6 +93,7 @@ class AuthenticationServiceTest {
 
             assertSame(expected, result);
             verify(userRepository).save(any(User.class));
+            verify(emailVerificationService).sendVerificationEmail(expected);
         }
 
         @Test
@@ -180,8 +182,8 @@ class AuthenticationServiceTest {
         }
 
         @Test
-        @DisplayName("should set emailVerified=true on the created user")
-        void should_setEmailVerifiedTrue_on_createdUser() {
+        @DisplayName("should set emailVerified=false on the created user (verification flow gates login)")
+        void should_setEmailVerifiedFalse_on_createdUser() {
             when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
             when(roleRepository.findByName(RoleEnum.USER)).thenReturn(Optional.of(userRole));
             when(passwordEncoder.encode(any())).thenReturn("hashed");
@@ -190,7 +192,23 @@ class AuthenticationServiceTest {
 
             sut.signup(validDto);
 
-            assertTrue(captor.getValue().isEmailVerified());
+            assertFalse(captor.getValue().isEmailVerified());
+        }
+
+        @Test
+        @DisplayName("should send the verification email after persisting the user")
+        void should_sendVerificationEmail_after_save() {
+            when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
+            when(roleRepository.findByName(RoleEnum.USER)).thenReturn(Optional.of(userRole));
+            when(passwordEncoder.encode(any())).thenReturn("hashed");
+            User saved = new User();
+            when(userRepository.save(any(User.class))).thenReturn(saved);
+            InOrder ordered = inOrder(userRepository, emailVerificationService);
+
+            sut.signup(validDto);
+
+            ordered.verify(userRepository).save(any(User.class));
+            ordered.verify(emailVerificationService).sendVerificationEmail(saved);
         }
 
         @Test

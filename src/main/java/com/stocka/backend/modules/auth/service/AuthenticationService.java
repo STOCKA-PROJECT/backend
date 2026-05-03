@@ -44,6 +44,7 @@ public class AuthenticationService {
     private final AuthenticationManager authenticationManager;
     private final InvalidatedTokenRepository invalidatedTokenRepository;
     private final JwtService jwtService;
+    private final EmailVerificationService emailVerificationService;
 
     public AuthenticationService(
             UserRepository userRepository,
@@ -51,7 +52,8 @@ public class AuthenticationService {
             PasswordEncoder passwordEncoder,
             AuthenticationManager authenticationManager,
             InvalidatedTokenRepository invalidatedTokenRepository,
-            JwtService jwtService
+            JwtService jwtService,
+            EmailVerificationService emailVerificationService
     ) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
@@ -59,6 +61,7 @@ public class AuthenticationService {
         this.authenticationManager = authenticationManager;
         this.invalidatedTokenRepository = invalidatedTokenRepository;
         this.jwtService = jwtService;
+        this.emailVerificationService = emailVerificationService;
     }
 
     public User signup(RegisterUserDto input) {
@@ -97,10 +100,12 @@ public class AuthenticationService {
                 .setEmail(input.getEmail())
                 .setPassword(passwordEncoder.encode(input.getPassword()))
                 .setRole(optionalRole.get())
-                .setEmailVerified(true)
+                .setEmailVerified(false)
                 .setLanguage(language);
 
-        return userRepository.save(user);
+        User saved = userRepository.save(user);
+        emailVerificationService.sendVerificationEmail(saved);
+        return saved;
     }
 
     /**

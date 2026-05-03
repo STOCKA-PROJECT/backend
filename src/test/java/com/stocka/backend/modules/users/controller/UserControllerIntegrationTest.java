@@ -46,7 +46,7 @@ class UserControllerIntegrationTest {
         mockMvc = buildMockMvc(context);
         IntegrationTestSupport.cleanDatabase(jdbcTemplate);
         adminToken = login(mockMvc, om, ADMIN_EMAIL, ADMIN_PASSWORD);
-        userBToken = signupAndLogin(mockMvc, om, "userb@test.com", "userb");
+        userBToken = signupAndLogin(mockMvc, om, jdbcTemplate, "userb@test.com", "userb");
     }
 
     // -------------------------------------------------------------------------
@@ -242,7 +242,7 @@ class UserControllerIntegrationTest {
         @DisplayName("200 — new email belonging to a soft-deleted user is allowed (reuse)")
         void should_allowEmailReuse_from_softDeletedUser() throws Exception {
             // Sign up userC then soft-delete them directly in DB.
-            signupAndLogin(mockMvc, om, "userc@test.com", "userc");
+            signupAndLogin(mockMvc, om, jdbcTemplate, "userc@test.com", "userc");
             jdbcTemplate.update("UPDATE users SET deleted_at = NOW() WHERE email = ?", "userc@test.com");
 
             mockMvc.perform(patch("/users/me")

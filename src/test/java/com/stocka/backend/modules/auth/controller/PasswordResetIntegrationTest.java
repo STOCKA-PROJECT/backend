@@ -77,7 +77,7 @@ class PasswordResetIntegrationTest {
     }
 
     private void signupUser() throws Exception {
-        IntegrationTestSupport.signupAndLogin(mockMvc, om, EMAIL, USERNAME);
+        IntegrationTestSupport.signupAndLogin(mockMvc, om, jdbcTemplate, EMAIL, USERNAME);
     }
 
     private static String sha256Hex(String raw) throws Exception {

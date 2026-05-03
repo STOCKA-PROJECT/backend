@@ -68,6 +68,22 @@ public class SmtpEmailService implements EmailService {
         sendRendered(to, email);
     }
 
+    @Override
+    public void sendEmailVerification(String to, String userName, String verifyUrl, Language language) {
+        RenderedEmail email = renderer.render(
+                "email-verification",
+                "email.verification.subject",
+                null,
+                language.toLocale(),
+                Map.of(
+                        "userName", userName,
+                        "verifyUrl", verifyUrl
+                )
+        );
+
+        sendRendered(to, email);
+    }
+
     private void sendRendered(String to, RenderedEmail email) {
         try {
             MimeMessage message = mailSender.createMimeMessage();

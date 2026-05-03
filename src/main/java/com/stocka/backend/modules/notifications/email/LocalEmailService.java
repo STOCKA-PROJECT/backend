@@ -72,6 +72,23 @@ public class LocalEmailService implements EmailService {
         writeToFile("password-reset", to, email);
     }
 
+    @Override
+    public void sendEmailVerification(String to, String userName, String verifyUrl, Language language) {
+        RenderedEmail email = renderer.render(
+                "email-verification",
+                "email.verification.subject",
+                null,
+                language.toLocale(),
+                Map.of(
+                        "userName", userName,
+                        "verifyUrl", verifyUrl
+                )
+        );
+
+        log.info("[LOCAL EMAIL] from={} to={} subject={}", fromAddress, to, email.subject());
+        writeToFile("email-verification", to, email);
+    }
+
     private void writeToFile(String prefix, String to, RenderedEmail email) {
         try {
             Path dir = Paths.get(localDir);

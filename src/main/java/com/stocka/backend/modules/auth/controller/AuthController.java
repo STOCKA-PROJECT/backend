@@ -15,8 +15,11 @@ import com.stocka.backend.modules.auth.dto.ForgotPasswordRequestDto;
 import com.stocka.backend.modules.auth.dto.LoginResponseDto;
 import com.stocka.backend.modules.auth.dto.LoginUserDto;
 import com.stocka.backend.modules.auth.dto.RegisterUserDto;
+import com.stocka.backend.modules.auth.dto.ResendVerificationRequestDto;
 import com.stocka.backend.modules.auth.dto.ResetPasswordRequestDto;
+import com.stocka.backend.modules.auth.dto.VerifyEmailRequestDto;
 import com.stocka.backend.modules.auth.service.AuthenticationService;
+import com.stocka.backend.modules.auth.service.EmailVerificationService;
 import com.stocka.backend.modules.auth.service.PasswordResetService;
 import com.stocka.backend.modules.common.dto.AvailabilityResponse;
 import com.stocka.backend.modules.security.service.JwtService;
@@ -27,15 +30,18 @@ import com.stocka.backend.modules.users.entity.User;
 public class AuthController {
     private final AuthenticationService authenticationService;
     private final PasswordResetService passwordResetService;
+    private final EmailVerificationService emailVerificationService;
     private final JwtService jwtService;
 
     public AuthController(
             AuthenticationService authenticationService,
             PasswordResetService passwordResetService,
+            EmailVerificationService emailVerificationService,
             JwtService jwtService
     ) {
         this.authenticationService = authenticationService;
         this.passwordResetService = passwordResetService;
+        this.emailVerificationService = emailVerificationService;
         this.jwtService = jwtService;
     }
 
@@ -87,6 +93,32 @@ public class AuthController {
     @PostMapping("/reset-password")
     public ResponseEntity<Void> resetPassword(@RequestBody ResetPasswordRequestDto dto) {
         passwordResetService.resetPassword(dto);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Consumes a one-time email-verification token. On success the user's
+     * {@code emailVerified} flag is flipped to {@code true} and the token is burned.
+     *
+     * @param dto request body carrying the raw token from the verification email
+     * @return 204 on success
+     */
+    @PostMapping("/verify-email")
+    public ResponseEntity<Void> verifyEmail(@RequestBody VerifyEmailRequestDto dto) {
+        emailVerificationService.verify(dto.getToken());
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Re-sends the verification email for the given address. Always responds with 204
+     * to avoid leaking whether the email is registered or already verified.
+     *
+     * @param dto request body carrying the candidate email
+     * @return 204 unconditionally
+     */
+    @PostMapping("/resend-verification")
+    public ResponseEntity<Void> resendVerification(@RequestBody ResendVerificationRequestDto dto) {
+        emailVerificationService.requestResend(dto.getEmail());
         return ResponseEntity.noContent().build();
     }
 }

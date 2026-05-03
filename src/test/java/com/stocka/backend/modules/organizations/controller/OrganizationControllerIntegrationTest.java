@@ -45,7 +45,7 @@ class OrganizationControllerIntegrationTest {
         mockMvc = buildMockMvc(context);
         cleanDatabase();
         adminToken = login(mockMvc, om, ADMIN_EMAIL, ADMIN_PASSWORD);
-        userBToken = signupAndLogin(mockMvc, om, "userb@test.com", "userb");
+        userBToken = signupAndLogin(mockMvc, om, jdbcTemplate, "userb@test.com", "userb");
     }
 
     private void cleanDatabase() {

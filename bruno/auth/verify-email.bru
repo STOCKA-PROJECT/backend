@@ -1,0 +1,25 @@
+meta {
+  name: Verify Email
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/auth/verify-email
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "token": "{{verificationToken}}"
+  }
+}
+
+vars:pre-request {
+  verificationToken: paste-token-from-email-here
+}

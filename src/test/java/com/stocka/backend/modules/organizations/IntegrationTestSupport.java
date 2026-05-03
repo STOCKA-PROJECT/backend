@@ -46,11 +46,20 @@ public final class IntegrationTestSupport {
         jdbc.execute("DELETE FROM organizations");
         jdbc.execute("DELETE FROM invalidated_tokens");
         jdbc.execute("DELETE FROM password_reset_tokens");
+        jdbc.execute("DELETE FROM email_verification_tokens");
         jdbc.update("DELETE FROM users WHERE email <> ?", ADMIN_EMAIL);
         jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
     }
 
-    public static String signupAndLogin(MockMvc mockMvc, ObjectMapper om, String email, String username) throws Exception {
+    /**
+     * Signs up a user and immediately marks the email as verified so the subsequent
+     * login is not blocked by {@code AUTH_EMAIL_NOT_VERIFIED}. The email-verification
+     * gate is exercised by dedicated tests; this helper exists for downstream feature
+     * tests that just need an authenticated user.
+     */
+    public static String signupAndLogin(
+            MockMvc mockMvc, ObjectMapper om, JdbcTemplate jdbcTemplate, String email, String username
+    ) throws Exception {
         Map<String, String> body = new HashMap<>();
         body.put("name", "Test");
         body.put("lastName", "User");
@@ -62,6 +71,7 @@ public final class IntegrationTestSupport {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(om.writeValueAsString(body)))
                 .andExpect(status().isOk());
+        jdbcTemplate.update("UPDATE users SET email_verified = TRUE WHERE email = ?", email);
         return login(mockMvc, om, email, "password123");
     }
 

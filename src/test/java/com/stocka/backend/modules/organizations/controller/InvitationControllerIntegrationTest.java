@@ -50,7 +50,7 @@ class InvitationControllerIntegrationTest {
         cleanDatabase();
 
         adminToken = login(mockMvc, om, ADMIN_EMAIL, ADMIN_PASSWORD);
-        inviteeToken = signupAndLogin(mockMvc, om, "invitee@test.com", "invitee");
+        inviteeToken = signupAndLogin(mockMvc, om, jdbcTemplate, "invitee@test.com", "invitee");
 
         var result = mockMvc.perform(post("/organizations")
                         .header("Authorization", "Bearer " + adminToken)

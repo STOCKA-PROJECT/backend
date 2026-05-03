@@ -20,6 +20,7 @@ public final class ErrorCodes {
     public static final String AUTH_INVALID_CREDENTIALS = "auth.invalid_credentials";
     public static final String AUTH_EMAIL_NOT_VERIFIED = "auth.email_not_verified";
     public static final String AUTH_PASSWORDS_MISMATCH = "auth.passwords_mismatch";
+    public static final String AUTH_VERIFICATION_TOKEN_INVALID = "auth.verification_token_invalid";
     public static final String AUTH_UNAUTHENTICATED = "auth.unauthenticated";
     public static final String AUTH_FORBIDDEN = "auth.forbidden";
 

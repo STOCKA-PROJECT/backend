@@ -75,10 +75,10 @@ class PiecesFeatureIntegrationTest {
         ownerToken = login(mockMvc, om, ADMIN_EMAIL, ADMIN_PASSWORD);
         orgId = createOrgAsOwner();
 
-        managerToken = signupAndLogin(mockMvc, om, "manager@test.com", "manager");
-        userToken = signupAndLogin(mockMvc, om, "user@test.com", "userp");
-        spectatorToken = signupAndLogin(mockMvc, om, "spect@test.com", "spect");
-        outsiderToken = signupAndLogin(mockMvc, om, "out@test.com", "outsider");
+        managerToken = signupAndLogin(mockMvc, om, jdbcTemplate, "manager@test.com", "manager");
+        userToken = signupAndLogin(mockMvc, om, jdbcTemplate, "user@test.com", "userp");
+        spectatorToken = signupAndLogin(mockMvc, om, jdbcTemplate, "spect@test.com", "spect");
+        outsiderToken = signupAndLogin(mockMvc, om, jdbcTemplate, "out@test.com", "outsider");
 
         managerUserId = jdbcTemplate.queryForObject("SELECT id FROM users WHERE email = ?", Integer.class, "manager@test.com");
         userUserId = jdbcTemplate.queryForObject("SELECT id FROM users WHERE email = ?", Integer.class, "user@test.com");
