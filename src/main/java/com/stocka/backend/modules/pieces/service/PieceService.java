@@ -26,15 +26,23 @@ import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.locations.entity.Location;
 import com.stocka.backend.modules.locations.repository.LocationRepository;
 import com.stocka.backend.modules.organizations.entity.Organization;
+import com.stocka.backend.modules.organizations.entity.OrganizationPieceAttribute;
 import com.stocka.backend.modules.organizations.repository.OrganizationMemberRepository;
+import com.stocka.backend.modules.organizations.repository.OrganizationPieceAttributeRepository;
 import com.stocka.backend.modules.organizations.service.OrganizationService;
+import com.stocka.backend.modules.pieces.dto.AttributeScope;
 import com.stocka.backend.modules.pieces.dto.AttributeValueInputDto;
 import com.stocka.backend.modules.pieces.dto.CreatePieceDto;
 import com.stocka.backend.modules.pieces.dto.UpdatePieceDto;
 import com.stocka.backend.modules.pieces.entity.Piece;
+import com.stocka.backend.modules.pieces.entity.PieceAttachment;
+import com.stocka.backend.modules.pieces.entity.PieceAttachmentKind;
 import com.stocka.backend.modules.pieces.entity.PieceAttributeValue;
+import com.stocka.backend.modules.pieces.entity.PieceOrganizationAttributeValue;
 import com.stocka.backend.modules.pieces.entity.PieceStatus;
+import com.stocka.backend.modules.pieces.repository.PieceAttachmentRepository;
 import com.stocka.backend.modules.pieces.repository.PieceAttributeValueRepository;
+import com.stocka.backend.modules.pieces.repository.PieceOrganizationAttributeValueRepository;
 import com.stocka.backend.modules.pieces.repository.PieceRepository;
 import com.stocka.backend.modules.pieces.service.attributevalidation.AttributeValueValidationRegistry;
 import com.stocka.backend.modules.piecetypes.entity.PieceType;
@@ -58,10 +66,14 @@ import jakarta.persistence.criteria.Predicate;
 @Service
 public class PieceService {
     private static final int MAX_NAME_LENGTH = 255;
+    private static final int MAX_SERIAL_LENGTH = 100;
     private static final int MAX_PAGE_SIZE = 100;
 
     private final PieceRepository pieceRepository;
     private final PieceAttributeValueRepository valueRepository;
+    private final PieceOrganizationAttributeValueRepository orgValueRepository;
+    private final OrganizationPieceAttributeRepository orgAttributeRepository;
+    private final PieceAttachmentRepository attachmentRepository;
     private final PieceStatusCalculator statusCalculator;
     private final PieceHistoryService historyService;
     private final OrganizationService organizationService;
@@ -74,6 +86,9 @@ public class PieceService {
     public PieceService(
             PieceRepository pieceRepository,
             PieceAttributeValueRepository valueRepository,
+            PieceOrganizationAttributeValueRepository orgValueRepository,
+            OrganizationPieceAttributeRepository orgAttributeRepository,
+            PieceAttachmentRepository attachmentRepository,
             PieceStatusCalculator statusCalculator,
             PieceHistoryService historyService,
             OrganizationService organizationService,
@@ -85,6 +100,9 @@ public class PieceService {
     ) {
         this.pieceRepository = pieceRepository;
         this.valueRepository = valueRepository;
+        this.orgValueRepository = orgValueRepository;
+        this.orgAttributeRepository = orgAttributeRepository;
+        this.attachmentRepository = attachmentRepository;
         this.statusCalculator = statusCalculator;
         this.historyService = historyService;
         this.organizationService = organizationService;
@@ -101,6 +119,8 @@ public class PieceService {
         Set<PieceType> types = resolveTypes(orgId, dto.getPieceTypeIds());
 
         String name = sanitizeName(dto.getName());
+        String serialNumber = sanitizeSerialNumber(dto.getSerialNumber());
+        ensureSerialNumberUnique(orgId, serialNumber, null);
         Location location = resolveLocation(org, dto.getLocationId(), false);
         User owner = resolveOwner(org, dto.getOwnerUserId(), false);
 
@@ -108,29 +128,47 @@ public class PieceService {
                 .setOrganization(org)
                 .setPieceTypes(types)
                 .setName(name)
+                .setSerialNumber(serialNumber)
                 .setDescription(emptyToNull(dto.getDescription()))
                 .setLocation(location)
                 .setOwner(owner)
                 .setStatus(PieceStatus.PENDING);
         piece = pieceRepository.save(piece);
 
-        Map<Integer, PieceTypeAttribute> attrPool = collectAttributePool(types);
-        Map<Integer, PieceAttributeValue> persistedValues = new HashMap<>();
+        Map<Integer, PieceTypeAttribute> typePool = collectTypeAttributePool(types);
+        Map<Integer, OrganizationPieceAttribute> orgPool = collectOrgAttributePool(org);
+        Map<Integer, PieceAttributeValue> typeValues = new HashMap<>();
+        Map<Integer, PieceOrganizationAttributeValue> orgValues = new HashMap<>();
         if (dto.getAttributeValues() != null) {
             for (AttributeValueInputDto input : dto.getAttributeValues()) {
-                PieceTypeAttribute attribute = requireAttributeInPool(attrPool, input.attributeId());
-                String normalized = validationRegistry.validate(attribute, input.value());
-                if (normalized != null) {
-                    PieceAttributeValue value = new PieceAttributeValue()
-                            .setPiece(piece)
-                            .setAttribute(attribute)
-                            .setValue(normalized);
-                    persistedValues.put(attribute.getId(), valueRepository.save(value));
+                if (input.effectiveScope() == AttributeScope.ORG) {
+                    OrganizationPieceAttribute attribute = requireOrgAttributeInPool(orgPool, input.attributeId());
+                    String normalized = validationRegistry.validate(
+                            attribute.getType(), attribute.getValidatorsJson(),
+                            attribute.isRequired(), input.value());
+                    if (normalized != null) {
+                        PieceOrganizationAttributeValue value = new PieceOrganizationAttributeValue()
+                                .setPiece(piece)
+                                .setAttribute(attribute)
+                                .setValue(normalized);
+                        orgValues.put(attribute.getId(), orgValueRepository.save(value));
+                    }
+                } else {
+                    PieceTypeAttribute attribute = requireAttributeInPool(typePool, input.attributeId());
+                    String normalized = validationRegistry.validate(attribute, input.value());
+                    if (normalized != null) {
+                        PieceAttributeValue value = new PieceAttributeValue()
+                                .setPiece(piece)
+                                .setAttribute(attribute)
+                                .setValue(normalized);
+                        typeValues.put(attribute.getId(), valueRepository.save(value));
+                    }
                 }
             }
         }
 
-        PieceStatus status = statusCalculator.compute(attrPool.values(), persistedValues);
+        PieceStatus status = statusCalculator.compute(
+                typePool.values(), typeValues, orgPool.values(), orgValues);
         piece.setStatus(status);
         piece = pieceRepository.save(piece);
 
@@ -147,6 +185,10 @@ public class PieceService {
 
     public List<PieceAttributeValue> valuesOf(Piece piece) {
         return valueRepository.findByPiece(piece);
+    }
+
+    public List<PieceOrganizationAttributeValue> orgValuesOf(Piece piece) {
+        return orgValueRepository.findByPiece(piece);
     }
 
     public Page<Piece> list(
@@ -198,6 +240,15 @@ public class PieceService {
                 historyService.recordUpdated(piece, actor, "name", old, newName);
             }
         }
+        if (dto.getSerialNumber() != null) {
+            String newSerial = sanitizeSerialNumber(dto.getSerialNumber());
+            if (!java.util.Objects.equals(piece.getSerialNumber(), newSerial)) {
+                ensureSerialNumberUnique(orgId, newSerial, piece.getId());
+                String old = piece.getSerialNumber();
+                piece.setSerialNumber(newSerial);
+                historyService.recordUpdated(piece, actor, "serialNumber", old, newSerial);
+            }
+        }
         if (dto.getDescription() != null) {
             String old = piece.getDescription();
             String value = emptyToNull(dto.getDescription());
@@ -243,41 +294,80 @@ public class PieceService {
             }
         }
 
-        Map<Integer, PieceTypeAttribute> attrPool = collectAttributePool(piece.getPieceTypes());
-        Map<Integer, PieceAttributeValue> currentValues = new HashMap<>();
+        if (Boolean.TRUE.equals(dto.getClearCover())) {
+            applyCoverChange(piece, null, actor);
+        } else if (dto.getCoverAttachmentId() != null) {
+            PieceAttachment cover = resolveCoverAttachment(piece, dto.getCoverAttachmentId());
+            applyCoverChange(piece, cover, actor);
+        }
+
+        Map<Integer, PieceTypeAttribute> typePool = collectTypeAttributePool(piece.getPieceTypes());
+        Map<Integer, OrganizationPieceAttribute> orgPool = collectOrgAttributePool(org);
+        Map<Integer, PieceAttributeValue> currentTypeValues = new HashMap<>();
         for (PieceAttributeValue v : valueRepository.findByPiece(piece)) {
-            currentValues.put(v.getAttribute().getId(), v);
+            currentTypeValues.put(v.getAttribute().getId(), v);
+        }
+        Map<Integer, PieceOrganizationAttributeValue> currentOrgValues = new HashMap<>();
+        for (PieceOrganizationAttributeValue v : orgValueRepository.findByPiece(piece)) {
+            currentOrgValues.put(v.getAttribute().getId(), v);
         }
 
         if (dto.getAttributeValues() != null) {
             for (AttributeValueInputDto input : dto.getAttributeValues()) {
-                PieceTypeAttribute attribute = requireAttributeInPool(attrPool, input.attributeId());
-                String normalized = validationRegistry.validate(attribute, input.value());
-                PieceAttributeValue existing = currentValues.get(attribute.getId());
-                String oldValue = existing == null ? null : existing.getValue();
-                if (java.util.Objects.equals(oldValue, normalized)) {
-                    continue;
-                }
-                if (normalized == null) {
-                    if (existing != null) {
-                        valueRepository.delete(existing);
-                        currentValues.remove(attribute.getId());
+                if (input.effectiveScope() == AttributeScope.ORG) {
+                    OrganizationPieceAttribute attribute = requireOrgAttributeInPool(orgPool, input.attributeId());
+                    String normalized = validationRegistry.validate(
+                            attribute.getType(), attribute.getValidatorsJson(),
+                            attribute.isRequired(), input.value());
+                    PieceOrganizationAttributeValue existing = currentOrgValues.get(attribute.getId());
+                    String oldValue = existing == null ? null : existing.getValue();
+                    if (java.util.Objects.equals(oldValue, normalized)) continue;
+                    if (normalized == null) {
+                        if (existing != null) {
+                            orgValueRepository.delete(existing);
+                            currentOrgValues.remove(attribute.getId());
+                        }
+                    } else if (existing == null) {
+                        PieceOrganizationAttributeValue created = new PieceOrganizationAttributeValue()
+                                .setPiece(piece)
+                                .setAttribute(attribute)
+                                .setValue(normalized);
+                        currentOrgValues.put(attribute.getId(), orgValueRepository.save(created));
+                    } else {
+                        existing.setValue(normalized);
+                        orgValueRepository.save(existing);
                     }
-                } else if (existing == null) {
-                    PieceAttributeValue created = new PieceAttributeValue()
-                            .setPiece(piece)
-                            .setAttribute(attribute)
-                            .setValue(normalized);
-                    currentValues.put(attribute.getId(), valueRepository.save(created));
+                    historyService.recordAttributeValueChanged(piece, actor,
+                            "org:" + attribute.getName(), oldValue, normalized);
                 } else {
-                    existing.setValue(normalized);
-                    valueRepository.save(existing);
+                    PieceTypeAttribute attribute = requireAttributeInPool(typePool, input.attributeId());
+                    String normalized = validationRegistry.validate(attribute, input.value());
+                    PieceAttributeValue existing = currentTypeValues.get(attribute.getId());
+                    String oldValue = existing == null ? null : existing.getValue();
+                    if (java.util.Objects.equals(oldValue, normalized)) continue;
+                    if (normalized == null) {
+                        if (existing != null) {
+                            valueRepository.delete(existing);
+                            currentTypeValues.remove(attribute.getId());
+                        }
+                    } else if (existing == null) {
+                        PieceAttributeValue created = new PieceAttributeValue()
+                                .setPiece(piece)
+                                .setAttribute(attribute)
+                                .setValue(normalized);
+                        currentTypeValues.put(attribute.getId(), valueRepository.save(created));
+                    } else {
+                        existing.setValue(normalized);
+                        valueRepository.save(existing);
+                    }
+                    historyService.recordAttributeValueChanged(piece, actor,
+                            attribute.getName(), oldValue, normalized);
                 }
-                historyService.recordAttributeValueChanged(piece, actor, attribute.getName(), oldValue, normalized);
             }
         }
 
-        PieceStatus newStatus = statusCalculator.compute(attrPool.values(), currentValues);
+        PieceStatus newStatus = statusCalculator.compute(
+                typePool.values(), currentTypeValues, orgPool.values(), currentOrgValues);
         if (newStatus != oldStatus) {
             piece.setStatus(newStatus);
             historyService.recordStatusChanged(piece, actor, oldStatus, newStatus);
@@ -297,24 +387,57 @@ public class PieceService {
     /**
      * Bulk recompute the status of every piece that includes {@code type} in its type set after
      * the type's schema changed. Each piece's status is based on the union of all its types'
-     * required attributes — not just {@code type}'s. Records {@code STATUS_CHANGED} entries
-     * only for pieces that actually moved.
+     * required attributes plus the organization-level required attributes. Records
+     * {@code STATUS_CHANGED} entries only for pieces that actually moved.
      */
     @Transactional
     public void recalcStatusForType(PieceType type) {
         List<Piece> pieces = pieceRepository.findByPieceTypesContaining(type);
+        recalcStatusFor(pieces, type.getOrganization());
+    }
+
+    /**
+     * Bulk recompute the status of every non-deleted piece in {@code organization}. Triggered when
+     * an organization-level attribute is added, modified or soft-deleted.
+     */
+    @Transactional
+    public void recalcStatusForOrganization(Organization organization) {
+        List<Piece> pieces = pieceRepository.findByOrganization(organization);
+        recalcStatusFor(pieces, organization);
+    }
+
+    /**
+     * Drops every {@code piece_organization_attribute_values} row referencing the given
+     * organization-level attribute. Today this is a no-op kept for parity with the type-level
+     * lifecycle (soft-delete preserves values); kept private until the policy demands it.
+     */
+    @Transactional
+    public int removeOrgValuesForAttribute(OrganizationPieceAttribute attribute) {
+        return orgValueRepository.deleteByAttribute(attribute);
+    }
+
+    private void recalcStatusFor(List<Piece> pieces, Organization organization) {
         if (pieces.isEmpty()) return;
-        List<PieceAttributeValue> all = valueRepository.findByPieceIn(pieces);
-        Map<Integer, Map<Integer, PieceAttributeValue>> byPiece = new LinkedHashMap<>();
-        for (PieceAttributeValue v : all) {
-            byPiece.computeIfAbsent(v.getPiece().getId(), k -> new HashMap<>())
+        List<PieceAttributeValue> typeAll = valueRepository.findByPieceIn(pieces);
+        Map<Integer, Map<Integer, PieceAttributeValue>> typeByPiece = new LinkedHashMap<>();
+        for (PieceAttributeValue v : typeAll) {
+            typeByPiece.computeIfAbsent(v.getPiece().getId(), k -> new HashMap<>())
                     .put(v.getAttribute().getId(), v);
         }
+        List<PieceOrganizationAttributeValue> orgAll = orgValueRepository.findByPieceIn(pieces);
+        Map<Integer, Map<Integer, PieceOrganizationAttributeValue>> orgByPiece = new LinkedHashMap<>();
+        for (PieceOrganizationAttributeValue v : orgAll) {
+            orgByPiece.computeIfAbsent(v.getPiece().getId(), k -> new HashMap<>())
+                    .put(v.getAttribute().getId(), v);
+        }
+        Map<Integer, OrganizationPieceAttribute> orgPool = collectOrgAttributePool(organization);
         User actor = currentUser();
         for (Piece p : pieces) {
-            Map<Integer, PieceTypeAttribute> attrPool = collectAttributePool(p.getPieceTypes());
-            Map<Integer, PieceAttributeValue> values = byPiece.getOrDefault(p.getId(), Map.of());
-            PieceStatus newStatus = statusCalculator.compute(attrPool.values(), values);
+            Map<Integer, PieceTypeAttribute> typePool = collectTypeAttributePool(p.getPieceTypes());
+            Map<Integer, PieceAttributeValue> typeValues = typeByPiece.getOrDefault(p.getId(), Map.of());
+            Map<Integer, PieceOrganizationAttributeValue> orgValues = orgByPiece.getOrDefault(p.getId(), Map.of());
+            PieceStatus newStatus = statusCalculator.compute(
+                    typePool.values(), typeValues, orgPool.values(), orgValues);
             if (newStatus != p.getStatus()) {
                 PieceStatus oldStatus = p.getStatus();
                 p.setStatus(newStatus);
@@ -325,13 +448,14 @@ public class PieceService {
     }
 
     /**
-     * Resolves a non-empty list of type ids, all in {@code orgId}, into a deduplicated set in
-     * caller-provided order (LinkedHashSet). Unknown ids or duplicates produce 400.
+     * Resolves a list of type ids, all in {@code orgId}, into a deduplicated set in caller-provided
+     * order (LinkedHashSet). A piece may have zero, one or many types: {@code null} or empty input
+     * produces an empty result and is allowed. Unknown ids produce 400; null elements inside the
+     * list are also rejected.
      */
     private Set<PieceType> resolveTypes(Integer orgId, List<Integer> typeIds) {
         if (typeIds == null || typeIds.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Debes asignar al menos un tipo de artículo");
+            return new LinkedHashSet<>();
         }
         Set<Integer> seen = new LinkedHashSet<>();
         Set<PieceType> resolved = new LinkedHashSet<>();
@@ -367,7 +491,7 @@ public class PieceService {
         pieceRepository.save(piece);
 
         // Drop values whose attribute is no longer covered by any of the new types.
-        Map<Integer, PieceTypeAttribute> retainedPool = collectAttributePool(newTypes);
+        Map<Integer, PieceTypeAttribute> retainedPool = collectTypeAttributePool(newTypes);
         for (PieceAttributeValue v : valueRepository.findByPiece(piece)) {
             if (!retainedPool.containsKey(v.getAttribute().getId())) {
                 valueRepository.delete(v);
@@ -377,16 +501,29 @@ public class PieceService {
     }
 
     /**
-     * Builds the union of attributes across {@code types} keyed by attribute id. When the same
-     * attribute id appears in multiple types (impossible with the current schema but coded
-     * defensively) the first occurrence wins.
+     * Builds the union of type-level attributes across {@code types} keyed by attribute id. When
+     * the same attribute id appears in multiple types (impossible with the current schema but
+     * coded defensively) the first occurrence wins.
      */
-    private Map<Integer, PieceTypeAttribute> collectAttributePool(Set<PieceType> types) {
+    private Map<Integer, PieceTypeAttribute> collectTypeAttributePool(Set<PieceType> types) {
         Map<Integer, PieceTypeAttribute> pool = new LinkedHashMap<>();
         for (PieceType t : types) {
             for (PieceTypeAttribute attr : pieceTypeService.attributesOf(t)) {
                 pool.putIfAbsent(attr.getId(), attr);
             }
+        }
+        return pool;
+    }
+
+    /**
+     * Builds the organization-level attribute pool keyed by attribute id, in the order
+     * determined by {@link OrganizationPieceAttribute#getPosition()}.
+     */
+    private Map<Integer, OrganizationPieceAttribute> collectOrgAttributePool(Organization organization) {
+        Map<Integer, OrganizationPieceAttribute> pool = new LinkedHashMap<>();
+        for (OrganizationPieceAttribute attr :
+                orgAttributeRepository.findByOrganizationOrderByPositionAscIdAsc(organization)) {
+            pool.put(attr.getId(), attr);
         }
         return pool;
     }
@@ -400,6 +537,20 @@ public class PieceService {
         if (attr == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "El atributo " + attributeId + " no pertenece a ninguno de los tipos del artículo");
+        }
+        return attr;
+    }
+
+    private OrganizationPieceAttribute requireOrgAttributeInPool(
+            Map<Integer, OrganizationPieceAttribute> pool, Integer attributeId) {
+        if (attributeId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Falta el id del atributo en uno de los valores");
+        }
+        OrganizationPieceAttribute attr = pool.get(attributeId);
+        if (attr == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "El atributo de organización " + attributeId + " no pertenece a esta organización");
         }
         return attr;
     }
@@ -449,6 +600,69 @@ public class PieceService {
                     "El nombre no puede superar " + MAX_NAME_LENGTH + " caracteres");
         }
         return trimmed;
+    }
+
+    private String sanitizeSerialNumber(String raw) {
+        if (raw == null) return null;
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) return null;
+        if (trimmed.length() > MAX_SERIAL_LENGTH) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "El número de serie no puede superar " + MAX_SERIAL_LENGTH + " caracteres");
+        }
+        return trimmed;
+    }
+
+    /**
+     * Enforces uniqueness of {@code serialNumber} within {@code organizationId} (case-sensitive).
+     * Skips the check when the value is {@code null}. When {@code excludePieceId} is non-null the
+     * piece with that id is ignored — used during update so resaving the same value does not
+     * collide with itself.
+     */
+    private void ensureSerialNumberUnique(Integer organizationId, String serialNumber, Integer excludePieceId) {
+        if (serialNumber == null) return;
+        boolean clash = excludePieceId == null
+                ? pieceRepository.existsByOrganization_IdAndSerialNumber(organizationId, serialNumber)
+                : pieceRepository.existsByOrganization_IdAndSerialNumberAndIdNot(
+                        organizationId, serialNumber, excludePieceId);
+        if (clash) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Ya existe otro artículo con ese número de serie");
+        }
+    }
+
+    /**
+     * Resolves an attachment id into the corresponding {@link PieceAttachment} after checking that
+     * it belongs to {@code piece}, has {@code kind=IMAGE} and is not soft-deleted.
+     */
+    private PieceAttachment resolveCoverAttachment(Piece piece, Integer attachmentId) {
+        PieceAttachment attachment = attachmentRepository.findById(attachmentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "La imagen de portada no existe"));
+        if (!attachment.getPiece().getId().equals(piece.getId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "La imagen de portada debe pertenecer al mismo artículo");
+        }
+        if (attachment.getKind() != PieceAttachmentKind.IMAGE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "La portada debe ser una imagen");
+        }
+        return attachment;
+    }
+
+    /**
+     * Persists the cover change on {@code piece} when it differs from the current value, recording
+     * the move in piece history as a {@code PIECE_UPDATED} entry on the {@code coverAttachmentId}
+     * field.
+     */
+    private void applyCoverChange(Piece piece, PieceAttachment newCover, User actor) {
+        Integer oldId = piece.getCoverAttachment() == null ? null : piece.getCoverAttachment().getId();
+        Integer newId = newCover == null ? null : newCover.getId();
+        if (java.util.Objects.equals(oldId, newId)) return;
+        piece.setCoverAttachment(newCover);
+        historyService.recordUpdated(piece, actor, "coverAttachmentId",
+                oldId == null ? null : oldId.toString(),
+                newId == null ? null : newId.toString());
     }
 
     private String emptyToNull(String value) {

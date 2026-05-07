@@ -39,12 +39,26 @@ public class AttributeValueValidationRegistry {
      *         {@code null} if the optional attribute received no value
      */
     public String validate(PieceTypeAttribute attribute, String rawValue) {
-        AttributeValueValidator validator = byType.get(attribute.getType());
+        return validate(attribute.getType(), attribute.getValidatorsJson(), attribute.isRequired(), rawValue);
+    }
+
+    /**
+     * Type-agnostic validation entry-point shared by piece-type attributes and organization-level
+     * attributes. Decouples the registry from a specific entity class.
+     *
+     * @param type           attribute type that selects the matching validator strategy
+     * @param validatorsJson serialized validator blob; may be {@code null}
+     * @param required       whether a missing value should be reported as a validation error
+     * @param rawValue       raw user input to normalize
+     * @return normalized canonical value or {@code null} when the optional attribute has none
+     */
+    public String validate(AttributeType type, String validatorsJson, boolean required, String rawValue) {
+        AttributeValueValidator validator = byType.get(type);
         if (validator == null) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
-                    "No hay validador registrado para el tipo " + attribute.getType());
+                    "No hay validador registrado para el tipo " + type);
         }
-        AttributeValidatorsDto rules = validatorsCodec.deserialize(attribute.getValidatorsJson());
-        return validator.validateAndNormalize(rawValue, rules, attribute.isRequired());
+        AttributeValidatorsDto rules = validatorsCodec.deserialize(validatorsJson);
+        return validator.validateAndNormalize(rawValue, rules, required);
     }
 }

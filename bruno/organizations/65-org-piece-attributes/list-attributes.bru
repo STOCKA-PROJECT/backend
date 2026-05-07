@@ -1,0 +1,15 @@
+meta {
+  name: List Org Piece Attributes
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/piece-attributes
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}

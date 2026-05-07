@@ -1,0 +1,25 @@
+meta {
+  name: Update Piece (set serial number)
+  type: http
+  seq: 22
+}
+
+patch {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces/{{pieceId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "serialNumber": "SN-000999"
+  }
+}

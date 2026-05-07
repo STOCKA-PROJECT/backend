@@ -1,0 +1,25 @@
+meta {
+  name: Rename Attribute (technical name)
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/organizations/{{orgId}}/piece-types/{{pieceTypeId}}/attributes/{{attributeId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "nuevo_tecnico"
+  }
+}

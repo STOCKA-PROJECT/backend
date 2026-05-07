@@ -37,4 +37,24 @@ public interface PieceRepository extends JpaRepository<Piece, Integer>, JpaSpeci
     List<Piece> findByPieceTypesContaining(@Param("type") PieceType pieceType);
 
     Optional<Piece> findByIdAndOrganization(Integer id, Organization organization);
+
+    /**
+     * All non-soft-deleted pieces of an organization. Used to recompute status in bulk after the
+     * organization's attribute schema changes.
+     */
+    List<Piece> findByOrganization(Organization organization);
+
+    /**
+     * Whether another (non-deleted) piece in {@code organizationId} already has the given
+     * {@code serialNumber}. Used to enforce per-organization uniqueness from the service layer
+     * without an actual DB UNIQUE constraint (MariaDB cannot scope UNIQUE by {@code deleted_at}).
+     */
+    boolean existsByOrganization_IdAndSerialNumber(Integer organizationId, String serialNumber);
+
+    /**
+     * Same as {@link #existsByOrganization_IdAndSerialNumber} but excluding the piece with id
+     * {@code excludePieceId} — used during update to allow re-saving the same value.
+     */
+    boolean existsByOrganization_IdAndSerialNumberAndIdNot(
+            Integer organizationId, String serialNumber, Integer excludePieceId);
 }

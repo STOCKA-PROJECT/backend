@@ -23,6 +23,9 @@ public final class ErrorCodes {
     public static final String AUTH_VERIFICATION_TOKEN_INVALID = "auth.verification_token_invalid";
     public static final String AUTH_UNAUTHENTICATED = "auth.unauthenticated";
     public static final String AUTH_FORBIDDEN = "auth.forbidden";
+    public static final String AUTH_CURRENT_PASSWORD_INVALID = "auth.current_password_invalid";
+    public static final String AUTH_PASSWORD_TOO_SHORT = "auth.password_too_short";
+    public static final String AUTH_NEW_PASSWORD_SAME_AS_CURRENT = "auth.new_password_same_as_current";
 
     // ---- users ----------------------------------------------------------
     public static final String USERS_EMAIL_TAKEN = "users.email_taken";
@@ -34,6 +37,8 @@ public final class ErrorCodes {
     public static final String PIECES_NOT_FOUND = "pieces.not_found";
     public static final String PIECE_TYPES_NOT_FOUND = "piece_types.not_found";
     public static final String PIECE_TYPES_ATTRIBUTE_INVALID = "piece_types.attribute_invalid";
+    public static final String PIECE_TYPES_NAME_CONFLICT = "piece_types.name_conflict";
+    public static final String PIECE_TYPES_ATTRIBUTE_NAME_CONFLICT = "piece_types.attribute_name_conflict";
     public static final String LOCATIONS_NOT_FOUND = "locations.not_found";
 
     // ---- organizations --------------------------------------------------

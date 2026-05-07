@@ -339,6 +339,174 @@ class UserControllerIntegrationTest {
     }
 
     // -------------------------------------------------------------------------
+    // PATCH /users/me/password
+    // -------------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("PATCH /users/me/password")
+    class PatchMyPassword {
+
+        @Test
+        @DisplayName("204 — changes password and old password no longer authenticates while new one does")
+        void should_return204_andRotatePassword() throws Exception {
+            mockMvc.perform(patch("/users/me/password")
+                            .header("Authorization", "Bearer " + userBToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of(
+                                    "currentPassword", "password123",
+                                    "newPassword", "newPassword456",
+                                    "repeatPassword", "newPassword456"))))
+                    .andExpect(status().isNoContent());
+
+            // The new password works.
+            String newToken = login(mockMvc, om, "userb@test.com", "newPassword456");
+            org.junit.jupiter.api.Assertions.assertNotNull(newToken);
+
+            // The old password no longer works.
+            mockMvc.perform(post("/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of(
+                                    "email", "userb@test.com",
+                                    "password", "password123"))))
+                    .andExpect(status().isUnauthorized());
+
+            // passwordChangedAt is populated in DB.
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM users WHERE email = ? AND password_changed_at IS NOT NULL",
+                    Integer.class, "userb@test.com");
+            org.junit.jupiter.api.Assertions.assertEquals(1, count);
+        }
+
+        @Test
+        @DisplayName("204 — current JWT is invalidated after password change (issued before passwordChangedAt)")
+        void should_invalidateCurrentJwt() throws Exception {
+            // Ensure passwordChangedAt is strictly after the iat second of userBToken
+            // (JWT iat granularity = 1 sec, see JwtAuthenticationFilter).
+            Thread.sleep(1100);
+
+            mockMvc.perform(patch("/users/me/password")
+                            .header("Authorization", "Bearer " + userBToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of(
+                                    "currentPassword", "password123",
+                                    "newPassword", "newPassword456",
+                                    "repeatPassword", "newPassword456"))))
+                    .andExpect(status().isNoContent());
+
+            // The JwtAuthenticationFilter rejects tokens issued before passwordChangedAt.
+            mockMvc.perform(get("/users/me")
+                            .header("Authorization", "Bearer " + userBToken))
+                    .andExpect(status().isUnauthorized());
+
+            // Wait again so the next JWT iat second is past passwordChangedAt before re-logging.
+            Thread.sleep(1100);
+            String freshToken = login(mockMvc, om, "userb@test.com", "newPassword456");
+            mockMvc.perform(get("/users/me")
+                            .header("Authorization", "Bearer " + freshToken))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("400 — currentPassword is missing")
+        void should_return400_when_currentPasswordMissing() throws Exception {
+            mockMvc.perform(patch("/users/me/password")
+                            .header("Authorization", "Bearer " + userBToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of(
+                                    "newPassword", "newPassword456",
+                                    "repeatPassword", "newPassword456"))))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("auth.current_password_invalid"));
+        }
+
+        @Test
+        @DisplayName("400 — currentPassword is blank")
+        void should_return400_when_currentPasswordBlank() throws Exception {
+            mockMvc.perform(patch("/users/me/password")
+                            .header("Authorization", "Bearer " + userBToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of(
+                                    "currentPassword", "   ",
+                                    "newPassword", "newPassword456",
+                                    "repeatPassword", "newPassword456"))))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("auth.current_password_invalid"));
+        }
+
+        @Test
+        @DisplayName("400 — newPassword is shorter than 8 characters")
+        void should_return400_when_newPasswordTooShort() throws Exception {
+            mockMvc.perform(patch("/users/me/password")
+                            .header("Authorization", "Bearer " + userBToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of(
+                                    "currentPassword", "password123",
+                                    "newPassword", "short",
+                                    "repeatPassword", "short"))))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("auth.password_too_short"));
+        }
+
+        @Test
+        @DisplayName("400 — newPassword and repeatPassword do not match")
+        void should_return400_when_passwordsMismatch() throws Exception {
+            mockMvc.perform(patch("/users/me/password")
+                            .header("Authorization", "Bearer " + userBToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of(
+                                    "currentPassword", "password123",
+                                    "newPassword", "newPassword456",
+                                    "repeatPassword", "differentPassword"))))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("auth.passwords_mismatch"));
+        }
+
+        @Test
+        @DisplayName("401 — currentPassword does not match the stored hash")
+        void should_return401_when_currentPasswordWrong() throws Exception {
+            mockMvc.perform(patch("/users/me/password")
+                            .header("Authorization", "Bearer " + userBToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of(
+                                    "currentPassword", "wrongPassword",
+                                    "newPassword", "newPassword456",
+                                    "repeatPassword", "newPassword456"))))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.code").value("auth.current_password_invalid"));
+
+            // Old password still works because nothing changed.
+            String stillValid = login(mockMvc, om, "userb@test.com", "password123");
+            org.junit.jupiter.api.Assertions.assertNotNull(stillValid);
+        }
+
+        @Test
+        @DisplayName("400 — new password equals the current one")
+        void should_return400_when_newPasswordEqualsCurrent() throws Exception {
+            mockMvc.perform(patch("/users/me/password")
+                            .header("Authorization", "Bearer " + userBToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of(
+                                    "currentPassword", "password123",
+                                    "newPassword", "password123",
+                                    "repeatPassword", "password123"))))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("auth.new_password_same_as_current"));
+        }
+
+        @Test
+        @DisplayName("401 — without token")
+        void should_return401_when_noToken() throws Exception {
+            mockMvc.perform(patch("/users/me/password")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of(
+                                    "currentPassword", "password123",
+                                    "newPassword", "newPassword456",
+                                    "repeatPassword", "newPassword456"))))
+                    .andExpect(status().isUnauthorized());
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // DELETE /users/me
     // -------------------------------------------------------------------------
 

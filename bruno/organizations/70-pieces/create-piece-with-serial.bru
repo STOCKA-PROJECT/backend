@@ -1,0 +1,30 @@
+meta {
+  name: Create Piece (with serial number)
+  type: http
+  seq: 21
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Taladro percutor",
+    "serialNumber": "SN-000123",
+    "description": "Taladro 18V con maletín",
+    "pieceTypeIds": [{{pieceTypeId}}],
+    "ownerUserId": {{ownerUserId}},
+    "locationId": {{locationId}}
+  }
+}

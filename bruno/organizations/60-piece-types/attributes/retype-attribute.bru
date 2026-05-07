@@ -1,0 +1,25 @@
+meta {
+  name: Retype Attribute (no values)
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{baseUrl}}/organizations/{{orgId}}/piece-types/{{pieceTypeId}}/attributes/{{attributeId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "type": "DATE"
+  }
+}

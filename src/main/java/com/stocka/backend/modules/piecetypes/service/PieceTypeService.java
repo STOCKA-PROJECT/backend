@@ -7,6 +7,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,8 +34,10 @@ import com.stocka.backend.modules.piecetypes.repository.PieceTypeRepository;
 @Service
 public class PieceTypeService {
     static final Pattern ATTR_NAME_PATTERN = Pattern.compile("^[a-z][a-z0-9_]{0,79}$");
-    private static final int MAX_TYPE_NAME_LENGTH = 120;
+    static final int MAX_TYPE_NAME_LENGTH = 120;
+    static final int MAX_ATTR_NAME_LENGTH = 80;
     private static final int MAX_DISPLAY_NAME_LENGTH = 160;
+    private static final String SOFT_DELETE_SUFFIX = "::deleted::";
 
     private final PieceTypeRepository pieceTypeRepository;
     private final PieceTypeAttributeRepository attributeRepository;
@@ -65,7 +68,7 @@ public class PieceTypeService {
         PieceType type = new PieceType()
                 .setOrganization(org)
                 .setName(name);
-        type = pieceTypeRepository.save(type);
+        type = saveTypeAndFlush(type);
 
         if (dto.getAttributes() != null) {
             ensureUniqueAttributeNamesInPayload(dto.getAttributes());
@@ -107,7 +110,7 @@ public class PieceTypeService {
                 type.setName(newName);
             }
         }
-        return pieceTypeRepository.save(type);
+        return saveTypeAndFlush(type);
     }
 
     @Transactional
@@ -120,6 +123,11 @@ public class PieceTypeService {
                         "El tipo tiene " + count + " artículos; elimínalos antes de eliminar el tipo");
             }
         }
+        // Free up the name so a new active type with the same name can be created. The DB-level
+        // uk_piece_type_org_name UNIQUE constraint covers (organization_id, name) regardless of
+        // deleted_at; appending an id-based suffix guarantees uniqueness across soft-deleted rows
+        // without breaking same-org enforcement on active rows.
+        type.setName(buildSoftDeletedName(type.getName(), type.getId(), MAX_TYPE_NAME_LENGTH));
         type.setDeletedAt(LocalDateTime.now());
         pieceTypeRepository.save(type);
     }
@@ -154,7 +162,7 @@ public class PieceTypeService {
                 .setRequired(dto.getRequired() == null || dto.getRequired())
                 .setPosition(position)
                 .setValidatorsJson(validatorsCodec.serialize(dto.getValidators()));
-        return attributeRepository.save(attr);
+        return saveAttributeAndFlush(attr);
     }
 
     private void ensureUniqueAttributeNamesInPayload(List<CreatePieceTypeAttributeDto> attributes) {
@@ -171,20 +179,62 @@ public class PieceTypeService {
         if (name == null) return;
         Optional<PieceTypeAttribute> existing = attributeRepository.findByPieceTypeAndName(type, name);
         if (existing.isPresent() && (excludeId == null || !existing.get().getId().equals(excludeId))) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Ya existe un atributo con el nombre '" + name + "' en este tipo");
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PIECE_TYPES_ATTRIBUTE_NAME_CONFLICT);
         }
     }
 
     private void ensureUniqueTypeName(Organization org, String name, Integer excludeId) {
         Optional<PieceType> existing = pieceTypeRepository.findByOrganizationAndName(org, name);
         if (existing.isPresent() && (excludeId == null || !existing.get().getId().equals(excludeId))) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Ya existe un tipo de artículo con ese nombre en la organización");
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PIECE_TYPES_NAME_CONFLICT);
         }
     }
 
-    static void validateAttributeName(String name) {
+    private PieceType saveTypeAndFlush(PieceType type) {
+        try {
+            return pieceTypeRepository.saveAndFlush(type);
+        } catch (DataIntegrityViolationException ex) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PIECE_TYPES_NAME_CONFLICT, null, ex);
+        }
+    }
+
+    private PieceTypeAttribute saveAttributeAndFlush(PieceTypeAttribute attr) {
+        try {
+            return attributeRepository.saveAndFlush(attr);
+        } catch (DataIntegrityViolationException ex) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PIECE_TYPES_ATTRIBUTE_NAME_CONFLICT, null, ex);
+        }
+    }
+
+    /**
+     * Builds the renamed value for a soft-deleted row so its original name is freed for a new
+     * active row with the same name. The id-based suffix guarantees the renamed value stays
+     * unique across all previously soft-deleted rows.
+     *
+     * @param currentName the live name about to be released
+     * @param id          primary key of the row being soft-deleted
+     * @param maxLength   maximum length allowed by the column
+     * @return the value to store in {@code name} alongside {@code deleted_at}
+     */
+    static String buildSoftDeletedName(String currentName, Integer id, int maxLength) {
+        String suffix = SOFT_DELETE_SUFFIX + (id == null ? "?" : id);
+        int maxBaseLen = Math.max(0, maxLength - suffix.length());
+        String base = currentName == null ? "" : currentName;
+        if (base.length() > maxBaseLen) {
+            base = base.substring(0, maxBaseLen);
+        }
+        return base + suffix;
+    }
+
+    /**
+     * Validates that {@code name} matches the canonical attribute identifier shape (lowercase
+     * letter followed by up to 79 lowercase letters, digits or underscores). Public so the
+     * organization-level attribute service can reuse the same rule.
+     *
+     * @param name attribute identifier proposed by the caller
+     * @throws ResponseStatusException with status 400 when the name is missing or malformed
+     */
+    public static void validateAttributeName(String name) {
         if (name == null || name.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "El nombre del atributo es obligatorio");
@@ -216,7 +266,17 @@ public class PieceTypeService {
         return value;
     }
 
-    static void validateValidators(AttributeType type, AttributeValidatorsDto rules) {
+    /**
+     * Validates the type-specific validator blob attached to an attribute (option list for
+     * SELECT/MULTI_SELECT, length bounds for textual types, ...). Shared with the
+     * organization-level attribute service.
+     *
+     * @param type  declared attribute type
+     * @param rules validator blob; may be {@code null} when no rules apply
+     * @throws ResponseStatusException with status 400 when the rules are inconsistent or missing
+     *                                 required fields for the given {@code type}
+     */
+    public static void validateValidators(AttributeType type, AttributeValidatorsDto rules) {
         if (type == AttributeType.SELECT || type == AttributeType.MULTI_SELECT) {
             List<String> options = rules == null ? null : rules.getOptions();
             if (options == null || options.isEmpty()) {

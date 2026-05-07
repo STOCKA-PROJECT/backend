@@ -22,6 +22,7 @@ import com.stocka.backend.modules.pieces.entity.Piece;
 import com.stocka.backend.modules.pieces.entity.PieceAttachment;
 import com.stocka.backend.modules.pieces.entity.PieceAttachmentKind;
 import com.stocka.backend.modules.pieces.repository.PieceAttachmentRepository;
+import com.stocka.backend.modules.pieces.repository.PieceRepository;
 import com.stocka.backend.modules.storage.PresignedDownload;
 import com.stocka.backend.modules.storage.R2Properties;
 import com.stocka.backend.modules.storage.R2Service;
@@ -39,6 +40,7 @@ public class PieceAttachmentService {
     private static final Logger log = LoggerFactory.getLogger(PieceAttachmentService.class);
 
     private final PieceAttachmentRepository attachmentRepository;
+    private final PieceRepository pieceRepository;
     private final PieceService pieceService;
     private final PieceHistoryService historyService;
     private final R2Service r2Service;
@@ -47,6 +49,7 @@ public class PieceAttachmentService {
 
     public PieceAttachmentService(
             PieceAttachmentRepository attachmentRepository,
+            PieceRepository pieceRepository,
             PieceService pieceService,
             PieceHistoryService historyService,
             R2Service r2Service,
@@ -54,6 +57,7 @@ public class PieceAttachmentService {
             PieceAttachmentProperties limits
     ) {
         this.attachmentRepository = attachmentRepository;
+        this.pieceRepository = pieceRepository;
         this.pieceService = pieceService;
         this.historyService = historyService;
         this.r2Service = r2Service;
@@ -96,6 +100,10 @@ public class PieceAttachmentService {
                 .setUploadedBy(currentUser());
         PieceAttachment saved = attachmentRepository.save(attachment);
         historyService.recordAttachmentAdded(piece, currentUser(), safeName);
+        if (kind == PieceAttachmentKind.IMAGE && piece.getCoverAttachment() == null) {
+            piece.setCoverAttachment(saved);
+            pieceRepository.save(piece);
+        }
         return saved;
     }
 
@@ -115,14 +123,20 @@ public class PieceAttachmentService {
     @Transactional
     public void softDelete(Integer orgId, Integer pieceId, Integer attachmentId) {
         PieceAttachment attachment = findInPiece(orgId, pieceId, attachmentId);
+        Piece piece = attachment.getPiece();
         attachment.setDeletedAt(LocalDateTime.now());
         attachmentRepository.save(attachment);
+        if (piece.getCoverAttachment() != null
+                && piece.getCoverAttachment().getId().equals(attachment.getId())) {
+            piece.setCoverAttachment(null);
+            pieceRepository.save(piece);
+        }
         try {
             r2Service.delete(attachment.getR2Key());
         } catch (R2UnavailableException e) {
             log.warn("r2_delete_failed key={} reason={}", attachment.getR2Key(), e.getMessage());
         }
-        historyService.recordAttachmentRemoved(attachment.getPiece(), currentUser(), attachment.getOriginalFilename());
+        historyService.recordAttachmentRemoved(piece, currentUser(), attachment.getOriginalFilename());
     }
 
     private PieceAttachment findInPiece(Integer orgId, Integer pieceId, Integer attachmentId) {

@@ -33,14 +33,16 @@ import jakarta.persistence.UniqueConstraint;
 
 /**
  * One inventory item ("artículo") inside an organization. Belongs to one or more
- * {@link PieceType}s that together define its dynamic attribute schema. Optional owner and
- * location.
+ * {@link PieceType}s that together define its dynamic attribute schema. Optional owner,
+ * location, serial number (unique within the organization, validated at the service layer)
+ * and cover attachment.
  */
 @Entity
 @Table(
         name = "pieces",
         indexes = {
-                @Index(name = "idx_piece_org_status", columnList = "organization_id, status")
+                @Index(name = "idx_piece_org_status", columnList = "organization_id, status"),
+                @Index(name = "idx_piece_org_serial", columnList = "organization_id, serial_number")
         }
 )
 @SQLRestriction("deleted_at IS NULL")
@@ -68,6 +70,9 @@ public class Piece {
     @Column(nullable = false, length = 255)
     private String name;
 
+    @Column(name = "serial_number", length = 100)
+    private String serialNumber;
+
     @Column(columnDefinition = "TEXT")
     private String description;
 
@@ -78,6 +83,10 @@ public class Piece {
     @ManyToOne
     @JoinColumn(name = "location_id", referencedColumnName = "id")
     private Location location;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cover_attachment_id", referencedColumnName = "id")
+    private PieceAttachment coverAttachment;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 10,
@@ -111,6 +120,9 @@ public class Piece {
     public String getName() { return name; }
     public Piece setName(String name) { this.name = name; return this; }
 
+    public String getSerialNumber() { return serialNumber; }
+    public Piece setSerialNumber(String serialNumber) { this.serialNumber = serialNumber; return this; }
+
     public String getDescription() { return description; }
     public Piece setDescription(String description) { this.description = description; return this; }
 
@@ -119,6 +131,12 @@ public class Piece {
 
     public Location getLocation() { return location; }
     public Piece setLocation(Location location) { this.location = location; return this; }
+
+    public PieceAttachment getCoverAttachment() { return coverAttachment; }
+    public Piece setCoverAttachment(PieceAttachment coverAttachment) {
+        this.coverAttachment = coverAttachment;
+        return this;
+    }
 
     public PieceStatus getStatus() { return status; }
     public Piece setStatus(PieceStatus status) { this.status = status; return this; }

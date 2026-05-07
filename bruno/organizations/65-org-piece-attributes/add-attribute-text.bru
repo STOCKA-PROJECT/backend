@@ -1,0 +1,29 @@
+meta {
+  name: Add Org Attribute (TEXT)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/piece-attributes
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "proveedor",
+    "displayName": "Proveedor",
+    "type": "TEXT",
+    "required": false,
+    "validators": { "maxLength": 120 }
+  }
+}

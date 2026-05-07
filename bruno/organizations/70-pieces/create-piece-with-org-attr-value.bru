@@ -1,0 +1,31 @@
+meta {
+  name: Create Piece (with ORG attribute value)
+  type: http
+  seq: 25
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Taladro con garantía",
+    "serialNumber": "SN-001000",
+    "pieceTypeIds": [{{pieceTypeId}}],
+    "attributeValues": [
+      { "attributeId": {{orgAttributeId}}, "scope": "ORG", "value": "2027-01-31" },
+      { "attributeId": {{attributeId}}, "scope": "TYPE", "value": "azul" }
+    ]
+  }
+}

@@ -98,9 +98,13 @@ public class PieceController {
     }
 
     private PieceResponseDto toResponse(Piece piece) {
-        List<PieceAttributeValueResponseDto> values = pieceService.valuesOf(piece).stream()
-                .map(PieceAttributeValueResponseDto::from)
-                .toList();
+        List<PieceAttributeValueResponseDto> values = new java.util.ArrayList<>();
+        pieceService.valuesOf(piece).stream()
+                .map(PieceAttributeValueResponseDto::fromType)
+                .forEach(values::add);
+        pieceService.orgValuesOf(piece).stream()
+                .map(PieceAttributeValueResponseDto::fromOrg)
+                .forEach(values::add);
         List<PieceAttachmentResponseDto> attachments = attachmentRepository.findByPiece(piece).stream()
                 .map(PieceAttachmentResponseDto::from)
                 .toList();

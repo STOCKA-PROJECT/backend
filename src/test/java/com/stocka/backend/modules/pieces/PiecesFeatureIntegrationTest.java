@@ -283,14 +283,104 @@ class PiecesFeatureIntegrationTest {
         }
 
         @Test
-        @DisplayName("duplicate type name in org returns 409")
+        @DisplayName("duplicate type name in org returns 409 with piece_types.name_conflict code")
         void duplicate_typeName_returns409() throws Exception {
             createSimpleTypeAs(ownerToken, "Tool", true);
             mockMvc.perform(post("/organizations/" + orgId + "/piece-types")
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of("name", "Tool"))))
-                    .andExpect(status().isConflict());
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("piece_types.name_conflict"));
+        }
+
+        @Test
+        @DisplayName("can recreate a type with the same name after soft-delete (slot is freed)")
+        void recreateType_afterSoftDelete_succeeds() throws Exception {
+            Integer typeId = createSimpleTypeAs(ownerToken, "Tira Led", true);
+            mockMvc.perform(delete("/organizations/" + orgId + "/piece-types/" + typeId)
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isNoContent());
+
+            // Should not collide with the soft-deleted row at the DB level.
+            createSimpleTypeAs(ownerToken, "Tira Led", true);
+
+            mockMvc.perform(get("/organizations/" + orgId + "/piece-types")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.length()").value(1))
+                    .andExpect(jsonPath("$[0].name").value("Tira Led"));
+        }
+
+        @Test
+        @DisplayName("two soft-deleted types with the same original name coexist without UK collisions")
+        void softDelete_twiceSameName_doesNotCollide() throws Exception {
+            Integer first = createSimpleTypeAs(ownerToken, "Tira Led", true);
+            mockMvc.perform(delete("/organizations/" + orgId + "/piece-types/" + first)
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isNoContent());
+
+            Integer second = createSimpleTypeAs(ownerToken, "Tira Led", true);
+            mockMvc.perform(delete("/organizations/" + orgId + "/piece-types/" + second)
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isNoContent());
+
+            mockMvc.perform(get("/organizations/" + orgId + "/piece-types")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.length()").value(0));
+
+            Long deletedRows = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM piece_types WHERE deleted_at IS NOT NULL", Long.class);
+            org.assertj.core.api.Assertions.assertThat(deletedRows).isEqualTo(2L);
+        }
+
+        @Test
+        @DisplayName("can recreate an attribute with the same technical name after soft-delete")
+        void recreateAttribute_afterSoftDelete_succeeds() throws Exception {
+            Integer typeId = createSimpleTypeAs(ownerToken, "Tool", true);
+            Integer attrId = firstAttributeIdOfType(typeId);
+
+            mockMvc.perform(delete(
+                            "/organizations/" + orgId + "/piece-types/" + typeId + "/attributes/" + attrId)
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isNoContent());
+
+            Map<String, Object> recreated = Map.of(
+                    "name", "color", "displayName", "Color",
+                    "type", "TEXT", "required", true);
+            mockMvc.perform(post("/organizations/" + orgId + "/piece-types/" + typeId + "/attributes")
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(recreated)))
+                    .andExpect(status().isCreated());
+        }
+
+        @Test
+        @DisplayName("the same type name can coexist in two different organizations")
+        void crossOrg_sameTypeName_isolated() throws Exception {
+            createSimpleTypeAs(ownerToken, "Tira Led", true);
+
+            // Seed the second org through SQL: the global ADMIN (ownerToken) acts as OWNER of
+            // every org via OrganizationSecurity, so we don't need an explicit member row. Going
+            // through POST /organizations would clash with the bare-SQL members seeded in setUp().
+            Long nextOrgId = jdbcTemplate.queryForObject(
+                    "SELECT COALESCE(MAX(id), 0) + 1 FROM organizations", Long.class);
+            jdbcTemplate.update(
+                    "INSERT INTO organizations (id, name, slug, created_at, updated_at) "
+                            + "VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                    nextOrgId, "Beta", "beta");
+            Integer otherOrgId = nextOrgId.intValue();
+
+            Map<String, Object> attr = Map.of(
+                    "name", "color", "displayName", "Color",
+                    "type", "TEXT", "required", true);
+            Map<String, Object> body = Map.of("name", "Tira Led", "attributes", List.of(attr));
+            mockMvc.perform(post("/organizations/" + otherOrgId + "/piece-types")
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(body)))
+                    .andExpect(status().isCreated());
         }
 
         @Test
@@ -661,8 +751,8 @@ class PiecesFeatureIntegrationTest {
         }
 
         @Test
-        @DisplayName("create with empty pieceTypeIds returns 400")
-        void emptyTypes_returns400() throws Exception {
+        @DisplayName("create with empty pieceTypeIds is allowed and yields ACTIVE status")
+        void emptyTypes_allowed_andActive() throws Exception {
             mockMvc.perform(post("/organizations/" + orgId + "/pieces")
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
@@ -670,7 +760,22 @@ class PiecesFeatureIntegrationTest {
                                     "name", "NoType",
                                     "pieceTypeIds", List.of()
                             ))))
-                    .andExpect(status().isBadRequest());
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.pieceTypes.length()").value(0))
+                    .andExpect(jsonPath("$.status").value("ACTIVE"));
+        }
+
+        @Test
+        @DisplayName("create with no pieceTypeIds field at all is allowed")
+        void missingTypes_allowed() throws Exception {
+            mockMvc.perform(post("/organizations/" + orgId + "/pieces")
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of(
+                                    "name", "Untyped"
+                            ))))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.pieceTypes.length()").value(0));
         }
 
         @Test

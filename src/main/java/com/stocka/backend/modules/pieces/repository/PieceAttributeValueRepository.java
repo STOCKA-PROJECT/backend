@@ -18,6 +18,8 @@ public interface PieceAttributeValueRepository extends JpaRepository<PieceAttrib
 
     List<PieceAttributeValue> findByPieceIn(List<Piece> pieces);
 
+    long countByAttribute(PieceTypeAttribute attribute);
+
     @Modifying
     @Query("DELETE FROM PieceAttributeValue v WHERE v.attribute = :attribute")
     int deleteByAttribute(@Param("attribute") PieceTypeAttribute attribute);

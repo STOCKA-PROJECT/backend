@@ -1,0 +1,29 @@
+meta {
+  name: Add Org Attribute (DATE, required)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/piece-attributes
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "garantia_hasta",
+    "displayName": "Garantía hasta",
+    "type": "DATE",
+    "required": true,
+    "validators": { "allowFuture": true }
+  }
+}

@@ -1,0 +1,30 @@
+meta {
+  name: Retype Org Attribute (with values, expects 409)
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{baseUrl}}/organizations/{{orgId}}/piece-attributes/{{orgAttributeId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "type": "INTEGER"
+  }
+}
+
+docs {
+  Run this against an org-level attribute that already has saved values across pieces.
+  Expected response: 409 Conflict with message "No se puede cambiar el tipo: existen N piezas con valores guardados...".
+}

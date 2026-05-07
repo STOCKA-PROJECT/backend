@@ -1,0 +1,15 @@
+meta {
+  name: Delete Org Attribute
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{baseUrl}}/organizations/{{orgId}}/piece-attributes/{{orgAttributeId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}

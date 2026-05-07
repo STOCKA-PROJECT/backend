@@ -24,8 +24,13 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.stocka.backend.modules.common.error.ApiException;
+import com.stocka.backend.modules.common.error.ErrorCodes;
+import com.stocka.backend.modules.organizations.repository.OrganizationMemberRepository;
+import com.stocka.backend.modules.users.dto.ChangePasswordDto;
 import com.stocka.backend.modules.users.dto.UpdateUserProfileDto;
 import com.stocka.backend.modules.users.entity.Language;
 import com.stocka.backend.modules.users.entity.User;
@@ -36,6 +41,8 @@ import com.stocka.backend.modules.users.repository.UserRepository;
 class UserServiceTest {
 
     @Mock private UserRepository userRepository;
+    @Mock private OrganizationMemberRepository memberRepository;
+    @Mock private PasswordEncoder passwordEncoder;
 
     @InjectMocks
     private UserService sut;
@@ -400,6 +407,132 @@ class UserServiceTest {
 
             assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
             verify(userRepository, never()).save(any(User.class));
+        }
+    }
+
+    @Nested
+    @DisplayName("changePassword")
+    class ChangePassword {
+
+        private ChangePasswordDto valid() {
+            return new ChangePasswordDto()
+                    .setCurrentPassword("oldPwd123")
+                    .setNewPassword("newPwd123")
+                    .setRepeatPassword("newPwd123");
+        }
+
+        @Test
+        @DisplayName("should encode new password and update passwordChangedAt when input is valid")
+        void should_encodeAndPersist_when_valid() {
+            when(passwordEncoder.matches("oldPwd123", "hashed")).thenReturn(true);
+            when(passwordEncoder.matches("newPwd123", "hashed")).thenReturn(false);
+            when(passwordEncoder.encode("newPwd123")).thenReturn("hashed-new");
+            when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            sut.changePassword(actor, valid());
+
+            assertEquals("hashed-new", actor.getPassword());
+            assertNotNull(actor.getPasswordChangedAt());
+            verify(userRepository).save(actor);
+        }
+
+        @Test
+        @DisplayName("should throw 400 with current_password_invalid when currentPassword is null")
+        void should_throw400_when_currentPasswordIsNull() {
+            ChangePasswordDto dto = valid().setCurrentPassword(null);
+
+            ApiException ex = assertThrows(ApiException.class, () -> sut.changePassword(actor, dto));
+
+            assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+            assertEquals(ErrorCodes.AUTH_CURRENT_PASSWORD_INVALID, ex.getCode());
+            verify(userRepository, never()).save(any(User.class));
+        }
+
+        @Test
+        @DisplayName("should throw 400 with current_password_invalid when currentPassword is blank")
+        void should_throw400_when_currentPasswordIsBlank() {
+            ChangePasswordDto dto = valid().setCurrentPassword("   ");
+
+            ApiException ex = assertThrows(ApiException.class, () -> sut.changePassword(actor, dto));
+
+            assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+            assertEquals(ErrorCodes.AUTH_CURRENT_PASSWORD_INVALID, ex.getCode());
+            verify(userRepository, never()).save(any(User.class));
+        }
+
+        @Test
+        @DisplayName("should throw 400 with password_too_short when newPassword is null")
+        void should_throw400_when_newPasswordIsNull() {
+            ChangePasswordDto dto = valid().setNewPassword(null);
+
+            ApiException ex = assertThrows(ApiException.class, () -> sut.changePassword(actor, dto));
+
+            assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+            assertEquals(ErrorCodes.AUTH_PASSWORD_TOO_SHORT, ex.getCode());
+            verify(userRepository, never()).save(any(User.class));
+        }
+
+        @Test
+        @DisplayName("should throw 400 with password_too_short when newPassword is shorter than 8")
+        void should_throw400_when_newPasswordTooShort() {
+            ChangePasswordDto dto = valid().setNewPassword("short").setRepeatPassword("short");
+
+            ApiException ex = assertThrows(ApiException.class, () -> sut.changePassword(actor, dto));
+
+            assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+            assertEquals(ErrorCodes.AUTH_PASSWORD_TOO_SHORT, ex.getCode());
+            assertEquals(8, ex.getParams().get("min"));
+            verify(userRepository, never()).save(any(User.class));
+        }
+
+        @Test
+        @DisplayName("should throw 400 with passwords_mismatch when newPassword and repeatPassword differ")
+        void should_throw400_when_passwordsMismatch() {
+            ChangePasswordDto dto = valid().setRepeatPassword("differentPwd123");
+
+            ApiException ex = assertThrows(ApiException.class, () -> sut.changePassword(actor, dto));
+
+            assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+            assertEquals(ErrorCodes.AUTH_PASSWORDS_MISMATCH, ex.getCode());
+            verify(userRepository, never()).save(any(User.class));
+        }
+
+        @Test
+        @DisplayName("should throw 401 with current_password_invalid when currentPassword does not match the stored hash")
+        void should_throw401_when_currentPasswordDoesNotMatch() {
+            when(passwordEncoder.matches("oldPwd123", "hashed")).thenReturn(false);
+
+            ApiException ex = assertThrows(ApiException.class, () -> sut.changePassword(actor, valid()));
+
+            assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatus());
+            assertEquals(ErrorCodes.AUTH_CURRENT_PASSWORD_INVALID, ex.getCode());
+            verify(userRepository, never()).save(any(User.class));
+            verify(passwordEncoder, never()).encode(any());
+        }
+
+        @Test
+        @DisplayName("should throw 400 with new_password_same_as_current when new password equals current")
+        void should_throw400_when_newPasswordEqualsCurrent() {
+            when(passwordEncoder.matches("oldPwd123", "hashed")).thenReturn(true);
+            when(passwordEncoder.matches("newPwd123", "hashed")).thenReturn(true);
+
+            ApiException ex = assertThrows(ApiException.class, () -> sut.changePassword(actor, valid()));
+
+            assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+            assertEquals(ErrorCodes.AUTH_NEW_PASSWORD_SAME_AS_CURRENT, ex.getCode());
+            verify(userRepository, never()).save(any(User.class));
+            verify(passwordEncoder, never()).encode(any());
+        }
+
+        @Test
+        @DisplayName("should validate currentPassword length BEFORE invoking passwordEncoder.matches")
+        void should_skipEncoder_when_validationFailsEarly() {
+            ChangePasswordDto dto = valid().setCurrentPassword("");
+
+            assertThrows(ApiException.class, () -> sut.changePassword(actor, dto));
+
+            verify(passwordEncoder, never()).matches(any(), any());
+            verify(passwordEncoder, never()).encode(any());
         }
     }
 }

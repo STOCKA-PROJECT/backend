@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.stocka.backend.modules.users.dto.ChangePasswordDto;
 import com.stocka.backend.modules.users.dto.UpdateUserProfileDto;
 import com.stocka.backend.modules.users.entity.User;
 import com.stocka.backend.modules.users.service.UserService;
@@ -41,6 +42,15 @@ public class UserController {
         User currentUser = (User) authentication.getPrincipal();
         User updated = userService.updateProfile(currentUser, dto);
         return ResponseEntity.ok(updated);
+    }
+
+    @PatchMapping("/me/password")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> changeMyPassword(@RequestBody ChangePasswordDto dto) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        User currentUser = (User) authentication.getPrincipal();
+        userService.changePassword(currentUser, dto);
+        return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/me")

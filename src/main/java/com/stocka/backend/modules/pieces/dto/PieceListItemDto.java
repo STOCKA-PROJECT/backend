@@ -11,9 +11,11 @@ import com.stocka.backend.modules.piecetypes.entity.PieceType;
 public record PieceListItemDto(
         Integer id,
         String name,
+        String serialNumber,
         List<PieceTypeRefDto> pieceTypes,
         Integer ownerUserId,
         Integer locationId,
+        Integer coverAttachmentId,
         PieceStatus status,
         Date createdAt,
         Date updatedAt
@@ -23,16 +25,7 @@ public record PieceListItemDto(
                 .sorted((a, b) -> a.getName().compareToIgnoreCase(b.getName()))
                 .map(PieceTypeRefDto::from)
                 .toList();
-        return new PieceListItemDto(
-                piece.getId(),
-                piece.getName(),
-                types,
-                piece.getOwner() == null ? null : piece.getOwner().getId(),
-                piece.getLocation() == null ? null : piece.getLocation().getId(),
-                piece.getStatus(),
-                piece.getCreatedAt(),
-                piece.getUpdatedAt()
-        );
+        return build(piece, types);
     }
 
     /**
@@ -43,12 +36,18 @@ public record PieceListItemDto(
      */
     public static PieceListItemDto from(Piece piece, List<PieceType> sortedTypes) {
         List<PieceTypeRefDto> refs = sortedTypes.stream().map(PieceTypeRefDto::from).toList();
+        return build(piece, refs);
+    }
+
+    private static PieceListItemDto build(Piece piece, List<PieceTypeRefDto> types) {
         return new PieceListItemDto(
                 piece.getId(),
                 piece.getName(),
-                refs,
+                piece.getSerialNumber(),
+                types,
                 piece.getOwner() == null ? null : piece.getOwner().getId(),
                 piece.getLocation() == null ? null : piece.getLocation().getId(),
+                piece.getCoverAttachment() == null ? null : piece.getCoverAttachment().getId(),
                 piece.getStatus(),
                 piece.getCreatedAt(),
                 piece.getUpdatedAt()
