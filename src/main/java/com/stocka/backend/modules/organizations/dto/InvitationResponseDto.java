@@ -1,6 +1,7 @@
 package com.stocka.backend.modules.organizations.dto;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 import com.stocka.backend.modules.organizations.entity.InvitationStatus;
 import com.stocka.backend.modules.organizations.entity.OrganizationInvitation;
@@ -12,6 +13,8 @@ public class InvitationResponseDto {
     private OrganizationRoleEnum role;
     private InvitationStatus status;
     private LocalDateTime expiresAt;
+    private LocalDateTime createdAt;
+    private LocalDateTime acceptedAt;
     private String token;
     private OrganizationSummary organization;
 
@@ -22,6 +25,10 @@ public class InvitationResponseDto {
         dto.role = inv.getRole();
         dto.status = inv.getStatus();
         dto.expiresAt = inv.getExpiresAt();
+        dto.createdAt = inv.getCreatedAt() == null
+                ? null
+                : inv.getCreatedAt().toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime();
+        dto.acceptedAt = inv.getAcceptedAt();
         dto.token = includeToken ? inv.getToken() : null;
         dto.organization = new OrganizationSummary(
                 inv.getOrganization().getId(),
@@ -49,6 +56,14 @@ public class InvitationResponseDto {
 
     public LocalDateTime getExpiresAt() {
         return expiresAt;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public LocalDateTime getAcceptedAt() {
+        return acceptedAt;
     }
 
     public String getToken() {

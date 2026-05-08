@@ -160,6 +160,28 @@ public class OrganizationInvitationService {
         return invitationRepository.findByEmailAndStatus(actor.getEmail(), InvitationStatus.PENDING);
     }
 
+    /**
+     * Returns every invitation addressed to the actor's email, regardless of
+     * status. Pending invitations come first, followed by the rest ordered by
+     * creation date (most recent first).
+     *
+     * @param actor the authenticated user whose invitations we want to list
+     * @return ordered list of all invitations for the actor
+     */
+    public List<OrganizationInvitation> listAllMyInvitations(User actor) {
+        List<OrganizationInvitation> all = invitationRepository.findByEmailOrderByCreatedAtDesc(actor.getEmail());
+        return all.stream()
+                .sorted((a, b) -> {
+                    boolean aPending = a.getStatus() == InvitationStatus.PENDING;
+                    boolean bPending = b.getStatus() == InvitationStatus.PENDING;
+                    if (aPending != bPending) {
+                        return aPending ? -1 : 1;
+                    }
+                    return 0; // preserve repository order (createdAt desc)
+                })
+                .toList();
+    }
+
     @Transactional
     public OrganizationInvitation acceptInvitation(String token, User actor) {
         OrganizationInvitation invitation = invitationRepository.findByToken(token)

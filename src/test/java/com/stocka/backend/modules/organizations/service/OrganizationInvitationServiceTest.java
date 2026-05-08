@@ -464,6 +464,41 @@ class OrganizationInvitationServiceTest {
         }
 
         @Nested
+        @DisplayName("listAllMyInvitations")
+        class ListAllMyInvitations {
+
+                @Test
+                @DisplayName("should return all invitations for the actor's email with PENDING first")
+                void should_returnAllOrderedPendingFirst() {
+                        OrganizationInvitation rejected = new OrganizationInvitation()
+                                        .setStatus(InvitationStatus.REJECTED);
+                        OrganizationInvitation pending = new OrganizationInvitation()
+                                        .setStatus(InvitationStatus.PENDING);
+                        OrganizationInvitation accepted = new OrganizationInvitation()
+                                        .setStatus(InvitationStatus.ACCEPTED);
+                        // repository returns in createdAt desc order
+                        when(invitationRepository.findByEmailOrderByCreatedAtDesc(invitee.getEmail()))
+                                        .thenReturn(List.of(rejected, pending, accepted));
+
+                        List<OrganizationInvitation> result = sut.listAllMyInvitations(invitee);
+
+                        assertEquals(3, result.size());
+                        assertSame(pending, result.get(0));
+                        assertSame(rejected, result.get(1));
+                        assertSame(accepted, result.get(2));
+                }
+
+                @Test
+                @DisplayName("should return empty list when actor has no invitations")
+                void should_returnEmpty_when_noInvitations() {
+                        when(invitationRepository.findByEmailOrderByCreatedAtDesc(invitee.getEmail()))
+                                        .thenReturn(List.of());
+
+                        assertEquals(0, sut.listAllMyInvitations(invitee).size());
+                }
+        }
+
+        @Nested
         @DisplayName("acceptInvitation")
         class AcceptInvitation {
 

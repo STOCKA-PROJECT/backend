@@ -97,6 +97,38 @@ class InvitationControllerIntegrationTest {
     }
 
     @Test
+    @DisplayName("GET /invitations/me?includeHistory=true — includes accepted/rejected")
+    void listMine_includeHistory() throws Exception {
+        // Create + reject one
+        String tokenRejected = createInvitation("invitee@test.com", "USER");
+        mockMvc.perform(post("/invitations/" + tokenRejected + "/reject")
+                        .header("Authorization", "Bearer " + inviteeToken))
+                .andExpect(status().isOk());
+
+        // Create another one (still pending)
+        createInvitation("invitee@test.com", "MANAGER");
+
+        // Without flag → only pending
+        mockMvc.perform(get("/invitations/me")
+                        .header("Authorization", "Bearer " + inviteeToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].status").value("PENDING"))
+                .andExpect(jsonPath("$[0].token").isNotEmpty());
+
+        // With flag → both, pending first, token only on pending
+        mockMvc.perform(get("/invitations/me?includeHistory=true")
+                        .header("Authorization", "Bearer " + inviteeToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].status").value("PENDING"))
+                .andExpect(jsonPath("$[0].token").isNotEmpty())
+                .andExpect(jsonPath("$[1].status").value("REJECTED"))
+                .andExpect(jsonPath("$[1].token").isEmpty())
+                .andExpect(jsonPath("$[1].createdAt").isNotEmpty());
+    }
+
+    @Test
     @DisplayName("POST /accept 200 — creates membership")
     void accept_ok() throws Exception {
         String token = createInvitation("invitee@test.com", "USER");

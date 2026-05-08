@@ -1,0 +1,19 @@
+meta {
+  name: List My Invitations (with history)
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/invitations/me?includeHistory=true
+  body: none
+  auth: bearer
+}
+
+params:query {
+  includeHistory: true
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}

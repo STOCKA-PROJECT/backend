@@ -21,5 +21,7 @@ public interface OrganizationInvitationRepository extends CrudRepository<Organiz
 
     List<OrganizationInvitation> findByEmailAndStatus(String email, InvitationStatus status);
 
+    List<OrganizationInvitation> findByEmailOrderByCreatedAtDesc(String email);
+
     long countByOrganizationAndStatus(Organization organization, InvitationStatus status);
 }
