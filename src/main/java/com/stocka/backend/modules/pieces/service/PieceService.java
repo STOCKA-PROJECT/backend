@@ -264,33 +264,37 @@ public class PieceService {
 
         if (Boolean.TRUE.equals(dto.getClearOwner())) {
             if (piece.getOwner() != null) {
-                Integer oldId = piece.getOwner().getId();
+                String oldName = displayUserName(piece.getOwner());
                 piece.setOwner(null);
-                historyService.recordOwnerChanged(piece, actor, oldId, null);
+                historyService.recordOwnerChanged(piece, actor, oldName, null);
             }
         } else if (dto.getOwnerUserId() != null) {
             User newOwner = resolveOwner(org, dto.getOwnerUserId(), true);
             Integer oldId = piece.getOwner() == null ? null : piece.getOwner().getId();
             Integer newId = newOwner == null ? null : newOwner.getId();
             if (!java.util.Objects.equals(oldId, newId)) {
+                String oldName = displayUserName(piece.getOwner());
+                String newName = displayUserName(newOwner);
                 piece.setOwner(newOwner);
-                historyService.recordOwnerChanged(piece, actor, oldId, newId);
+                historyService.recordOwnerChanged(piece, actor, oldName, newName);
             }
         }
 
         if (Boolean.TRUE.equals(dto.getClearLocation())) {
             if (piece.getLocation() != null) {
-                Integer oldId = piece.getLocation().getId();
+                String oldName = piece.getLocation().getName();
                 piece.setLocation(null);
-                historyService.recordLocationChanged(piece, actor, oldId, null);
+                historyService.recordLocationChanged(piece, actor, oldName, null);
             }
         } else if (dto.getLocationId() != null) {
             Location newLoc = resolveLocation(org, dto.getLocationId(), true);
             Integer oldId = piece.getLocation() == null ? null : piece.getLocation().getId();
             Integer newId = newLoc == null ? null : newLoc.getId();
             if (!java.util.Objects.equals(oldId, newId)) {
+                String oldName = piece.getLocation() == null ? null : piece.getLocation().getName();
+                String newName = newLoc == null ? null : newLoc.getName();
                 piece.setLocation(newLoc);
-                historyService.recordLocationChanged(piece, actor, oldId, newId);
+                historyService.recordLocationChanged(piece, actor, oldName, newName);
             }
         }
 
@@ -685,5 +689,23 @@ public class PieceService {
             return null;
         }
         return user;
+    }
+
+    /**
+     * Returns the human-readable display name for {@code user} ({@code "First Last"}), falling
+     * back to the e-mail when both name fields are blank, or {@code null} for a {@code null}
+     * user. Used to write a stable, human-friendly value into the audit log so the entry stays
+     * meaningful after the user is renamed or removed.
+     *
+     * @param user the user whose display name to resolve
+     * @return the display name, the e-mail as fallback, or {@code null} if {@code user} is null
+     */
+    private static String displayUserName(User user) {
+        if (user == null) return null;
+        String first = user.getName();
+        String last = user.getLastName();
+        String full = ((first == null ? "" : first) + " " + (last == null ? "" : last)).trim();
+        if (!full.isEmpty()) return full;
+        return user.getEmail();
     }
 }

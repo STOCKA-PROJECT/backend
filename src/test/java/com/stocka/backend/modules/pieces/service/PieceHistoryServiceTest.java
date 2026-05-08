@@ -70,21 +70,37 @@ class PieceHistoryServiceTest {
     @DisplayName("recordOwnerChanged")
     class RecordOwnerChanged {
         @Test
-        @DisplayName("should serialize ids as strings")
-        void should_persistOwnerIds() {
-            PieceHistory entry = sut.recordOwnerChanged(piece, actor, 5, 9);
+        @DisplayName("should store both display names verbatim")
+        void should_persistOwnerNames() {
+            PieceHistory entry = sut.recordOwnerChanged(piece, actor, "Alice Smith", "Bob Jones");
             assertThat(entry.getAction()).isEqualTo(PieceHistoryAction.OWNER_CHANGED);
             assertThat(entry.getFieldName()).isEqualTo("owner");
-            assertThat(entry.getOldValue()).isEqualTo("5");
-            assertThat(entry.getNewValue()).isEqualTo("9");
+            assertThat(entry.getOldValue()).isEqualTo("Alice Smith");
+            assertThat(entry.getNewValue()).isEqualTo("Bob Jones");
         }
 
         @Test
-        @DisplayName("should record null when clearing owner")
+        @DisplayName("should record null new value when clearing the owner")
         void should_recordNull_whenClearingOwner() {
-            PieceHistory entry = sut.recordOwnerChanged(piece, actor, 5, null);
+            PieceHistory entry = sut.recordOwnerChanged(piece, actor, "Alice Smith", null);
+            assertThat(entry.getOldValue()).isEqualTo("Alice Smith");
             assertThat(entry.getNewValue()).isNull();
-            assertThat(entry.getOldValue()).isEqualTo("5");
+        }
+
+        @Test
+        @DisplayName("should record null old value when assigning an owner for the first time")
+        void should_recordNullOld_whenAssigningOwner() {
+            PieceHistory entry = sut.recordOwnerChanged(piece, actor, null, "Bob Jones");
+            assertThat(entry.getOldValue()).isNull();
+            assertThat(entry.getNewValue()).isEqualTo("Bob Jones");
+        }
+
+        @Test
+        @DisplayName("should preserve null on both sides when names are not available")
+        void should_persistBothNulls_whenNamesUnavailable() {
+            PieceHistory entry = sut.recordOwnerChanged(piece, actor, null, null);
+            assertThat(entry.getOldValue()).isNull();
+            assertThat(entry.getNewValue()).isNull();
         }
     }
 
@@ -92,13 +108,29 @@ class PieceHistoryServiceTest {
     @DisplayName("recordLocationChanged")
     class RecordLocationChanged {
         @Test
-        @DisplayName("should record location change with field name 'location'")
-        void should_persistLocationChange() {
-            PieceHistory entry = sut.recordLocationChanged(piece, actor, null, 3);
+        @DisplayName("should record both location names verbatim with field name 'location'")
+        void should_persistLocationNames() {
+            PieceHistory entry = sut.recordLocationChanged(piece, actor, "Warehouse A", "Warehouse B");
             assertThat(entry.getAction()).isEqualTo(PieceHistoryAction.LOCATION_CHANGED);
             assertThat(entry.getFieldName()).isEqualTo("location");
+            assertThat(entry.getOldValue()).isEqualTo("Warehouse A");
+            assertThat(entry.getNewValue()).isEqualTo("Warehouse B");
+        }
+
+        @Test
+        @DisplayName("should record null old value when assigning a location for the first time")
+        void should_recordNullOld_whenAssigningLocation() {
+            PieceHistory entry = sut.recordLocationChanged(piece, actor, null, "Shelf 3");
             assertThat(entry.getOldValue()).isNull();
-            assertThat(entry.getNewValue()).isEqualTo("3");
+            assertThat(entry.getNewValue()).isEqualTo("Shelf 3");
+        }
+
+        @Test
+        @DisplayName("should record null new value when clearing the location")
+        void should_recordNullNew_whenClearingLocation() {
+            PieceHistory entry = sut.recordLocationChanged(piece, actor, "Shelf 3", null);
+            assertThat(entry.getOldValue()).isEqualTo("Shelf 3");
+            assertThat(entry.getNewValue()).isNull();
         }
     }
 

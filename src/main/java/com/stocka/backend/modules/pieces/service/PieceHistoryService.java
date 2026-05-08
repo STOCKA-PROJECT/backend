@@ -46,14 +46,34 @@ public class PieceHistoryService {
         return record(piece, actor, PieceHistoryAction.PIECE_UPDATED, fieldName, oldValue, newValue);
     }
 
-    public PieceHistory recordOwnerChanged(Piece piece, User actor, Integer oldOwnerId, Integer newOwnerId) {
-        return record(piece, actor, PieceHistoryAction.OWNER_CHANGED, "owner",
-                idOrNull(oldOwnerId), idOrNull(newOwnerId));
+    /**
+     * Records an owner change. Both arguments are the human-readable display name (or e-mail when
+     * the name is empty). Names are stored directly so the audit entry remains meaningful even if
+     * the user is later removed from the organization or renamed.
+     *
+     * @param piece           the piece being modified
+     * @param actor           the user performing the change
+     * @param oldOwnerName    previous owner display name, or {@code null} if there was no owner
+     * @param newOwnerName    new owner display name, or {@code null} when clearing the owner
+     * @return the persisted history entry
+     */
+    public PieceHistory recordOwnerChanged(Piece piece, User actor, String oldOwnerName, String newOwnerName) {
+        return record(piece, actor, PieceHistoryAction.OWNER_CHANGED, "owner", oldOwnerName, newOwnerName);
     }
 
-    public PieceHistory recordLocationChanged(Piece piece, User actor, Integer oldLocationId, Integer newLocationId) {
-        return record(piece, actor, PieceHistoryAction.LOCATION_CHANGED, "location",
-                idOrNull(oldLocationId), idOrNull(newLocationId));
+    /**
+     * Records a location change. Both arguments are the location name at the time of the change.
+     * Names are stored directly so the audit entry remains meaningful even if the location is
+     * later renamed or soft-deleted.
+     *
+     * @param piece            the piece being modified
+     * @param actor            the user performing the change
+     * @param oldLocationName  previous location name, or {@code null} if the piece had none
+     * @param newLocationName  new location name, or {@code null} when clearing the location
+     * @return the persisted history entry
+     */
+    public PieceHistory recordLocationChanged(Piece piece, User actor, String oldLocationName, String newLocationName) {
+        return record(piece, actor, PieceHistoryAction.LOCATION_CHANGED, "location", oldLocationName, newLocationName);
     }
 
     public PieceHistory recordStatusChanged(Piece piece, User actor, PieceStatus oldStatus, PieceStatus newStatus) {
@@ -80,9 +100,5 @@ public class PieceHistoryService {
      */
     public PieceHistory recordPieceTypesChanged(Piece piece, User actor, String oldTypes, String newTypes) {
         return record(piece, actor, PieceHistoryAction.PIECE_TYPES_CHANGED, "pieceTypes", oldTypes, newTypes);
-    }
-
-    private String idOrNull(Integer id) {
-        return id == null ? null : id.toString();
     }
 }
