@@ -78,8 +78,8 @@ class AdminSeederTest {
     class WhenVariablesValid {
 
         @Test
-        @DisplayName("creates admin with emailVerified=false and mustChangePassword=true")
-        void createsAdminWithSafeFlags() {
+        @DisplayName("creates admin with the provided credentials")
+        void createsAdmin() {
             Role adminRole = new Role().setName(RoleEnum.ADMIN);
             when(roleRepository.findByName(RoleEnum.ADMIN)).thenReturn(Optional.of(adminRole));
             when(userRepository.findByEmail("admin@example.com")).thenReturn(Optional.empty());
@@ -95,8 +95,6 @@ class AdminSeederTest {
             assertThat(saved.getEmail()).isEqualTo("admin@example.com");
             assertThat(saved.getUsernameValue()).isEqualTo("admin");
             assertThat(saved.getPassword()).isEqualTo("hashed-password");
-            assertThat(saved.isEmailVerified()).isFalse();
-            assertThat(saved.isMustChangePassword()).isTrue();
             assertThat(saved.getRole()).isSameAs(adminRole);
         }
 

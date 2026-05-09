@@ -42,9 +42,6 @@ public class User implements UserDetails {
     @Column(nullable = false)
     private boolean emailVerified = false;
 
-    @Column(name = "must_change_password", nullable = false)
-    private boolean mustChangePassword = false;
-
     @Column(nullable = false, unique = true)
     private String username;
 
@@ -104,15 +101,6 @@ public class User implements UserDetails {
 
     public User setEmailVerified(boolean emailVerified) {
         this.emailVerified = emailVerified;
-        return this;
-    }
-
-    public boolean isMustChangePassword() {
-        return mustChangePassword;
-    }
-
-    public User setMustChangePassword(boolean mustChangePassword) {
-        this.mustChangePassword = mustChangePassword;
         return this;
     }
 

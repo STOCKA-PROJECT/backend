@@ -80,8 +80,7 @@ public class AdminSeeder implements ApplicationListener<ContextRefreshedEvent> {
                 .setEmail(bootstrapEmail)
                 .setPassword(passwordEncoder.encode(bootstrapPassword))
                 .setRole(optionalRole.get())
-                .setEmailVerified(false)
-                .setMustChangePassword(true)
+                .setEmailVerified(true)
                 .setLanguage(Language.ES);
 
         userRepository.save(user);
