@@ -1,12 +1,30 @@
 package com.stocka.backend.modules.auth.dto;
 
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
 public class RegisterUserDto {
+    @NotBlank
     private String username;
+
+    @NotBlank
     private String name;
+
+    @NotBlank
     private String lastName;
+
+    @NotBlank
+    @Email
     private String email;
+
+    @NotBlank
+    @Size(min = 8)
     private String password;
+
+    @NotBlank
     private String repeatPassword;
+
     private String language;
 
     public String getUsername() {

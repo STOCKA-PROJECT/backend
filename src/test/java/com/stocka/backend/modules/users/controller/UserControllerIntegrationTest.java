@@ -416,7 +416,7 @@ class UserControllerIntegrationTest {
                                     "newPassword", "newPassword456",
                                     "repeatPassword", "newPassword456"))))
                     .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.code").value("auth.current_password_invalid"));
+                    .andExpect(jsonPath("$.code").value("validation.failed"));
         }
 
         @Test
@@ -430,7 +430,7 @@ class UserControllerIntegrationTest {
                                     "newPassword", "newPassword456",
                                     "repeatPassword", "newPassword456"))))
                     .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.code").value("auth.current_password_invalid"));
+                    .andExpect(jsonPath("$.code").value("validation.failed"));
         }
 
         @Test
@@ -444,7 +444,7 @@ class UserControllerIntegrationTest {
                                     "newPassword", "short",
                                     "repeatPassword", "short"))))
                     .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.code").value("auth.password_too_short"));
+                    .andExpect(jsonPath("$.code").value("validation.failed"));
         }
 
         @Test

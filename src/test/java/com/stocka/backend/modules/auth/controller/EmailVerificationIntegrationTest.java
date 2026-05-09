@@ -384,8 +384,8 @@ class EmailVerificationIntegrationTest {
         }
 
         @Test
-        @DisplayName("204 — silent when email is missing or blank")
-        void should_return204_when_emailMissingOrBlank() throws Exception {
+        @DisplayName("204 — silent when email is missing or empty (anti-enumeration)")
+        void should_return204_when_emailMissingOrEmpty() throws Exception {
             mockMvc.perform(post("/auth/resend-verification")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{}"))
@@ -393,8 +393,17 @@ class EmailVerificationIntegrationTest {
 
             mockMvc.perform(post("/auth/resend-verification")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(om.writeValueAsString(Map.of("email", "   "))))
+                            .content(om.writeValueAsString(Map.of("email", ""))))
                     .andExpect(status().isNoContent());
+        }
+
+        @Test
+        @DisplayName("400 — rejects malformed (non-email) input")
+        void should_return400_when_emailMalformed() throws Exception {
+            mockMvc.perform(post("/auth/resend-verification")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of("email", "not-an-email"))))
+                    .andExpect(status().isBadRequest());
         }
 
         @Test

@@ -25,6 +25,8 @@ import com.stocka.backend.modules.common.dto.AvailabilityResponse;
 import com.stocka.backend.modules.security.service.JwtService;
 import com.stocka.backend.modules.users.entity.User;
 
+import jakarta.validation.Valid;
+
 @RestController
 @RequestMapping("/auth")
 public class AuthController {
@@ -55,7 +57,7 @@ public class AuthController {
     }
 
     @PostMapping("/signup")
-    public ResponseEntity<User> signup(@RequestBody RegisterUserDto registerUserDto) {
+    public ResponseEntity<User> signup(@Valid @RequestBody RegisterUserDto registerUserDto) {
         User registeredUser = authenticationService.signup(registerUserDto);
         return ResponseEntity.ok(registeredUser);
     }
@@ -72,7 +74,7 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<LoginResponseDto> login(@RequestBody LoginUserDto loginUserDto) {
+    public ResponseEntity<LoginResponseDto> login(@Valid @RequestBody LoginUserDto loginUserDto) {
         User authenticatedUser = authenticationService.authenticate(loginUserDto);
         String jwtToken = jwtService.generateToken(authenticatedUser);
 
@@ -85,13 +87,13 @@ public class AuthController {
     }
 
     @PostMapping("/forgot-password")
-    public ResponseEntity<Void> forgotPassword(@RequestBody ForgotPasswordRequestDto dto) {
+    public ResponseEntity<Void> forgotPassword(@Valid @RequestBody ForgotPasswordRequestDto dto) {
         passwordResetService.requestReset(dto.getEmail());
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/reset-password")
-    public ResponseEntity<Void> resetPassword(@RequestBody ResetPasswordRequestDto dto) {
+    public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequestDto dto) {
         passwordResetService.resetPassword(dto);
         return ResponseEntity.noContent().build();
     }
@@ -104,7 +106,7 @@ public class AuthController {
      * @return 204 on success
      */
     @PostMapping("/verify-email")
-    public ResponseEntity<Void> verifyEmail(@RequestBody VerifyEmailRequestDto dto) {
+    public ResponseEntity<Void> verifyEmail(@Valid @RequestBody VerifyEmailRequestDto dto) {
         emailVerificationService.verify(dto.getToken());
         return ResponseEntity.noContent().build();
     }
@@ -117,7 +119,7 @@ public class AuthController {
      * @return 204 unconditionally
      */
     @PostMapping("/resend-verification")
-    public ResponseEntity<Void> resendVerification(@RequestBody ResendVerificationRequestDto dto) {
+    public ResponseEntity<Void> resendVerification(@Valid @RequestBody ResendVerificationRequestDto dto) {
         emailVerificationService.requestResend(dto.getEmail());
         return ResponseEntity.noContent().build();
     }
