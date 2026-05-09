@@ -18,6 +18,8 @@ import com.stocka.backend.modules.users.dto.UpdateUserProfileDto;
 import com.stocka.backend.modules.users.entity.User;
 import com.stocka.backend.modules.users.service.UserService;
 
+import jakarta.validation.Valid;
+
 @RequestMapping("/users")
 @RestController
 public class UserController {
@@ -46,7 +48,7 @@ public class UserController {
 
     @PatchMapping("/me/password")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<Void> changeMyPassword(@RequestBody ChangePasswordDto dto) {
+    public ResponseEntity<Void> changeMyPassword(@Valid @RequestBody ChangePasswordDto dto) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         User currentUser = (User) authentication.getPrincipal();
         userService.changePassword(currentUser, dto);

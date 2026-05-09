@@ -1,18 +1,28 @@
 package com.stocka.backend.modules.users.dto;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
 /**
  * Datos de entrada para el endpoint {@code PATCH /users/me/password},
  * con el que un usuario autenticado cambia su propia contraseña.
  *
- * <p>Las validaciones (no nulos, longitud mínima, coincidencia de
- * {@code newPassword} y {@code repeatPassword}, comprobación de
- * {@code currentPassword} contra el hash almacenado) se ejecutan en el
- * service correspondiente; este DTO sólo transporta los valores en bruto.
+ * <p>Las validaciones de formato (no nulos, longitud mínima) se aplican vía
+ * Bean Validation. Las reglas de negocio (coincidencia de {@code newPassword}
+ * y {@code repeatPassword}, comprobación de {@code currentPassword} contra el
+ * hash almacenado, no reutilizar la contraseña actual) se ejecutan en el
+ * service correspondiente.
  */
 public class ChangePasswordDto {
 
+    @NotBlank
     private String currentPassword;
+
+    @NotBlank
+    @Size(min = 8)
     private String newPassword;
+
+    @NotBlank
     private String repeatPassword;
 
     /**

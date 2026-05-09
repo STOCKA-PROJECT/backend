@@ -157,12 +157,21 @@ class PasswordResetIntegrationTest {
         }
 
         @Test
-        @DisplayName("204 — should respond no content when email is blank")
-        void should_return204_when_emailBlank() throws Exception {
+        @DisplayName("204 — should respond no content when email is empty (anti-enumeration)")
+        void should_return204_when_emailEmpty() throws Exception {
             mockMvc.perform(post("/auth/forgot-password")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(om.writeValueAsString(Map.of("email", "   "))))
+                            .content(om.writeValueAsString(Map.of("email", ""))))
                     .andExpect(status().isNoContent());
+        }
+
+        @Test
+        @DisplayName("400 — should reject malformed (non-email) input")
+        void should_return400_when_emailMalformed() throws Exception {
+            mockMvc.perform(post("/auth/forgot-password")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of("email", "not-an-email"))))
+                    .andExpect(status().isBadRequest());
         }
 
         @Test
