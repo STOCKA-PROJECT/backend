@@ -3,6 +3,7 @@ package com.stocka.backend.modules.security.service;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import java.time.LocalDateTime;
 import java.util.Date;
 import java.util.HashMap;
@@ -15,11 +16,31 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class JwtService {
-    @Value("${security.jwt.secret-key:3cfa76ef14937c1c0ea519f8fc057a80fcd04a7420f8e8bcd0a7567c272e007b}")
+    private static final int MIN_HEX_LENGTH = 64;
+
+    @Value("${security.jwt.secret-key}")
     private String secretKey;
 
     @Value("${security.jwt.expiration-time:86400000}")
     private long jwtExpiration;
+
+    @PostConstruct
+    void validateConfiguration() {
+        if (secretKey == null || secretKey.isBlank()) {
+            throw new IllegalStateException(
+                    "security.jwt.secret-key is required. Set the JWT_SECRET_KEY environment variable "
+                            + "to a hex string of at least 256 bits (generate with: openssl rand -hex 32).");
+        }
+        if (secretKey.length() < MIN_HEX_LENGTH) {
+            throw new IllegalStateException(
+                    "security.jwt.secret-key must be at least " + MIN_HEX_LENGTH
+                            + " hex characters (256 bits); got " + secretKey.length() + ".");
+        }
+        if (secretKey.length() % 2 != 0 || !secretKey.matches("\\p{XDigit}+")) {
+            throw new IllegalStateException(
+                    "security.jwt.secret-key must be a valid hexadecimal string.");
+        }
+    }
 
     public String extractUsername(String token) {
         return extractClaim(token, Claims::getSubject);
