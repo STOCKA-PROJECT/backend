@@ -18,6 +18,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import com.stocka.backend.modules.security.error.JsonAccessDeniedHandler;
 import com.stocka.backend.modules.security.error.JsonAuthenticationEntryPoint;
 import com.stocka.backend.modules.security.filter.JwtAuthenticationFilter;
+import com.stocka.backend.modules.security.ratelimit.RateLimitFilter;
 import com.stocka.backend.modules.security.service.AppUserDetailsService;
 
 @Configuration
@@ -26,17 +27,20 @@ import com.stocka.backend.modules.security.service.AppUserDetailsService;
 public class SecurityConfiguration {
     private final AppUserDetailsService userDetailsService;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final RateLimitFilter rateLimitFilter;
     private final JsonAuthenticationEntryPoint authenticationEntryPoint;
     private final JsonAccessDeniedHandler accessDeniedHandler;
 
     public SecurityConfiguration(
             AppUserDetailsService userDetailsService,
             JwtAuthenticationFilter jwtAuthenticationFilter,
+            RateLimitFilter rateLimitFilter,
             JsonAuthenticationEntryPoint authenticationEntryPoint,
             JsonAccessDeniedHandler accessDeniedHandler
     ) {
         this.userDetailsService = userDetailsService;
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.rateLimitFilter = rateLimitFilter;
         this.authenticationEntryPoint = authenticationEntryPoint;
         this.accessDeniedHandler = accessDeniedHandler;
     }
@@ -57,7 +61,8 @@ public class SecurityConfiguration {
                         .accessDeniedHandler(accessDeniedHandler)
                 )
                 .authenticationProvider(authenticationProvider())
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(rateLimitFilter, JwtAuthenticationFilter.class);
 
         return http.build();
     }
