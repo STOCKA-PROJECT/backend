@@ -56,4 +56,5 @@ public final class ErrorCodes {
     public static final String VALIDATION_FAILED = "validation.failed";
     public static final String SERVER_INTERNAL_ERROR = "server.internal_error";
     public static final String REQUEST_MALFORMED_BODY = "request.malformed_body";
+    public static final String REQUEST_RATE_LIMITED = "request.rate_limited";
 }
