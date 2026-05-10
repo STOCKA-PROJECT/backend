@@ -30,13 +30,21 @@ final class TokenBucket {
      * @param refillPeriod periodo de reposición; debe ser positivo
      */
     TokenBucket(long capacity, long refillTokens, Duration refillPeriod) {
+        this(capacity, refillTokens, refillPeriod, System.nanoTime());
+    }
+
+    /**
+     * Variante de test que permite inyectar el {@code nanoTime} inicial para
+     * simular el reloj con valores deterministas.
+     */
+    TokenBucket(long capacity, long refillTokens, Duration refillPeriod, long initialNanos) {
         if (capacity <= 0 || refillTokens <= 0 || refillPeriod == null || refillPeriod.isZero() || refillPeriod.isNegative()) {
             throw new IllegalArgumentException("capacity, refillTokens and refillPeriod must be positive");
         }
         this.capacity = capacity;
         this.refillTokens = refillTokens;
         this.refillPeriodNanos = refillPeriod.toNanos();
-        this.state = new AtomicReference<>(new State(capacity, System.nanoTime()));
+        this.state = new AtomicReference<>(new State(capacity, initialNanos));
     }
 
     /**

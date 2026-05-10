@@ -49,8 +49,8 @@ class TokenBucketTest {
         @Test
         @DisplayName("allows up to capacity calls without elapsed time, then rate-limits")
         void should_allow_until_capacity() {
-            TokenBucket bucket = new TokenBucket(3, 3, Duration.ofMinutes(1));
             long t0 = 1_000_000_000L;
+            TokenBucket bucket = new TokenBucket(3, 3, Duration.ofMinutes(1), t0);
 
             assertThat(bucket.tryConsume(t0)).isZero();
             assertThat(bucket.tryConsume(t0)).isZero();
@@ -61,8 +61,8 @@ class TokenBucketTest {
         @Test
         @DisplayName("returns retry-after milliseconds when bucket is empty")
         void should_return_retry_after_millis_when_empty() {
-            TokenBucket bucket = new TokenBucket(1, 1, Duration.ofSeconds(60));
             long t0 = 5_000_000_000L;
+            TokenBucket bucket = new TokenBucket(1, 1, Duration.ofSeconds(60), t0);
 
             assertThat(bucket.tryConsume(t0)).isZero();
             long retryAfterMs = bucket.tryConsume(t0);
@@ -72,8 +72,8 @@ class TokenBucketTest {
         @Test
         @DisplayName("refills proportionally to elapsed time")
         void should_refill_after_elapsed_time() {
-            TokenBucket bucket = new TokenBucket(2, 2, Duration.ofSeconds(1));
             long t0 = 0L;
+            TokenBucket bucket = new TokenBucket(2, 2, Duration.ofSeconds(1), t0);
 
             assertThat(bucket.tryConsume(t0)).isZero();
             assertThat(bucket.tryConsume(t0)).isZero();
@@ -87,8 +87,8 @@ class TokenBucketTest {
         @Test
         @DisplayName("never overflows beyond capacity")
         void should_cap_refill_at_capacity() {
-            TokenBucket bucket = new TokenBucket(2, 2, Duration.ofSeconds(1));
             long t0 = 0L;
+            TokenBucket bucket = new TokenBucket(2, 2, Duration.ofSeconds(1), t0);
 
             // Sit idle for an hour, then drain — should still cap at 2 tokens.
             long oneHourLater = t0 + Duration.ofHours(1).toNanos();
