@@ -31,6 +31,12 @@ import org.springframework.stereotype.Service;
 public class LocalR2StorageService implements R2Service {
     private static final Logger log = LoggerFactory.getLogger(LocalR2StorageService.class);
 
+    /**
+     * S3-compatible query parameter name. Mirrors AWS' own presigned-URL contract so the local
+     * download controller and the real R2 path stay symmetrical.
+     */
+    static final String RESPONSE_CONTENT_DISPOSITION_PARAM = "response-content-disposition";
+
     private final R2Properties properties;
 
     public LocalR2StorageService(R2Properties properties) {
@@ -52,13 +58,17 @@ public class LocalR2StorageService implements R2Service {
     }
 
     @Override
-    public PresignedDownload presign(String key, Duration ttl) {
+    public PresignedDownload presign(String key, Duration ttl, String contentDisposition) {
         String encoded = Arrays.stream(key.split("/"))
                 .map(seg -> URLEncoder.encode(seg, StandardCharsets.UTF_8))
                 .collect(Collectors.joining("/"));
-        String url = "/dev/r2/" + encoded;
+        StringBuilder url = new StringBuilder("/dev/r2/").append(encoded);
+        if (contentDisposition != null && !contentDisposition.isBlank()) {
+            url.append('?').append(RESPONSE_CONTENT_DISPOSITION_PARAM).append('=')
+                    .append(URLEncoder.encode(contentDisposition, StandardCharsets.UTF_8));
+        }
         Instant expiresAt = Instant.now().plus(ttl);
-        return new PresignedDownload(url, expiresAt);
+        return new PresignedDownload(url.toString(), expiresAt);
     }
 
     @Override

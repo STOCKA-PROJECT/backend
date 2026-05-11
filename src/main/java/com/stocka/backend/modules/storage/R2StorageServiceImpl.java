@@ -67,15 +67,18 @@ public class R2StorageServiceImpl implements R2Service {
     }
 
     @Override
-    public PresignedDownload presign(String key, Duration ttl) {
+    public PresignedDownload presign(String key, Duration ttl, String contentDisposition) {
         try {
+            GetObjectRequest.Builder getObjectRequest = GetObjectRequest.builder()
+                    .bucket(properties.getBucket())
+                    .key(key);
+            if (contentDisposition != null && !contentDisposition.isBlank()) {
+                getObjectRequest.responseContentDisposition(contentDisposition);
+            }
             PresignedGetObjectRequest presigned = presigner().presignGetObject(
                     GetObjectPresignRequest.builder()
                             .signatureDuration(ttl)
-                            .getObjectRequest(GetObjectRequest.builder()
-                                    .bucket(properties.getBucket())
-                                    .key(key)
-                                    .build())
+                            .getObjectRequest(getObjectRequest.build())
                             .build()
             );
             return new PresignedDownload(presigned.url().toString(), Instant.now().plus(ttl));
