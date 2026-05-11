@@ -130,11 +130,15 @@ Resend variables:
 
 ### Storage (Cloudflare R2)
 
-Attachments live in Cloudflare R2 via the AWS S3 SDK v2 (`software.amazon.awssdk:s3`). In dev,
-the local fallback (`LocalR2StorageService`, active when `stocka.r2.use-local=true`, the default)
-writes files to `${stocka.r2.local-dir:/tmp/stocka-r2/}` and serves them through
-`LocalR2DownloadController` at `/dev/r2/**`. To use real R2 set `R2_USE_LOCAL=false` and
-`R2_BUCKET`, `R2_ENDPOINT`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`.
+Attachments live in Cloudflare R2 via the AWS S3 SDK v2 (`software.amazon.awssdk:s3`). In dev
+you can opt-in to the local fallback (`LocalR2StorageService`, active when
+`stocka.r2.use-local=true`), which writes files to `${stocka.r2.local-dir:/tmp/stocka-r2/}`
+and serves them through `LocalR2DownloadController` at `/dev/r2/**`.
+
+**Production requires** `R2_USE_LOCAL=false` (the default), `R2_BUCKET`, `R2_ENDPOINT`,
+`R2_ACCESS_KEY` and `R2_SECRET_KEY`. `R2Properties` fails fast on startup when
+`use-local=true` and any active Spring profile contains `prod`, so attachments cannot be
+silently written to ephemeral container storage in production (issue #17).
 
 Per-piece attachment limits (configurable via `stocka.pieces.attachment.*`):
 - IMAGE: jpg/png/webp/gif, max 25 MB, max 50 per piece.
