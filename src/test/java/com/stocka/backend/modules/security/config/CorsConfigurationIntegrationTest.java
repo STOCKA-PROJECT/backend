@@ -31,28 +31,29 @@ class CorsConfigurationIntegrationTest {
     }
 
     @Test
-    @DisplayName("OPTIONS preflight from allowed origin includes Access-Control-Allow-Origin")
-    void should_allowPreflight_when_originIsAllowed() throws Exception {
+    @DisplayName("OPTIONS preflight from dev origin includes Access-Control-Allow-Origin")
+    void should_allowPreflight_when_originIsDev() throws Exception {
         mockMvc.perform(options("/health")
-                        .header("Origin", "https://stocka.es")
+                        .header("Origin", "http://localhost:3002")
                         .header("Access-Control-Request-Method", "GET")
                         .header("Access-Control-Request-Headers", "Authorization, Content-Type"))
                 .andExpect(status().isOk())
-                .andExpect(header().string("Access-Control-Allow-Origin", "https://stocka.es"))
+                .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:3002"))
                 .andExpect(header().stringValues("Access-Control-Allow-Methods",
                         org.hamcrest.Matchers.hasItem(
                                 org.hamcrest.Matchers.containsString("GET"))));
     }
 
     @Test
-    @DisplayName("OPTIONS preflight from app subdomain is allowed")
-    void should_allowPreflight_when_originIsAppSubdomain() throws Exception {
+    @DisplayName("OPTIONS preflight from production worker origin is allowed")
+    void should_allowPreflight_when_originIsProductionWorker() throws Exception {
         mockMvc.perform(options("/auth/login")
-                        .header("Origin", "https://app.stocka.es")
+                        .header("Origin", "https://stocka.joanmartorellcoll03.workers.dev")
                         .header("Access-Control-Request-Method", "POST")
                         .header("Access-Control-Request-Headers", "Authorization, Content-Type"))
                 .andExpect(status().isOk())
-                .andExpect(header().string("Access-Control-Allow-Origin", "https://app.stocka.es"));
+                .andExpect(header().string("Access-Control-Allow-Origin",
+                        "https://stocka.joanmartorellcoll03.workers.dev"));
     }
 
     @Test
@@ -70,7 +71,7 @@ class CorsConfigurationIntegrationTest {
     @DisplayName("Preflight response does not enable credentials by default (Bearer-only API)")
     void should_notAllowCredentials_when_bearerAuthInUse() throws Exception {
         mockMvc.perform(options("/health")
-                        .header("Origin", "https://stocka.es")
+                        .header("Origin", "http://localhost:3002")
                         .header("Access-Control-Request-Method", "GET"))
                 .andExpect(status().isOk())
                 .andExpect(header().doesNotExist("Access-Control-Allow-Credentials"));

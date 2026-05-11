@@ -8,19 +8,19 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * Propiedades de CORS. Se enlazan al prefijo {@code stocka.cors}.
  *
  * <p>Define la allowlist explícita de orígenes admitidos, los métodos y
- * cabeceras permitidos y si la respuesta puede incluir credenciales. Los
- * valores por defecto cubren los dominios de producción ({@code stocka.es},
- * {@code app.stocka.es}) y se pueden sobreescribir vía
- * {@code CORS_ALLOWED_ORIGINS} (lista separada por comas).
+ * cabeceras permitidos y si la respuesta puede incluir credenciales. La
+ * allowlist se inyecta desde {@code CORS_ALLOWED_ORIGINS} (lista separada
+ * por comas) vía {@code application.properties}.
  */
 @ConfigurationProperties(prefix = "stocka.cors")
 public class CorsProperties {
 
     /**
      * Orígenes admitidos. Para evitar configuraciones peligrosas no se acepta
-     * el comodín {@code *}; añade explícitamente cada dominio.
+     * el comodín {@code *}; añade explícitamente cada dominio. Vacío por
+     * defecto: el valor real se inyecta vía {@code CORS_ALLOWED_ORIGINS}.
      */
-    private List<String> allowedOrigins = List.of("https://stocka.es", "https://app.stocka.es");
+    private List<String> allowedOrigins = List.of();
 
     /** Métodos HTTP permitidos por CORS. */
     private List<String> allowedMethods = List.of("GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS");
