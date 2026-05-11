@@ -62,10 +62,13 @@ public class ResendSender {
             )
     )
     public String send(String from, String to, String subject, String html, String idempotencyKey) {
+        String safeFrom = EmailHeaders.safeHeader(from);
+        String safeTo = EmailHeaders.safeHeader(to);
+        String safeSubject = EmailHeaders.safeHeader(subject);
         CreateEmailOptions options = CreateEmailOptions.builder()
-                .from(from)
-                .to(to)
-                .subject(subject)
+                .from(safeFrom)
+                .to(safeTo)
+                .subject(safeSubject)
                 .html(html)
                 .build();
         RequestOptions requestOptions = RequestOptions.builder()
@@ -73,20 +76,20 @@ public class ResendSender {
                 .build();
         try {
             CreateEmailResponse response = resendClient.emails().send(options, requestOptions);
-            log.info("[RESEND] enviado id={} to={} key={}", response.getId(), to, idempotencyKey);
+            log.info("[RESEND] enviado id={} to={} key={}", response.getId(), safeTo, idempotencyKey);
             return response.getId();
         } catch (ResendException ex) {
             if (isTransient(ex)) {
                 log.warn("[RESEND] error transitorio status={} to={}: {}",
-                        ex.getStatusCode(), to, ex.getMessage());
+                        ex.getStatusCode(), safeTo, ex.getMessage());
                 throw new ResendTransientException(
                         "Resend transient failure (status=" + ex.getStatusCode() + ")", ex);
             }
             log.warn("[RESEND] fallo no recuperable status={} to={} errorName={}: {}",
-                    ex.getStatusCode(), to, ex.getErrorName(), ex.getMessage());
+                    ex.getStatusCode(), safeTo, ex.getErrorName(), ex.getMessage());
             return null;
         } catch (RuntimeException ex) {
-            log.warn("[RESEND] error inesperado to={}: {}", to, ex.getMessage());
+            log.warn("[RESEND] error inesperado to={}: {}", safeTo, ex.getMessage());
             throw new ResendTransientException("Resend unexpected runtime failure", ex);
         }
     }
