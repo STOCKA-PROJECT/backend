@@ -25,6 +25,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.stocka.backend.modules.common.error.ApiException;
@@ -562,7 +563,7 @@ class OrganizationInvitationServiceTest {
                                         .setOrganization(org).setRole(OrganizationRoleEnum.MANAGER);
                         when(invitationRepository.findByToken("tok")).thenReturn(Optional.of(inv));
                         when(memberRepository.findByUserAndOrganization(invitee, org)).thenReturn(Optional.empty());
-                        when(invitationRepository.save(inv)).thenReturn(inv);
+                        when(invitationRepository.saveAndFlush(inv)).thenReturn(inv);
 
                         sut.acceptInvitation("tok", invitee);
 
@@ -583,12 +584,31 @@ class OrganizationInvitationServiceTest {
                         when(invitationRepository.findByToken("tok")).thenReturn(Optional.of(inv));
                         when(memberRepository.findByUserAndOrganization(invitee, org))
                                         .thenReturn(Optional.of(new OrganizationMember()));
-                        when(invitationRepository.save(inv)).thenReturn(inv);
+                        when(invitationRepository.saveAndFlush(inv)).thenReturn(inv);
 
                         sut.acceptInvitation("tok", invitee);
 
                         verify(memberRepository, never()).save(any(OrganizationMember.class));
                         assertEquals(InvitationStatus.ACCEPTED, inv.getStatus());
+                }
+
+                @Test
+                @DisplayName("should throw 409 when invitation was concurrently accepted (optimistic lock)")
+                void should_throw409_when_optimisticLockFails() {
+                        OrganizationInvitation inv = new OrganizationInvitation()
+                                        .setEmail(invitee.getEmail()).setStatus(InvitationStatus.PENDING)
+                                        .setExpiresAt(LocalDateTime.now().plusDays(1))
+                                        .setOrganization(org).setRole(OrganizationRoleEnum.USER);
+                        when(invitationRepository.findByToken("tok")).thenReturn(Optional.of(inv));
+                        when(memberRepository.findByUserAndOrganization(invitee, org)).thenReturn(Optional.empty());
+                        when(invitationRepository.saveAndFlush(inv))
+                                        .thenThrow(new ObjectOptimisticLockingFailureException(
+                                                        OrganizationInvitation.class, 1));
+
+                        ApiException ex = assertThrows(ApiException.class,
+                                        () -> sut.acceptInvitation("tok", invitee));
+                        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+                        assertEquals(ErrorCodes.ORGANIZATIONS_INVITATION_ALREADY_PROCESSED, ex.getCode());
                 }
         }
 

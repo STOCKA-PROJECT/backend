@@ -8,6 +8,7 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -215,7 +216,15 @@ public class OrganizationInvitationService {
 
         invitation.setStatus(InvitationStatus.ACCEPTED);
         invitation.setAcceptedAt(LocalDateTime.now());
-        OrganizationInvitation saved = invitationRepository.save(invitation);
+        OrganizationInvitation saved;
+        try {
+            // saveAndFlush forces the version check now so two concurrent accepts
+            // resolve to one success and one 409 (instead of both inserting members).
+            saved = invitationRepository.saveAndFlush(invitation);
+        } catch (OptimisticLockingFailureException ex) {
+            throw new ApiException(HttpStatus.CONFLICT,
+                    ErrorCodes.ORGANIZATIONS_INVITATION_ALREADY_PROCESSED);
+        }
 
         auditService.log(org, actor, AuditAction.INVITATION_ACCEPTED, actor, Map.of(
                 "role", invitation.getRole().name()));
