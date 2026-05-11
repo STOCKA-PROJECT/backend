@@ -50,6 +50,7 @@ public final class ErrorCodes {
     public static final String STORAGE_R2_UNAVAILABLE = "storage.r2_unavailable";
     public static final String UPLOAD_TOO_LARGE = "upload.too_large";
     public static final String UPLOAD_INVALID_KIND = "upload.invalid_kind";
+    public static final String UPLOAD_IMAGE_DIMENSIONS_TOO_LARGE = "upload.image_dimensions_too_large";
 
     // ---- generic --------------------------------------------------------
     public static final String VALIDATION_REQUIRED = "validation.required";

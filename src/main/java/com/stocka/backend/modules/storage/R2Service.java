@@ -36,7 +36,23 @@ public interface R2Service {
      * @return the presigned URL together with its expiration timestamp
      * @throws R2UnavailableException if the underlying store cannot generate the URL
      */
-    PresignedDownload presign(String key, Duration ttl);
+    default PresignedDownload presign(String key, Duration ttl) {
+        return presign(key, ttl, null);
+    }
+
+    /**
+     * Same as {@link #presign(String, Duration)} but overrides the {@code Content-Disposition}
+     * header returned when the object is fetched through the presigned URL. Used to force
+     * {@code attachment} disposition for document downloads (issue #14).
+     *
+     * @param key                object key
+     * @param ttl                how long the URL stays valid
+     * @param contentDisposition value for the {@code Content-Disposition} header, or
+     *                           {@code null} to leave the stored value untouched
+     * @return the presigned URL together with its expiration timestamp
+     * @throws R2UnavailableException if the underlying store cannot generate the URL
+     */
+    PresignedDownload presign(String key, Duration ttl, String contentDisposition);
 
     /**
      * Removes the object from R2. Best-effort: callers may swallow exceptions and log.
