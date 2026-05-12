@@ -30,6 +30,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 
 import com.stocka.backend.modules.organizations.entity.Organization;
+import com.stocka.backend.modules.organizations.service.OrganizationQuotaProperties;
 import com.stocka.backend.modules.pieces.entity.Piece;
 import com.stocka.backend.modules.pieces.entity.PieceAttachment;
 import com.stocka.backend.modules.pieces.entity.PieceAttachmentKind;
@@ -57,9 +58,10 @@ class PieceAttachmentServiceCoverTest {
     void setUp() {
         PieceAttachmentProperties limits = new PieceAttachmentProperties();
         limits.setAllowedImageMimes(Set.of("image/png", "image/jpeg"));
+        OrganizationQuotaProperties quotas = new OrganizationQuotaProperties();
         sut = new PieceAttachmentService(
                 attachmentRepository, pieceRepository, pieceService,
-                historyService, r2Service, r2Properties, limits);
+                historyService, r2Service, r2Properties, limits, quotas);
         piece = new Piece().setId(42).setOrganization(new Organization().setId(7));
     }
 

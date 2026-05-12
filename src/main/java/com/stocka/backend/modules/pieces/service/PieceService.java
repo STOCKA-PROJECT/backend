@@ -29,6 +29,7 @@ import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.entity.OrganizationPieceAttribute;
 import com.stocka.backend.modules.organizations.repository.OrganizationMemberRepository;
 import com.stocka.backend.modules.organizations.repository.OrganizationPieceAttributeRepository;
+import com.stocka.backend.modules.organizations.service.OrganizationQuotaProperties;
 import com.stocka.backend.modules.organizations.service.OrganizationService;
 import com.stocka.backend.modules.pieces.dto.AttributeScope;
 import com.stocka.backend.modules.pieces.dto.AttributeValueInputDto;
@@ -82,6 +83,7 @@ public class PieceService {
     private final AttributeValueValidationRegistry validationRegistry;
     private final LocationRepository locationRepository;
     private final UserRepository userRepository;
+    private final OrganizationQuotaProperties quotas;
 
     public PieceService(
             PieceRepository pieceRepository,
@@ -96,7 +98,8 @@ public class PieceService {
             PieceTypeService pieceTypeService,
             AttributeValueValidationRegistry validationRegistry,
             LocationRepository locationRepository,
-            UserRepository userRepository
+            UserRepository userRepository,
+            OrganizationQuotaProperties quotas
     ) {
         this.pieceRepository = pieceRepository;
         this.valueRepository = valueRepository;
@@ -111,11 +114,13 @@ public class PieceService {
         this.validationRegistry = validationRegistry;
         this.locationRepository = locationRepository;
         this.userRepository = userRepository;
+        this.quotas = quotas;
     }
 
     @Transactional
     public Piece create(Integer orgId, CreatePieceDto dto) {
         Organization org = organizationService.findById(orgId);
+        ensureUnderPiecesPerOrgQuota(org);
         Set<PieceType> types = resolveTypes(orgId, dto.getPieceTypeIds());
 
         String name = sanitizeName(dto.getName());
@@ -667,6 +672,17 @@ public class PieceService {
         historyService.recordUpdated(piece, actor, "coverAttachmentId",
                 oldId == null ? null : oldId.toString(),
                 newId == null ? null : newId.toString());
+    }
+
+    private void ensureUnderPiecesPerOrgQuota(Organization organization) {
+        long current = pieceRepository.countByOrganization(organization);
+        long max = quotas.getMaxPiecesPerOrg();
+        if (current >= max) {
+            throw new ApiException(
+                    HttpStatus.FORBIDDEN,
+                    ErrorCodes.ORGANIZATIONS_QUOTA_EXCEEDED,
+                    Map.of("limit", "max_pieces_per_org", "max", max, "current", current));
+        }
     }
 
     private String emptyToNull(String value) {

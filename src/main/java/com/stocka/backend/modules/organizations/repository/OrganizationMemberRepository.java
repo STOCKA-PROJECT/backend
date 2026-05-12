@@ -20,4 +20,6 @@ public interface OrganizationMemberRepository extends CrudRepository<Organizatio
     List<OrganizationMember> findByUser(User user);
 
     long countByOrganizationAndRole(Organization organization, OrganizationRoleEnum role);
+
+    long countByUserAndRole(User user, OrganizationRoleEnum role);
 }
