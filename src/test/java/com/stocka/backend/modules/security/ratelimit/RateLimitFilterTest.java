@@ -13,8 +13,9 @@ import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stocka.backend.modules.common.error.ProblemDetailFactory;
+
+import tools.jackson.databind.json.JsonMapper;
 
 @DisplayName("RateLimitFilter")
 class RateLimitFilterTest {
@@ -29,7 +30,7 @@ class RateLimitFilterTest {
         service = new RateLimitService();
         ProblemDetailFactory factory = new ProblemDetailFactory(new StaticMessageSource());
         ClientIpResolver ipResolver = new ClientIpResolver(properties);
-        filter = new RateLimitFilter(properties, service, ipResolver, factory, new ObjectMapper());
+        filter = new RateLimitFilter(properties, service, ipResolver, factory, JsonMapper.builder().build());
     }
 
     @Test
