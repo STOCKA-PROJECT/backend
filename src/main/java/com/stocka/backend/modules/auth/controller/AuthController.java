@@ -23,6 +23,7 @@ import com.stocka.backend.modules.auth.service.EmailVerificationService;
 import com.stocka.backend.modules.auth.service.PasswordResetService;
 import com.stocka.backend.modules.common.dto.AvailabilityResponse;
 import com.stocka.backend.modules.security.service.JwtService;
+import com.stocka.backend.modules.users.dto.UserResponseDto;
 import com.stocka.backend.modules.users.entity.User;
 
 import jakarta.validation.Valid;
@@ -57,9 +58,9 @@ public class AuthController {
     }
 
     @PostMapping("/signup")
-    public ResponseEntity<User> signup(@Valid @RequestBody RegisterUserDto registerUserDto) {
+    public ResponseEntity<UserResponseDto> signup(@Valid @RequestBody RegisterUserDto registerUserDto) {
         User registeredUser = authenticationService.signup(registerUserDto);
-        return ResponseEntity.ok(registeredUser);
+        return ResponseEntity.ok(UserResponseDto.from(registeredUser));
     }
 
     /**
@@ -81,7 +82,7 @@ public class AuthController {
         LoginResponseDto loginResponse = new LoginResponseDto()
                 .setToken(jwtToken)
                 .setExpiresIn(jwtService.getExpirationTime())
-                .setUser(authenticatedUser);
+                .setUser(UserResponseDto.from(authenticatedUser));
 
         return ResponseEntity.ok(loginResponse);
     }

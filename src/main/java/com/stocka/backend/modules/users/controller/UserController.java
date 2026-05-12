@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.stocka.backend.modules.users.dto.ChangePasswordDto;
 import com.stocka.backend.modules.users.dto.UpdateUserProfileDto;
+import com.stocka.backend.modules.users.dto.UserResponseDto;
 import com.stocka.backend.modules.users.entity.User;
 import com.stocka.backend.modules.users.service.UserService;
 
@@ -31,19 +32,19 @@ public class UserController {
 
     @GetMapping("/me")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<User> authenticatedUser() {
+    public ResponseEntity<UserResponseDto> authenticatedUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         User currentUser = (User) authentication.getPrincipal();
-        return ResponseEntity.ok(currentUser);
+        return ResponseEntity.ok(UserResponseDto.from(currentUser));
     }
 
     @PatchMapping("/me")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<User> updateMyProfile(@RequestBody UpdateUserProfileDto dto) {
+    public ResponseEntity<UserResponseDto> updateMyProfile(@RequestBody UpdateUserProfileDto dto) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         User currentUser = (User) authentication.getPrincipal();
         User updated = userService.updateProfile(currentUser, dto);
-        return ResponseEntity.ok(updated);
+        return ResponseEntity.ok(UserResponseDto.from(updated));
     }
 
     @PatchMapping("/me/password")
@@ -66,8 +67,10 @@ public class UserController {
 
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<List<User>> allUsers() {
-        List<User> users = userService.allUsers();
+    public ResponseEntity<List<UserResponseDto>> allUsers() {
+        List<UserResponseDto> users = userService.allUsers().stream()
+                .map(UserResponseDto::from)
+                .toList();
         return ResponseEntity.ok(users);
     }
 }
