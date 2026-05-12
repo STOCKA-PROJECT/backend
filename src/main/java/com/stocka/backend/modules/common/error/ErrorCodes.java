@@ -45,6 +45,7 @@ public final class ErrorCodes {
     public static final String ORGANIZATIONS_NOT_FOUND = "organizations.not_found";
     public static final String ORGANIZATIONS_INVITATION_LIMIT_REACHED = "organizations.invitation_limit_reached";
     public static final String ORGANIZATIONS_INVITATION_EXPIRED = "organizations.invitation_expired";
+    public static final String ORGANIZATIONS_INVITATION_ALREADY_PROCESSED = "organizations.invitation_already_processed";
 
     // ---- storage / upload -----------------------------------------------
     public static final String STORAGE_R2_UNAVAILABLE = "storage.r2_unavailable";
