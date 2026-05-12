@@ -139,6 +139,21 @@ class OrganizationMemberServiceTest {
         }
 
         @Test
+        @DisplayName("should throw 403 when actor tries to update their own membership")
+        void should_throw403_when_actorTargetsOwnMembership() {
+            OrganizationMember mem = member(50, actor, OrganizationRoleEnum.OWNER);
+            when(organizationService.findById(1)).thenReturn(org);
+            when(memberRepository.findById(50)).thenReturn(Optional.of(mem));
+
+            ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                    () -> sut.updateMemberRole(1, 50, OrganizationRoleEnum.SPECTATOR, actor));
+            assertEquals(HttpStatus.FORBIDDEN, ex.getStatusCode());
+            assertEquals("no puedes operar sobre tu propia membresía", ex.getReason());
+            verify(memberRepository, never()).save(any());
+            verify(auditService, never()).log(any(), any(), any(), any(), any());
+        }
+
+        @Test
         @DisplayName("should throw 409 when demoting the last OWNER")
         void should_throw409_when_demotingLastOwner() {
             OrganizationMember mem = member(50, target, OrganizationRoleEnum.OWNER);
@@ -257,6 +272,21 @@ class OrganizationMemberServiceTest {
             ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                     () -> sut.removeMember(1, 50, actor));
             assertEquals(HttpStatus.CONFLICT, ex.getStatusCode());
+        }
+
+        @Test
+        @DisplayName("should throw 403 when actor tries to remove their own membership")
+        void should_throw403_when_actorRemovesSelf() {
+            OrganizationMember victim = member(50, actor, OrganizationRoleEnum.OWNER);
+            when(organizationService.findById(1)).thenReturn(org);
+            when(memberRepository.findById(50)).thenReturn(Optional.of(victim));
+
+            ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                    () -> sut.removeMember(1, 50, actor));
+            assertEquals(HttpStatus.FORBIDDEN, ex.getStatusCode());
+            assertEquals("no puedes operar sobre tu propia membresía", ex.getReason());
+            verify(memberRepository, never()).save(any());
+            verify(auditService, never()).log(any(), any(), any(), any(), any());
         }
 
         @Test
