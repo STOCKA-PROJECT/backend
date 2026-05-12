@@ -28,6 +28,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
+import com.stocka.backend.modules.organizations.service.OrganizationQuotaProperties;
 import com.stocka.backend.modules.pieces.entity.Piece;
 import com.stocka.backend.modules.pieces.entity.PieceAttachment;
 import com.stocka.backend.modules.pieces.entity.PieceAttachmentKind;
@@ -77,6 +78,7 @@ public class PieceAttachmentService {
     private final R2Service r2Service;
     private final R2Properties r2Properties;
     private final PieceAttachmentProperties limits;
+    private final OrganizationQuotaProperties quotas;
 
     public PieceAttachmentService(
             PieceAttachmentRepository attachmentRepository,
@@ -85,7 +87,8 @@ public class PieceAttachmentService {
             PieceHistoryService historyService,
             R2Service r2Service,
             R2Properties r2Properties,
-            PieceAttachmentProperties limits
+            PieceAttachmentProperties limits,
+            OrganizationQuotaProperties quotas
     ) {
         this.attachmentRepository = attachmentRepository;
         this.pieceRepository = pieceRepository;
@@ -94,6 +97,7 @@ public class PieceAttachmentService {
         this.r2Service = r2Service;
         this.r2Properties = r2Properties;
         this.limits = limits;
+        this.quotas = quotas;
     }
 
     @Transactional
@@ -201,6 +205,18 @@ public class PieceAttachmentService {
     }
 
     private void validateForKind(Piece piece, PieceAttachmentKind kind, String mime, long size) {
+        long currentBytes = attachmentRepository.sumSizeBytesByOrganization(piece.getOrganization());
+        long maxBytes = quotas.getMaxBytesPerOrg();
+        if (currentBytes + size > maxBytes) {
+            throw new ApiException(
+                    HttpStatus.FORBIDDEN,
+                    ErrorCodes.ORGANIZATIONS_QUOTA_EXCEEDED,
+                    Map.of(
+                            "limit", "max_bytes_per_org",
+                            "max", maxBytes,
+                            "current", currentBytes,
+                            "requested", size));
+        }
         if (kind == PieceAttachmentKind.IMAGE) {
             if (!limits.getAllowedImageMimes().contains(mime)) {
                 throw new ApiException(

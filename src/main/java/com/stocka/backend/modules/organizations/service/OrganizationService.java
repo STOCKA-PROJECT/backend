@@ -16,6 +16,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.stocka.backend.modules.common.dto.AvailabilityResponse;
 import com.stocka.backend.modules.common.dto.AvailabilityResponse.Reason;
+import com.stocka.backend.modules.common.error.ApiException;
+import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.organizations.dto.CreateOrganizationDto;
 import com.stocka.backend.modules.organizations.dto.UpdateOrganizationDto;
 import com.stocka.backend.modules.organizations.entity.AuditAction;
@@ -40,17 +42,20 @@ public class OrganizationService {
     private final OrganizationMemberRepository memberRepository;
     private final OrganizationInvitationRepository invitationRepository;
     private final OrganizationAuditService auditService;
+    private final OrganizationQuotaProperties quotas;
 
     public OrganizationService(
             OrganizationRepository organizationRepository,
             OrganizationMemberRepository memberRepository,
             OrganizationInvitationRepository invitationRepository,
-            OrganizationAuditService auditService
+            OrganizationAuditService auditService,
+            OrganizationQuotaProperties quotas
     ) {
         this.organizationRepository = organizationRepository;
         this.memberRepository = memberRepository;
         this.invitationRepository = invitationRepository;
         this.auditService = auditService;
+        this.quotas = quotas;
     }
 
     @Transactional
@@ -59,6 +64,7 @@ public class OrganizationService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El nombre es obligatorio");
         }
         validateSlug(dto.getSlug(), null);
+        ensureUnderOrgsPerUserQuota(actor);
 
         Organization org = new Organization()
                 .setName(dto.getName().trim())
@@ -174,6 +180,17 @@ public class OrganizationService {
             return AvailabilityResponse.unavailable(Reason.TAKEN);
         }
         return AvailabilityResponse.ok();
+    }
+
+    private void ensureUnderOrgsPerUserQuota(User actor) {
+        long owned = memberRepository.countByUserAndRole(actor, OrganizationRoleEnum.OWNER);
+        int max = quotas.getMaxOrgsPerUser();
+        if (owned >= max) {
+            throw new ApiException(
+                    HttpStatus.FORBIDDEN,
+                    ErrorCodes.ORGANIZATIONS_QUOTA_EXCEEDED,
+                    Map.of("limit", "max_orgs_per_user", "max", max, "current", owned));
+        }
     }
 
     private void validateSlug(String slug, Integer currentOrgId) {
