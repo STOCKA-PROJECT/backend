@@ -15,6 +15,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
+import com.stocka.backend.modules.notifications.events.ResourceKind;
+import com.stocka.backend.modules.notifications.preferences.entity.LifecycleAction;
 import com.stocka.backend.modules.users.entity.Language;
 
 @Service
@@ -87,6 +89,34 @@ public class LocalEmailService implements EmailService {
 
         log.info("[LOCAL EMAIL] from={} to={} subject={}", fromAddress, to, email.subject());
         writeToFile("email-verification", to, email);
+    }
+
+    @Override
+    public void sendResourceLifecycleEmail(
+            String to, ResourceKind kind, LifecycleAction action,
+            String resourceName, String orgName, String actorName,
+            String resourceUrl, Language language
+    ) {
+        String suffix = kind.name() + "." + action.name();
+        boolean showCta = action != LifecycleAction.DELETED;
+        RenderedEmail email = renderer.render(
+                "resource-lifecycle",
+                "email.resourceLifecycle.subject." + suffix,
+                new Object[]{actorName, resourceName, orgName},
+                language.toLocale(),
+                Map.of(
+                        "titleKey", "email.resourceLifecycle.title." + suffix,
+                        "bodyKey", "email.resourceLifecycle.body." + suffix,
+                        "actorName", actorName,
+                        "resourceName", resourceName,
+                        "orgName", orgName,
+                        "resourceUrl", resourceUrl,
+                        "showCta", showCta
+                )
+        );
+
+        log.info("[LOCAL EMAIL] from={} to={} subject={}", fromAddress, to, email.subject());
+        writeToFile("resource-lifecycle", to, email);
     }
 
     private void writeToFile(String prefix, String to, RenderedEmail email) {

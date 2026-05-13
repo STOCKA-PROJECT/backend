@@ -11,6 +11,8 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
+import com.stocka.backend.modules.notifications.events.ResourceKind;
+import com.stocka.backend.modules.notifications.preferences.entity.LifecycleAction;
 import com.stocka.backend.modules.users.entity.Language;
 
 import jakarta.mail.MessagingException;
@@ -78,6 +80,33 @@ public class SmtpEmailService implements EmailService {
                 Map.of(
                         "userName", userName,
                         "verifyUrl", verifyUrl
+                )
+        );
+
+        sendRendered(to, email);
+    }
+
+    @Override
+    public void sendResourceLifecycleEmail(
+            String to, ResourceKind kind, LifecycleAction action,
+            String resourceName, String orgName, String actorName,
+            String resourceUrl, Language language
+    ) {
+        String suffix = kind.name() + "." + action.name();
+        boolean showCta = action != LifecycleAction.DELETED;
+        RenderedEmail email = renderer.render(
+                "resource-lifecycle",
+                "email.resourceLifecycle.subject." + suffix,
+                new Object[]{actorName, resourceName, orgName},
+                language.toLocale(),
+                Map.of(
+                        "titleKey", "email.resourceLifecycle.title." + suffix,
+                        "bodyKey", "email.resourceLifecycle.body." + suffix,
+                        "actorName", actorName,
+                        "resourceName", resourceName,
+                        "orgName", orgName,
+                        "resourceUrl", resourceUrl,
+                        "showCta", showCta
                 )
         );
 

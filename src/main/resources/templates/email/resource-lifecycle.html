@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+    <th:block th:replace="~{email/layout :: layout(~{::content})}">
+        <th:block th:fragment="content">
+            <h1 style="margin:0 0 16px 0;font-size:22px;font-weight:600;color:#111827;"
+                th:utext="#{__${titleKey}__(${actorName}, ${resourceName}, ${orgName})}">
+                Notificación de Stocka
+            </h1>
+            <p style="margin:0 0 16px 0;"
+               th:utext="#{__${bodyKey}__(${actorName}, ${resourceName}, ${orgName})}">
+                Resumen de la actividad.
+            </p>
+            <p th:if="${showCta}" style="margin:0 0 12px 0;"
+               th:text="#{email.resourceLifecycle.cta.intro}">
+                Haz clic en el botón para verlo en Stocka:
+            </p>
+            <p th:if="${showCta}" style="margin:0 0 24px 0;text-align:center;">
+                <a th:href="${resourceUrl}"
+                   style="display:inline-block;background-color:#2563eb;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;"
+                   th:text="#{email.resourceLifecycle.cta.button}">
+                    Ver en Stocka
+                </a>
+            </p>
+            <p th:if="${showCta}" style="margin:0;color:#6b7280;font-size:13px;">
+                <span th:text="#{email.resourceLifecycle.fallback}">O copia este enlace en tu navegador:</span><br/>
+                <a th:href="${resourceUrl}" th:text="${resourceUrl}"
+                   style="color:#2563eb;word-break:break-all;">https://...</a>
+            </p>
+        </th:block>
+    </th:block>
+</body>
+</html>
