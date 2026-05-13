@@ -3,10 +3,13 @@ package com.stocka.backend.modules.notifications.dispatch;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.MessageSource;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -39,6 +42,7 @@ import com.stocka.backend.modules.users.repository.UserRepository;
 @Component
 public class PendingResourceEventFlusher {
     private static final Logger log = LoggerFactory.getLogger(PendingResourceEventFlusher.class);
+    private static final Locale FALLBACK_LOCALE = Locale.of("es");
 
     private final PendingResourceEventRepository pendingRepository;
     private final OrganizationMemberRepository memberRepository;
@@ -57,7 +61,7 @@ public class PendingResourceEventFlusher {
             EmailService emailService,
             NotificationDispatchProperties properties,
             MessageSource messageSource,
-            org.springframework.beans.factory.annotation.Value("${app.frontend.base-url:http://localhost:3002}") String frontendBaseUrl
+            @Value("${app.frontend.base-url:http://localhost:3002}") String frontendBaseUrl
     ) {
         this.pendingRepository = pendingRepository;
         this.memberRepository = memberRepository;
@@ -120,7 +124,7 @@ public class PendingResourceEventFlusher {
             NotificationPreference pref = preferenceService.resolveOrDefault(recipient, org);
             if (pref == null) continue;
 
-            java.util.Set<LifecycleAction> actions = switch (row.getResourceKind()) {
+            Set<LifecycleAction> actions = switch (row.getResourceKind()) {
                 case PIECE -> pref.getPieces();
                 case LOCATION -> pref.getLocations();
                 case PIECE_TYPE -> pref.getPieceTypes();
@@ -195,13 +199,13 @@ public class PendingResourceEventFlusher {
     private String resolveActorName(Integer actorUserId) {
         if (actorUserId == null) {
             return messageSource.getMessage("email.resourceLifecycle.actor.unknown",
-                    null, "Alguien", java.util.Locale.of("es"));
+                    null, "Alguien", FALLBACK_LOCALE);
         }
         return userRepository.findById(actorUserId)
                 .map(PendingResourceEventFlusher::displayName)
                 .orElseGet(() -> messageSource.getMessage(
                         "email.resourceLifecycle.actor.unknown",
-                        null, "Alguien", java.util.Locale.of("es")));
+                        null, "Alguien", FALLBACK_LOCALE));
     }
 
     private static String displayName(User user) {
