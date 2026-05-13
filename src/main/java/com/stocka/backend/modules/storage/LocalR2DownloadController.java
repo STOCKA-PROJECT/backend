@@ -9,6 +9,7 @@ import java.util.Arrays;
 import java.util.stream.Collectors;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -33,6 +34,7 @@ import org.springframework.http.HttpStatus;
  */
 @RestController
 @RequestMapping("/dev/r2")
+@Profile("dev")
 @ConditionalOnProperty(name = "stocka.r2.use-local", havingValue = "true", matchIfMissing = true)
 public class LocalR2DownloadController {
     private final LocalR2StorageService storage;
