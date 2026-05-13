@@ -14,6 +14,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
+import com.stocka.backend.modules.notifications.preferences.service.NotificationPreferenceService;
 import com.stocka.backend.modules.organizations.entity.OrganizationMember;
 import com.stocka.backend.modules.organizations.repository.OrganizationMemberRepository;
 import com.stocka.backend.modules.users.dto.ChangePasswordDto;
@@ -30,14 +31,17 @@ public class UserService {
     private final UserRepository userRepository;
     private final OrganizationMemberRepository memberRepository;
     private final PasswordEncoder passwordEncoder;
+    private final NotificationPreferenceService notificationPreferenceService;
 
     public UserService(
             UserRepository userRepository,
             OrganizationMemberRepository memberRepository,
-            PasswordEncoder passwordEncoder) {
+            PasswordEncoder passwordEncoder,
+            NotificationPreferenceService notificationPreferenceService) {
         this.userRepository = userRepository;
         this.memberRepository = memberRepository;
         this.passwordEncoder = passwordEncoder;
+        this.notificationPreferenceService = notificationPreferenceService;
     }
 
     public List<User> allUsers() {
@@ -55,6 +59,10 @@ public class UserService {
                 memberRepository.save(m);
             }
         }
+        // Notification preferences are bound to (user, org) pairs; with the user gone
+        // they are dead data — soft-delete them so a future restoration does not
+        // resurrect stale opt-ins.
+        notificationPreferenceService.softDeleteAllFor(user);
         user.setDeletedAt(now);
         userRepository.save(user);
     }

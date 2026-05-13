@@ -9,7 +9,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -20,8 +23,12 @@ import com.stocka.backend.modules.locations.dto.LocationTreeNodeDto;
 import com.stocka.backend.modules.locations.dto.UpdateLocationDto;
 import com.stocka.backend.modules.locations.entity.Location;
 import com.stocka.backend.modules.locations.repository.LocationRepository;
+import com.stocka.backend.modules.notifications.events.ResourceKind;
+import com.stocka.backend.modules.notifications.events.ResourceLifecycleEvent;
+import com.stocka.backend.modules.notifications.preferences.entity.LifecycleAction;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.service.OrganizationService;
+import com.stocka.backend.modules.users.entity.User;
 
 /**
  * CRUD and tree assembly for {@link Location} entities. All operations are scoped to a single
@@ -35,17 +42,20 @@ public class LocationService {
     private final OrganizationService organizationService;
     private final LocationCycleValidator cycleValidator;
     private final List<LocationContentChecker> contentCheckers;
+    private final ApplicationEventPublisher events;
 
     public LocationService(
             LocationRepository locationRepository,
             OrganizationService organizationService,
             LocationCycleValidator cycleValidator,
-            List<LocationContentChecker> contentCheckers
+            List<LocationContentChecker> contentCheckers,
+            ApplicationEventPublisher events
     ) {
         this.locationRepository = locationRepository;
         this.organizationService = organizationService;
         this.cycleValidator = cycleValidator;
         this.contentCheckers = contentCheckers == null ? List.of() : contentCheckers;
+        this.events = events;
     }
 
     @Transactional
@@ -61,7 +71,9 @@ public class LocationService {
                 .setName(name)
                 .setDescription(emptyToNull(dto.getDescription()))
                 .setParent(parent);
-        return locationRepository.save(location);
+        Location saved = locationRepository.save(location);
+        publishLifecycle(saved, LifecycleAction.CREATED);
+        return saved;
     }
 
     public Location findInOrg(Integer orgId, Integer locationId) {
@@ -108,6 +120,7 @@ public class LocationService {
 
         boolean nameChanged = false;
         boolean parentChanged = false;
+        boolean descriptionChanged = false;
         String newName = location.getName();
         Location newParent = location.getParent();
 
@@ -116,7 +129,9 @@ public class LocationService {
             nameChanged = !newName.equals(location.getName());
         }
         if (dto.getDescription() != null) {
-            location.setDescription(emptyToNull(dto.getDescription()));
+            String newDesc = emptyToNull(dto.getDescription());
+            descriptionChanged = !java.util.Objects.equals(newDesc, location.getDescription());
+            location.setDescription(newDesc);
         }
         if (Boolean.TRUE.equals(dto.getMoveToRoot())) {
             newParent = null;
@@ -134,7 +149,11 @@ public class LocationService {
             location.setParent(newParent);
         }
 
-        return locationRepository.save(location);
+        Location saved = locationRepository.save(location);
+        if (nameChanged || parentChanged || descriptionChanged) {
+            publishLifecycle(saved, LifecycleAction.EDITED);
+        }
+        return saved;
     }
 
     @Transactional
@@ -163,6 +182,7 @@ public class LocationService {
 
         location.setDeletedAt(LocalDateTime.now());
         locationRepository.save(location);
+        publishLifecycle(location, LifecycleAction.DELETED);
     }
 
     private List<LocationTreeNodeDto> buildChildren(Map<Integer, List<Location>> byParent, Integer parentId) {
@@ -217,5 +237,26 @@ public class LocationService {
         if (value == null) return null;
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private void publishLifecycle(Location location, LifecycleAction action) {
+        User actor = currentUser();
+        events.publishEvent(new ResourceLifecycleEvent(
+                location.getOrganization().getId(),
+                ResourceKind.LOCATION,
+                action,
+                location.getId(),
+                location.getName(),
+                actor == null ? null : actor.getId(),
+                null
+        ));
+    }
+
+    private static User currentUser() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof User user)) {
+            return null;
+        }
+        return user;
     }
 }
