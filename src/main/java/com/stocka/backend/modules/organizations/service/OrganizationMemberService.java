@@ -54,6 +54,7 @@ public class OrganizationMemberService {
         }
         Organization org = organizationService.findById(orgId);
         OrganizationMember member = findMemberInOrg(memberId, org);
+        ensureNotSelf(member, actor);
 
         OrganizationRoleEnum oldRole = member.getRole();
         if (oldRole == newRole) {
@@ -78,6 +79,7 @@ public class OrganizationMemberService {
     public void removeMember(Integer orgId, Integer memberId, User actor) {
         Organization org = organizationService.findById(orgId);
         OrganizationMember member = findMemberInOrg(memberId, org);
+        ensureNotSelf(member, actor);
         OrganizationRoleEnum actorRole = resolveActorRole(org, actor);
 
         if (!canActOnMember(actorRole, member.getRole())) {
@@ -149,6 +151,13 @@ public class OrganizationMemberService {
             return targetRole == OrganizationRoleEnum.USER || targetRole == OrganizationRoleEnum.SPECTATOR;
         }
         return false;
+    }
+
+    private void ensureNotSelf(OrganizationMember member, User actor) {
+        if (member.getUser().getId().equals(actor.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "no puedes operar sobre tu propia membresía");
+        }
     }
 
     private void ensureNotLastOwner(Organization org) {

@@ -114,17 +114,18 @@ public class SmtpEmailService implements EmailService {
     }
 
     private void sendRendered(String to, RenderedEmail email) {
+        String safeTo = EmailHeaders.safeHeader(to);
         try {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, false, StandardCharsets.UTF_8.name());
-            helper.setFrom(fromAddress);
-            helper.setTo(to);
-            helper.setSubject(email.subject());
+            helper.setFrom(EmailHeaders.safeHeader(fromAddress));
+            helper.setTo(safeTo);
+            helper.setSubject(EmailHeaders.safeHeader(email.subject()));
             helper.setText(email.htmlBody(), true);
             mailSender.send(message);
-            log.info("[SMTP EMAIL] sent to {}", to);
+            log.info("[SMTP EMAIL] sent to {}", safeTo);
         } catch (MessagingException e) {
-            log.warn("[SMTP EMAIL] could not send to {}: {}", to, e.getMessage());
+            log.warn("[SMTP EMAIL] could not send to {}: {}", safeTo, e.getMessage());
         }
     }
 }
