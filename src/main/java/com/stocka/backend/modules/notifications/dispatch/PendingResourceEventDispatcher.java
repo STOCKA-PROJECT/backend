@@ -90,7 +90,7 @@ public class PendingResourceEventDispatcher {
         String actorName = resolveActorName(row.getActorUserId());
         String resourceName = row.getResourceName() == null ? "" : row.getResourceName();
         String orgName = org.getName();
-        String resourceUrl = buildResourceUrl(org, row.getResourceKind(), row.getResourceId(), effective);
+        String resourceUrl = buildResourceUrl(org.getId(), row.getResourceKind(), row.getResourceId(), effective);
 
         for (OrganizationMember member : memberRepository.findByOrganization(org)) {
             User recipient = member.getUser();
@@ -192,17 +192,26 @@ public class PendingResourceEventDispatcher {
         return full.isEmpty() ? user.getEmail() : full;
     }
 
-    private String buildResourceUrl(Organization org, ResourceKind kind, Integer resourceId, LifecycleAction effective) {
+    /**
+     * Builds the absolute URL that the email CTA points to. The active organization is held in
+     * frontend state (no slug in the URL), so the link carries {@code ?org={id}} as a query
+     * param: a dashboard-wide middleware reads it and switches the active org before the page
+     * runs its fetches, so the deep link works even when the recipient has another org open.
+     *
+     * <p>Locations and piece types only have list pages today; pieces have a per-id detail
+     * page. A DELETED resource has no detail to link to and falls back to the dashboard root.
+     */
+    private String buildResourceUrl(Integer orgId, ResourceKind kind, Integer resourceId, LifecycleAction effective) {
+        String orgQuery = orgId == null ? "" : "?org=" + orgId;
         if (effective == LifecycleAction.DELETED) {
-            return frontendBaseUrl + "/dashboard";
+            return frontendBaseUrl + "/dashboard" + orgQuery;
         }
-        String slug = org.getSlug() == null ? "" : org.getSlug();
-        String section = switch (kind) {
-            case PIECE -> "/articulos/";
-            case LOCATION -> "/ubicaciones/";
-            case PIECE_TYPE -> "/tipos/";
+        return switch (kind) {
+            case PIECE -> frontendBaseUrl + "/dashboard/articulos/"
+                    + (resourceId == null ? "" : resourceId) + orgQuery;
+            case LOCATION -> frontendBaseUrl + "/dashboard/ubicaciones" + orgQuery;
+            case PIECE_TYPE -> frontendBaseUrl + "/dashboard/tipos-articulos" + orgQuery;
         };
-        return frontendBaseUrl + "/dashboard/o/" + slug + section + (resourceId == null ? "" : resourceId);
     }
 
     private static String stripTrailingSlash(String value) {
