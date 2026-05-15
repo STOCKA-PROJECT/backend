@@ -20,6 +20,8 @@ import com.stocka.backend.modules.piecetypes.entity.PieceType;
 public interface PieceRepository extends JpaRepository<Piece, Integer>, JpaSpecificationExecutor<Piece> {
     Page<Piece> findByOrganization(Organization organization, Pageable pageable);
 
+    long countByOrganization(Organization organization);
+
     long countByLocation(Location location);
 
     /**

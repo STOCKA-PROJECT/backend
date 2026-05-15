@@ -14,8 +14,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+
+import javax.imageio.ImageIO;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -170,6 +177,29 @@ class PiecesFeatureIntegrationTest {
                 .andExpect(status().isCreated())
                 .andReturn();
         return (Integer) om.readValue(r.getResponse().getContentAsString(), Map.class).get("id");
+    }
+
+    /**
+     * Returns a real PNG of the given dimensions. Required after issue #14: upload validation
+     * now reads the image header, so synthetic byte arrays no longer pass the IMAGE pipeline.
+     */
+    private static byte[] pngBytes(int width, int height) {
+        return imageBytes("png", width, height, BufferedImage.TYPE_INT_ARGB);
+    }
+
+    private static byte[] jpegBytes(int width, int height) {
+        return imageBytes("jpeg", width, height, BufferedImage.TYPE_INT_RGB);
+    }
+
+    private static byte[] imageBytes(String format, int width, int height, int type) {
+        try {
+            BufferedImage img = new BufferedImage(width, height, type);
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            ImageIO.write(img, format, baos);
+            return baos.toByteArray();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     // ---------- nested suites ----------
@@ -584,7 +614,7 @@ class PiecesFeatureIntegrationTest {
             Integer attrId = firstAttributeIdOfType(typeId);
             Integer pieceId = createPieceAs(ownerToken, typeId, "Hammer", attrId, "red");
 
-            MockMultipartFile jpg = new MockMultipartFile("file", "p.jpg", "image/jpeg", new byte[]{1, 2, 3});
+            MockMultipartFile jpg = new MockMultipartFile("file", "p.jpg", "image/jpeg", jpegBytes(1, 1));
             mockMvc.perform(multipart("/organizations/" + orgId + "/pieces/" + pieceId + "/attachments")
                             .file(jpg)
                             .param("kind", "IMAGE")
@@ -606,7 +636,7 @@ class PiecesFeatureIntegrationTest {
             Integer attrId = firstAttributeIdOfType(typeId);
             Integer pieceId = createPieceAs(ownerToken, typeId, "Hammer", attrId, "red");
 
-            MockMultipartFile jpgAsDoc = new MockMultipartFile("file", "p.jpg", "image/jpeg", new byte[]{1, 2, 3});
+            MockMultipartFile jpgAsDoc = new MockMultipartFile("file", "p.jpg", "image/jpeg", jpegBytes(1, 1));
             mockMvc.perform(multipart("/organizations/" + orgId + "/pieces/" + pieceId + "/attachments")
                             .file(jpgAsDoc)
                             .param("kind", "DOCUMENT")
@@ -622,13 +652,101 @@ class PiecesFeatureIntegrationTest {
         }
 
         @Test
+        @DisplayName("falsified Content-Type: image/png with non-image bytes is rejected (400)")
+        void uploadImage_rejectsFalsifiedContentType() throws Exception {
+            Integer typeId = createSimpleTypeAs(ownerToken, "Tool", false);
+            Integer attrId = firstAttributeIdOfType(typeId);
+            Integer pieceId = createPieceAs(ownerToken, typeId, "Hammer", attrId, "red");
+
+            // Plain text payload masquerading as a PNG — the client declares image/png but the
+            // bytes have no image magic, so magic-byte detection rejects it.
+            byte[] fakePng = "MZ    ".getBytes(StandardCharsets.US_ASCII);
+            MockMultipartFile attack = new MockMultipartFile(
+                    "file", "payload.exe", "image/png", fakePng);
+            mockMvc.perform(multipart("/organizations/" + orgId + "/pieces/" + pieceId + "/attachments")
+                            .file(attack)
+                            .param("kind", "IMAGE")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("upload.invalid_kind"));
+        }
+
+        @Test
+        @DisplayName("SVG uploads are rejected because they can embed JavaScript (XSS)")
+        void uploadImage_rejectsSvg() throws Exception {
+            Integer typeId = createSimpleTypeAs(ownerToken, "Tool", false);
+            Integer attrId = firstAttributeIdOfType(typeId);
+            Integer pieceId = createPieceAs(ownerToken, typeId, "Hammer", attrId, "red");
+
+            String svg = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                    + "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\" height=\"10\">"
+                    + "<script>alert(1)</script></svg>";
+            MockMultipartFile svgFile = new MockMultipartFile(
+                    "file", "logo.svg", "image/png", svg.getBytes(StandardCharsets.UTF_8));
+            mockMvc.perform(multipart("/organizations/" + orgId + "/pieces/" + pieceId + "/attachments")
+                            .file(svgFile)
+                            .param("kind", "IMAGE")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("upload.invalid_kind"));
+        }
+
+        @Test
+        @DisplayName("decompression-bomb dimensions are rejected (width > 16384)")
+        void uploadImage_rejectsOversizedDimensions() throws Exception {
+            Integer typeId = createSimpleTypeAs(ownerToken, "Tool", false);
+            Integer attrId = firstAttributeIdOfType(typeId);
+            Integer pieceId = createPieceAs(ownerToken, typeId, "Hammer", attrId, "red");
+
+            // 1-bit grayscale → tiny on disk but 16385 pixels wide, exceeding the dimension cap.
+            byte[] bomb = imageBytes("png", 16_385, 1, BufferedImage.TYPE_BYTE_BINARY);
+            MockMultipartFile bombFile = new MockMultipartFile("file", "bomb.png", "image/png", bomb);
+            mockMvc.perform(multipart("/organizations/" + orgId + "/pieces/" + pieceId + "/attachments")
+                            .file(bombFile)
+                            .param("kind", "IMAGE")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("upload.image_dimensions_too_large"));
+        }
+
+        @Test
+        @DisplayName("DOCUMENT download redirects with response-content-disposition=attachment")
+        void downloadDocument_setsAttachmentDisposition() throws Exception {
+            Integer typeId = createSimpleTypeAs(ownerToken, "Tool", false);
+            Integer attrId = firstAttributeIdOfType(typeId);
+            Integer pieceId = createPieceAs(ownerToken, typeId, "Hammer", attrId, "red");
+
+            MockMultipartFile pdf = new MockMultipartFile("file", "manual.pdf",
+                    "application/pdf", "%PDF-1.4\n%%EOF".getBytes(StandardCharsets.US_ASCII));
+            MvcResult r = mockMvc.perform(multipart("/organizations/" + orgId + "/pieces/" + pieceId + "/attachments")
+                            .file(pdf)
+                            .param("kind", "DOCUMENT")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isCreated())
+                    .andReturn();
+            Integer attachmentId = (Integer) om.readValue(r.getResponse().getContentAsString(), Map.class).get("id");
+
+            MvcResult download = mockMvc.perform(get("/organizations/" + orgId + "/pieces/" + pieceId
+                            + "/attachments/" + attachmentId + "/download")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isFound())
+                    .andExpect(header().exists("Location"))
+                    .andReturn();
+            String location = download.getResponse().getHeader("Location");
+            org.assertj.core.api.Assertions.assertThat(location)
+                    .as("presigned URL must force attachment disposition for DOCUMENT downloads")
+                    .contains("response-content-disposition=")
+                    .contains("attachment");
+        }
+
+        @Test
         @DisplayName("SPECTATOR cannot upload but can download")
         void spectator_cannotUpload_butCanDownload() throws Exception {
             Integer typeId = createSimpleTypeAs(ownerToken, "Tool", false);
             Integer attrId = firstAttributeIdOfType(typeId);
             Integer pieceId = createPieceAs(ownerToken, typeId, "Hammer", attrId, "red");
 
-            MockMultipartFile jpg = new MockMultipartFile("file", "p.jpg", "image/jpeg", new byte[]{1, 2, 3});
+            MockMultipartFile jpg = new MockMultipartFile("file", "p.jpg", "image/jpeg", jpegBytes(1, 1));
             MvcResult r = mockMvc.perform(multipart("/organizations/" + orgId + "/pieces/" + pieceId + "/attachments")
                             .file(jpg)
                             .param("kind", "IMAGE")
@@ -683,7 +801,7 @@ class PiecesFeatureIntegrationTest {
                     .andExpect(status().isOk());
 
             // Upload an attachment
-            MockMultipartFile jpg = new MockMultipartFile("file", "p.jpg", "image/jpeg", new byte[]{1});
+            MockMultipartFile jpg = new MockMultipartFile("file", "p.jpg", "image/jpeg", jpegBytes(1, 1));
             mockMvc.perform(multipart("/organizations/" + orgId + "/pieces/" + pieceId + "/attachments")
                             .file(jpg)
                             .param("kind", "IMAGE")

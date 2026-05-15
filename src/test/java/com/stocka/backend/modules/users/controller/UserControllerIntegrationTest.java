@@ -64,7 +64,11 @@ class UserControllerIntegrationTest {
                             .header("Authorization", "Bearer " + adminToken))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.email").value(ADMIN_EMAIL))
-                    .andExpect(jsonPath("$.password").doesNotExist());
+                    .andExpect(jsonPath("$.role").value("ADMIN"))
+                    .andExpect(jsonPath("$.password").doesNotExist())
+                    .andExpect(jsonPath("$.passwordChangedAt").doesNotExist())
+                    .andExpect(jsonPath("$.deletedAt").doesNotExist())
+                    .andExpect(jsonPath("$.authorities").doesNotExist());
         }
 
         @Test
@@ -416,7 +420,7 @@ class UserControllerIntegrationTest {
                                     "newPassword", "newPassword456",
                                     "repeatPassword", "newPassword456"))))
                     .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.code").value("auth.current_password_invalid"));
+                    .andExpect(jsonPath("$.code").value("validation.failed"));
         }
 
         @Test
@@ -430,7 +434,7 @@ class UserControllerIntegrationTest {
                                     "newPassword", "newPassword456",
                                     "repeatPassword", "newPassword456"))))
                     .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.code").value("auth.current_password_invalid"));
+                    .andExpect(jsonPath("$.code").value("validation.failed"));
         }
 
         @Test
@@ -444,7 +448,7 @@ class UserControllerIntegrationTest {
                                     "newPassword", "short",
                                     "repeatPassword", "short"))))
                     .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.code").value("auth.password_too_short"));
+                    .andExpect(jsonPath("$.code").value("validation.failed"));
         }
 
         @Test
@@ -556,7 +560,12 @@ class UserControllerIntegrationTest {
             mockMvc.perform(get("/users")
                             .header("Authorization", "Bearer " + adminToken))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.length()").value(2));
+                    .andExpect(jsonPath("$.length()").value(2))
+                    .andExpect(jsonPath("$[0].password").doesNotExist())
+                    .andExpect(jsonPath("$[0].passwordChangedAt").doesNotExist())
+                    .andExpect(jsonPath("$[0].deletedAt").doesNotExist())
+                    .andExpect(jsonPath("$[0].authorities").doesNotExist())
+                    .andExpect(jsonPath("$[0].role").exists());
         }
 
         @Test

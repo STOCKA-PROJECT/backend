@@ -1,0 +1,4 @@
+-- Flyway baseline marker for the existing production schema (issue #13).
+-- With spring.flyway.baseline-on-migrate=true and baseline-version=1, Flyway
+-- treats pre-existing prod databases as already at V1 and never runs this file
+-- against them. Future schema changes must be added as V2__*.sql, V3__*.sql, …

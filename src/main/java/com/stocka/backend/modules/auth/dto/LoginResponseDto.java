@@ -1,11 +1,11 @@
 package com.stocka.backend.modules.auth.dto;
 
-import com.stocka.backend.modules.users.entity.User;
+import com.stocka.backend.modules.users.dto.UserResponseDto;
 
 public class LoginResponseDto {
     private String token;
     private long expiresIn;
-    private User user;
+    private UserResponseDto user;
 
     public String getToken() {
         return token;
@@ -25,11 +25,11 @@ public class LoginResponseDto {
         return this;
     }
 
-    public User getUser() {
+    public UserResponseDto getUser() {
         return user;
     }
 
-    public LoginResponseDto setUser(User user) {
+    public LoginResponseDto setUser(UserResponseDto user) {
         this.user = user;
         return this;
     }

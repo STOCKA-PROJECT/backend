@@ -5,6 +5,7 @@ import java.util.Locale;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.DisplayName;
@@ -164,8 +165,9 @@ class EmailTemplateRendererTest {
                                                         "acceptUrl", "https://app/invitations/abc123"));
 
                         assertNotNull(rendered.htmlBody());
-                        assertTrue(rendered.htmlBody().contains("You've been invited to"),
-                                        "EN title should be present (apostrophe rendered): " + rendered.htmlBody());
+                        // th:text escapes the ' to &#39;; match a substring without the apostrophe.
+                        assertTrue(rendered.htmlBody().contains("been invited to"),
+                                        "EN title should be present: " + rendered.htmlBody());
                         assertTrue(rendered.htmlBody().contains("Accept invitation"),
                                         "EN CTA button label should be present");
                         assertTrue(rendered.htmlBody().contains("Acme Corp"));
@@ -185,8 +187,9 @@ class EmailTemplateRendererTest {
                                                         "acceptUrl", "https://app/invitations/abc123"));
 
                         assertNotNull(rendered.htmlBody());
-                        assertTrue(rendered.htmlBody().contains("T'han convidat a"),
-                                        "CA title with single apostrophe should be present: " + rendered.htmlBody());
+                        // th:text escapes the ' to &#39;; match a substring without the apostrophe.
+                        assertTrue(rendered.htmlBody().contains("han convidat a"),
+                                        "CA title should be present: " + rendered.htmlBody());
                         assertTrue(rendered.htmlBody().contains("Acceptar invitació"),
                                         "CA CTA button label should be present");
                         assertTrue(rendered.htmlBody().contains("Acme Corp"));
@@ -422,6 +425,84 @@ class EmailTemplateRendererTest {
                                         "header bar (dark background) should be rendered");
                         assertTrue(rendered.htmlBody().contains("Stocka"),
                                         "Stocka brand label should appear somewhere in the rendered email");
+                }
+        }
+
+        // -------------------------------------------------------------------------
+        // XSS protection — user-controlled variables must be HTML-escaped so that
+        // a malicious display name cannot inject tags into the rendered email.
+        // -------------------------------------------------------------------------
+
+        @Nested
+        @DisplayName("XSS protection")
+        class XssProtection {
+
+                private static final String XSS_PAYLOAD = "<script>alert(1)</script>";
+                private static final String ESCAPED_OPEN = "&lt;script&gt;";
+                private static final String ESCAPED_CLOSE = "&lt;/script&gt;";
+
+                @Test
+                @DisplayName("invitation should escape inviterName and orgName to prevent XSS")
+                void invitation_should_escapeUserData() {
+                        RenderedEmail rendered = renderer.render(
+                                        "invitation",
+                                        "email.invitation.subject",
+                                        new Object[] { XSS_PAYLOAD, XSS_PAYLOAD },
+                                        ES,
+                                        Map.of(
+                                                        "inviterName", XSS_PAYLOAD,
+                                                        "orgName", XSS_PAYLOAD,
+                                                        "acceptUrl", "https://app/x"));
+
+                        assertFalse(rendered.htmlBody().contains(XSS_PAYLOAD),
+                                        "raw <script> tag must not appear in rendered HTML: "
+                                                        + rendered.htmlBody());
+                        assertTrue(rendered.htmlBody().contains(ESCAPED_OPEN),
+                                        "user data should be HTML-escaped (&lt;script&gt;): "
+                                                        + rendered.htmlBody());
+                        assertTrue(rendered.htmlBody().contains(ESCAPED_CLOSE),
+                                        "user data should be HTML-escaped (&lt;/script&gt;): "
+                                                        + rendered.htmlBody());
+                }
+
+                @Test
+                @DisplayName("password-reset should escape userName to prevent XSS")
+                void passwordReset_should_escapeUserData() {
+                        RenderedEmail rendered = renderer.render(
+                                        "password-reset",
+                                        "email.passwordReset.subject",
+                                        null,
+                                        ES,
+                                        Map.of(
+                                                        "userName", XSS_PAYLOAD,
+                                                        "resetUrl", "https://app/x"));
+
+                        assertFalse(rendered.htmlBody().contains(XSS_PAYLOAD),
+                                        "raw <script> tag must not appear in rendered HTML: "
+                                                        + rendered.htmlBody());
+                        assertTrue(rendered.htmlBody().contains(ESCAPED_OPEN),
+                                        "userName should be HTML-escaped (&lt;script&gt;): "
+                                                        + rendered.htmlBody());
+                }
+
+                @Test
+                @DisplayName("email-verification should escape userName to prevent XSS")
+                void emailVerification_should_escapeUserData() {
+                        RenderedEmail rendered = renderer.render(
+                                        "email-verification",
+                                        "email.verification.subject",
+                                        null,
+                                        ES,
+                                        Map.of(
+                                                        "userName", XSS_PAYLOAD,
+                                                        "verifyUrl", "https://app/x"));
+
+                        assertFalse(rendered.htmlBody().contains(XSS_PAYLOAD),
+                                        "raw <script> tag must not appear in rendered HTML: "
+                                                        + rendered.htmlBody());
+                        assertTrue(rendered.htmlBody().contains(ESCAPED_OPEN),
+                                        "userName should be HTML-escaped (&lt;script&gt;): "
+                                                        + rendered.htmlBody());
                 }
         }
 }

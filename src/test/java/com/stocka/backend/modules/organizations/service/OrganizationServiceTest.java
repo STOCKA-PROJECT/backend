@@ -27,12 +27,15 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.stocka.backend.modules.common.dto.AvailabilityResponse;
 import com.stocka.backend.modules.common.dto.AvailabilityResponse.Reason;
+import com.stocka.backend.modules.common.error.ApiException;
+import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.organizations.dto.CreateOrganizationDto;
 import com.stocka.backend.modules.organizations.dto.UpdateOrganizationDto;
 import com.stocka.backend.modules.organizations.entity.AuditAction;
@@ -54,6 +57,7 @@ class OrganizationServiceTest {
     @Mock private OrganizationMemberRepository memberRepository;
     @Mock private OrganizationInvitationRepository invitationRepository;
     @Mock private OrganizationAuditService auditService;
+    @Spy private OrganizationQuotaProperties quotas = new OrganizationQuotaProperties();
 
     @InjectMocks private OrganizationService sut;
 
@@ -126,6 +130,23 @@ class OrganizationServiceTest {
             ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                     () -> sut.create(dto, actor));
             assertEquals(HttpStatus.CONFLICT, ex.getStatusCode());
+            verify(organizationRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("should throw 403 organizations.quota_exceeded when the user owns the max orgs")
+        void should_throw403_when_orgsPerUserQuotaReached() {
+            quotas.setMaxOrgsPerUser(2);
+            CreateOrganizationDto dto = new CreateOrganizationDto().setName("Acme").setSlug("acme");
+            when(organizationRepository.findBySlug("acme")).thenReturn(Optional.empty());
+            when(memberRepository.countByUserAndRole(actor, OrganizationRoleEnum.OWNER))
+                    .thenReturn(2L);
+
+            ApiException ex = assertThrows(ApiException.class, () -> sut.create(dto, actor));
+
+            assertEquals(HttpStatus.FORBIDDEN, ex.getStatus());
+            assertEquals(ErrorCodes.ORGANIZATIONS_QUOTA_EXCEEDED, ex.getCode());
+            assertEquals("max_orgs_per_user", ex.getParams().get("limit"));
             verify(organizationRepository, never()).save(any());
         }
     }

@@ -10,8 +10,14 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.Set;
+
+import javax.imageio.ImageIO;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -24,6 +30,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 
 import com.stocka.backend.modules.organizations.entity.Organization;
+import com.stocka.backend.modules.organizations.service.OrganizationQuotaProperties;
 import com.stocka.backend.modules.pieces.entity.Piece;
 import com.stocka.backend.modules.pieces.entity.PieceAttachment;
 import com.stocka.backend.modules.pieces.entity.PieceAttachmentKind;
@@ -51,14 +58,30 @@ class PieceAttachmentServiceCoverTest {
     void setUp() {
         PieceAttachmentProperties limits = new PieceAttachmentProperties();
         limits.setAllowedImageMimes(Set.of("image/png", "image/jpeg"));
+        OrganizationQuotaProperties quotas = new OrganizationQuotaProperties();
         sut = new PieceAttachmentService(
                 attachmentRepository, pieceRepository, pieceService,
-                historyService, r2Service, r2Properties, limits);
+                historyService, r2Service, r2Properties, limits, quotas);
         piece = new Piece().setId(42).setOrganization(new Organization().setId(7));
     }
 
-    private MockMultipartFile pngFile() {
-        return new MockMultipartFile("file", "photo.png", "image/png", new byte[]{1, 2, 3});
+    private static MockMultipartFile pngFile() {
+        return new MockMultipartFile("file", "photo.png", "image/png", pngBytes(1, 1));
+    }
+
+    /**
+     * Builds a real, in-memory PNG so the magic-byte and dimension validation pipeline accepts
+     * the input. The Mockito tests focus on cover linkage, not on the validator itself.
+     */
+    static byte[] pngBytes(int width, int height) {
+        try {
+            BufferedImage img = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            ImageIO.write(img, "png", baos);
+            return baos.toByteArray();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     @Nested
@@ -107,7 +130,7 @@ class PieceAttachmentServiceCoverTest {
             when(pieceService.findInOrg(7, 42)).thenReturn(piece);
             when(r2Service.buildPieceKey(anyInt(), anyInt(), anyString())).thenReturn("k");
             when(r2Service.upload(anyString(), any(ByteArrayInputStream.class), anyLong(), anyString()))
-                    .thenReturn(new UploadedObject("k", 3L, "image/png"));
+                    .thenReturn(new UploadedObject("k", 3L, "application/octet-stream"));
             when(attachmentRepository.save(any(PieceAttachment.class)))
                     .thenAnswer(inv -> ((PieceAttachment) inv.getArgument(0)).setId(70));
 

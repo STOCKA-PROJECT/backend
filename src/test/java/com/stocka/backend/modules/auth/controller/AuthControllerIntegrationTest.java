@@ -90,8 +90,14 @@ class AuthControllerIntegrationTest {
                     .andExpect(jsonPath("$.email").value("test@test.com"))
                     .andExpect(jsonPath("$.name").value("Test"))
                     .andExpect(jsonPath("$.lastName").value("User"))
+                    .andExpect(jsonPath("$.username").value("testuser"))
+                    .andExpect(jsonPath("$.role").value("USER"))
+                    .andExpect(jsonPath("$.language").value("ES"))
                     .andExpect(jsonPath("$.emailVerified").value(false))
-                    .andExpect(jsonPath("$.password").doesNotExist());
+                    .andExpect(jsonPath("$.password").doesNotExist())
+                    .andExpect(jsonPath("$.passwordChangedAt").doesNotExist())
+                    .andExpect(jsonPath("$.deletedAt").doesNotExist())
+                    .andExpect(jsonPath("$.authorities").doesNotExist());
         }
 
         @Test
@@ -277,7 +283,11 @@ class AuthControllerIntegrationTest {
                     .andExpect(jsonPath("$.token").isNotEmpty())
                     .andExpect(jsonPath("$.expiresIn").isNumber())
                     .andExpect(jsonPath("$.user.email").value(ADMIN_EMAIL))
-                    .andExpect(jsonPath("$.user.password").doesNotExist());
+                    .andExpect(jsonPath("$.user.role").value("ADMIN"))
+                    .andExpect(jsonPath("$.user.password").doesNotExist())
+                    .andExpect(jsonPath("$.user.passwordChangedAt").doesNotExist())
+                    .andExpect(jsonPath("$.user.deletedAt").doesNotExist())
+                    .andExpect(jsonPath("$.user.authorities").doesNotExist());
         }
 
         @Test

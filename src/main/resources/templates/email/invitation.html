@@ -4,12 +4,14 @@
     <th:block th:replace="~{email/layout :: layout(~{::content})}">
         <th:block th:fragment="content">
             <h1 style="margin:0 0 16px 0;font-size:22px;font-weight:600;color:#111827;"
-                th:utext="#{email.invitation.title(${orgName})}">
+                th:text="#{email.invitation.title(${orgName})}">
                 Te han invitado a Acme
             </h1>
-            <p style="margin:0 0 16px 0;"
-               th:utext="#{email.invitation.body(${inviterName}, ${orgName})}">
-                Joan te ha invitado a unirte a la organización Acme en Stocka.
+            <p style="margin:0 0 16px 0;">
+                <strong th:text="${inviterName}">Joan</strong>
+                <span th:text="#{email.invitation.body.middle}">te ha invitado a unirte a la organización</span>
+                <strong th:text="${orgName}">Acme</strong>
+                <span th:text="#{email.invitation.body.after}">en Stocka.</span>
             </p>
             <p style="margin:0 0 24px 0;" th:text="#{email.invitation.cta.intro}">
                 Haz clic en el botón para aceptar la invitación:
