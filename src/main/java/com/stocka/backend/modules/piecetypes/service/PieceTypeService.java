@@ -7,14 +7,20 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
+import com.stocka.backend.modules.notifications.events.ResourceKind;
+import com.stocka.backend.modules.notifications.events.ResourceLifecycleEvent;
+import com.stocka.backend.modules.notifications.preferences.entity.LifecycleAction;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.service.OrganizationService;
 import com.stocka.backend.modules.piecetypes.dto.AttributeValidatorsDto;
@@ -26,6 +32,7 @@ import com.stocka.backend.modules.piecetypes.entity.PieceType;
 import com.stocka.backend.modules.piecetypes.entity.PieceTypeAttribute;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeAttributeRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeRepository;
+import com.stocka.backend.modules.users.entity.User;
 
 /**
  * CRUD for {@link PieceType} entities and their initial attribute set. Attribute mutations
@@ -44,19 +51,22 @@ public class PieceTypeService {
     private final OrganizationService organizationService;
     private final ValidatorsJsonCodec validatorsCodec;
     private final Optional<PieceTypeUsage> usage;
+    private final ApplicationEventPublisher events;
 
     public PieceTypeService(
             PieceTypeRepository pieceTypeRepository,
             PieceTypeAttributeRepository attributeRepository,
             OrganizationService organizationService,
             ValidatorsJsonCodec validatorsCodec,
-            Optional<PieceTypeUsage> usage
+            Optional<PieceTypeUsage> usage,
+            ApplicationEventPublisher events
     ) {
         this.pieceTypeRepository = pieceTypeRepository;
         this.attributeRepository = attributeRepository;
         this.organizationService = organizationService;
         this.validatorsCodec = validatorsCodec;
         this.usage = usage;
+        this.events = events;
     }
 
     @Transactional
@@ -78,6 +88,7 @@ public class PieceTypeService {
                 idx++;
             }
         }
+        publishLifecycle(type, LifecycleAction.CREATED);
         return type;
     }
 
@@ -103,14 +114,20 @@ public class PieceTypeService {
     @Transactional
     public PieceType update(Integer orgId, Integer typeId, UpdatePieceTypeDto dto) {
         PieceType type = findInOrg(orgId, typeId);
+        boolean changed = false;
         if (dto.getName() != null) {
             String newName = sanitizeTypeName(dto.getName());
             if (!newName.equals(type.getName())) {
                 ensureUniqueTypeName(type.getOrganization(), newName, type.getId());
                 type.setName(newName);
+                changed = true;
             }
         }
-        return saveTypeAndFlush(type);
+        PieceType saved = saveTypeAndFlush(type);
+        if (changed) {
+            publishLifecycle(saved, LifecycleAction.EDITED);
+        }
+        return saved;
     }
 
     @Transactional
@@ -123,6 +140,9 @@ public class PieceTypeService {
                         "El tipo tiene " + count + " artículos; elimínalos antes de eliminar el tipo");
             }
         }
+        // Capture the live name before mangling it for soft-delete uniqueness, so the
+        // notification email shows the original name rather than the "::deleted::ID" form.
+        String originalName = type.getName();
         // Free up the name so a new active type with the same name can be created. The DB-level
         // uk_piece_type_org_name UNIQUE constraint covers (organization_id, name) regardless of
         // deleted_at; appending an id-based suffix guarantees uniqueness across soft-deleted rows
@@ -130,6 +150,15 @@ public class PieceTypeService {
         type.setName(buildSoftDeletedName(type.getName(), type.getId(), MAX_TYPE_NAME_LENGTH));
         type.setDeletedAt(LocalDateTime.now());
         pieceTypeRepository.save(type);
+        events.publishEvent(new ResourceLifecycleEvent(
+                type.getOrganization().getId(),
+                ResourceKind.PIECE_TYPE,
+                LifecycleAction.DELETED,
+                type.getId(),
+                originalName,
+                currentUserId(),
+                null
+        ));
     }
 
     @Transactional
@@ -304,4 +333,23 @@ public class PieceTypeService {
         }
     }
 
+    private void publishLifecycle(PieceType type, LifecycleAction action) {
+        events.publishEvent(new ResourceLifecycleEvent(
+                type.getOrganization().getId(),
+                ResourceKind.PIECE_TYPE,
+                action,
+                type.getId(),
+                type.getName(),
+                currentUserId(),
+                null
+        ));
+    }
+
+    private static Integer currentUserId() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof User user)) {
+            return null;
+        }
+        return user.getId();
+    }
 }
