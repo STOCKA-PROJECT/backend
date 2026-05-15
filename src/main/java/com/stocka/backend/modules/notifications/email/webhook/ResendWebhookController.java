@@ -16,10 +16,11 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.svix.Webhook;
 import com.svix.exceptions.WebhookVerificationException;
+
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Public endpoint that receives Resend webhook events.
@@ -89,7 +90,7 @@ public class ResendWebhookController {
         ResendEvent event;
         try {
             event = objectMapper.readValue(rawPayload, ResendEvent.class);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("[RESEND WEBHOOK] payload mal formado svixId={}: {}", svixId, e.getMessage());
             return ResponseEntity.badRequest().build();
         }

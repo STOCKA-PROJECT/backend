@@ -7,9 +7,9 @@
                 th:text="#{email.verification.title}">
                 Verifica tu correo
             </h1>
-            <p style="margin:0 0 16px 0;"
-               th:utext="#{email.verification.greeting(${userName})}">
-                Hola Joan, gracias por crear tu cuenta en Stocka.
+            <p style="margin:0 0 16px 0;">
+                <span th:text="#{email.verification.greeting.before}">Hola</span>
+                <strong th:text="${userName}">Joan</strong><span th:text="#{email.verification.greeting.after}">, gracias por crear tu cuenta en Stocka.</span>
             </p>
             <p style="margin:0 0 24px 0;" th:text="#{email.verification.body}">
                 Para activarla, confirma tu dirección de correo. El enlace caduca en 24 horas y solo puede usarse una vez.

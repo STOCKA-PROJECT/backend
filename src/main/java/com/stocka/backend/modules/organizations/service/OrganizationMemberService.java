@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.stocka.backend.modules.notifications.preferences.service.NotificationPreferenceService;
 import com.stocka.backend.modules.organizations.entity.AuditAction;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.entity.OrganizationMember;
@@ -22,15 +23,18 @@ public class OrganizationMemberService {
     private final OrganizationMemberRepository memberRepository;
     private final OrganizationService organizationService;
     private final OrganizationAuditService auditService;
+    private final NotificationPreferenceService notificationPreferenceService;
 
     public OrganizationMemberService(
             OrganizationMemberRepository memberRepository,
             OrganizationService organizationService,
-            OrganizationAuditService auditService
+            OrganizationAuditService auditService,
+            NotificationPreferenceService notificationPreferenceService
     ) {
         this.memberRepository = memberRepository;
         this.organizationService = organizationService;
         this.auditService = auditService;
+        this.notificationPreferenceService = notificationPreferenceService;
     }
 
     public List<OrganizationMember> listMembers(Integer orgId) {
@@ -50,6 +54,7 @@ public class OrganizationMemberService {
         }
         Organization org = organizationService.findById(orgId);
         OrganizationMember member = findMemberInOrg(memberId, org);
+        ensureNotSelf(member, actor);
 
         OrganizationRoleEnum oldRole = member.getRole();
         if (oldRole == newRole) {
@@ -74,6 +79,7 @@ public class OrganizationMemberService {
     public void removeMember(Integer orgId, Integer memberId, User actor) {
         Organization org = organizationService.findById(orgId);
         OrganizationMember member = findMemberInOrg(memberId, org);
+        ensureNotSelf(member, actor);
         OrganizationRoleEnum actorRole = resolveActorRole(org, actor);
 
         if (!canActOnMember(actorRole, member.getRole())) {
@@ -87,6 +93,9 @@ public class OrganizationMemberService {
 
         member.setDeletedAt(LocalDateTime.now());
         memberRepository.save(member);
+        // Drop the now-orphaned notification subscription so a re-join later starts
+        // with the default opt-in instead of resurrecting stale preferences.
+        notificationPreferenceService.softDeleteFor(member.getUser(), org);
 
         auditService.log(org, actor, AuditAction.MEMBER_REMOVED, member.getUser(), Map.of(
                 "removedRole", member.getRole().name()
@@ -106,6 +115,9 @@ public class OrganizationMemberService {
 
         member.setDeletedAt(LocalDateTime.now());
         memberRepository.save(member);
+        // Drop the now-orphaned notification subscription so a re-join later starts
+        // with the default opt-in instead of resurrecting stale preferences.
+        notificationPreferenceService.softDeleteFor(actor, org);
 
         auditService.log(org, actor, AuditAction.MEMBER_LEFT, actor, Map.of(
                 "leftRole", member.getRole().name()
@@ -139,6 +151,13 @@ public class OrganizationMemberService {
             return targetRole == OrganizationRoleEnum.USER || targetRole == OrganizationRoleEnum.SPECTATOR;
         }
         return false;
+    }
+
+    private void ensureNotSelf(OrganizationMember member, User actor) {
+        if (member.getUser().getId().equals(actor.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "no puedes operar sobre tu propia membresía");
+        }
     }
 
     private void ensureNotLastOwner(Organization org) {

@@ -9,6 +9,7 @@ import java.util.Arrays;
 import java.util.stream.Collectors;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -18,6 +19,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
@@ -32,6 +34,7 @@ import org.springframework.http.HttpStatus;
  */
 @RestController
 @RequestMapping("/dev/r2")
+@Profile("dev")
 @ConditionalOnProperty(name = "stocka.r2.use-local", havingValue = "true", matchIfMissing = true)
 public class LocalR2DownloadController {
     private final LocalR2StorageService storage;
@@ -42,8 +45,11 @@ public class LocalR2DownloadController {
 
     @GetMapping("/**")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<Resource> download(@PathVariable(required = false) String ignored,
-                                             jakarta.servlet.http.HttpServletRequest request) {
+    public ResponseEntity<Resource> download(
+            @PathVariable(required = false) String ignored,
+            @RequestParam(value = LocalR2StorageService.RESPONSE_CONTENT_DISPOSITION_PARAM, required = false)
+                    String responseContentDisposition,
+            jakarta.servlet.http.HttpServletRequest request) {
         String fullPath = request.getRequestURI();
         String prefix = "/dev/r2/";
         int idx = fullPath.indexOf(prefix);
@@ -63,8 +69,11 @@ public class LocalR2DownloadController {
         } catch (IOException e) {
             mime = null;
         }
+        String disposition = responseContentDisposition != null && !responseContentDisposition.isBlank()
+                ? responseContentDisposition
+                : "inline; filename=\"" + file.getFileName() + "\"";
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + file.getFileName() + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
                 .contentType(mime != null ? MediaType.parseMediaType(mime) : MediaType.APPLICATION_OCTET_STREAM)
                 .body(new FileSystemResource(file));
     }

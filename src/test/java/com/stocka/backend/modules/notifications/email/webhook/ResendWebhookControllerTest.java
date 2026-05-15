@@ -21,9 +21,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.svix.Webhook;
 import com.svix.exceptions.WebhookVerificationException;
+
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("ResendWebhookController")
@@ -33,7 +35,7 @@ class ResendWebhookControllerTest {
     @Mock private ResendWebhookEventHandler handler;
 
     private ResendWebhookController sut;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = JsonMapper.builder().build();
 
     @BeforeEach
     void setUp() {

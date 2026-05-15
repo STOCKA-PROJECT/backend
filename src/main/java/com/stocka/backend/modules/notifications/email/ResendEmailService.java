@@ -12,6 +12,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
+import com.stocka.backend.modules.notifications.events.ResourceKind;
+import com.stocka.backend.modules.notifications.preferences.entity.LifecycleAction;
 import com.stocka.backend.modules.users.entity.Language;
 
 /**
@@ -33,6 +35,7 @@ public class ResendEmailService implements EmailService {
     static final String INVITATION_KEY_PREFIX = "org-invitation/";
     static final String PASSWORD_RESET_KEY_PREFIX = "password-reset/";
     static final String EMAIL_VERIFICATION_KEY_PREFIX = "email-verification/";
+    static final String RESOURCE_LIFECYCLE_KEY_PREFIX = "resource-lifecycle/";
     private static final int IDEMPOTENCY_HASH_HEX_LENGTH = 32;
 
     private final EmailTemplateRenderer renderer;
@@ -98,6 +101,41 @@ public class ResendEmailService implements EmailService {
         );
 
         String idempotencyKey = EMAIL_VERIFICATION_KEY_PREFIX + sha256Hex(verifyUrl, IDEMPOTENCY_HASH_HEX_LENGTH);
+        dispatch(to, email, idempotencyKey);
+    }
+
+    @Override
+    public void sendResourceLifecycleEmail(
+            String to, ResourceKind kind, LifecycleAction action,
+            String resourceName, String orgName, String actorName,
+            String resourceUrl, Language language
+    ) {
+        String suffix = kind.name() + "." + action.name();
+        boolean showCta = action != LifecycleAction.DELETED;
+        RenderedEmail email = renderer.render(
+                "resource-lifecycle",
+                "email.resourceLifecycle.subject." + suffix,
+                new Object[]{actorName, resourceName, orgName},
+                language.toLocale(),
+                Map.of(
+                        "titleKey", "email.resourceLifecycle.title." + suffix,
+                        "bodyKey", "email.resourceLifecycle.body." + suffix,
+                        "actorName", actorName,
+                        "resourceName", resourceName,
+                        "orgName", orgName,
+                        "resourceUrl", resourceUrl,
+                        "showCta", showCta
+                )
+        );
+
+        // Idempotency: stable hash over recipient + (kind,action) + URL + names so a
+        // retried delivery of the exact same logical email collapses, but two distinct
+        // events that happen to share a recipient produce different keys.
+        String fingerprint = to + "|" + suffix + "|" + resourceUrl + "|"
+                + (resourceName == null ? "" : resourceName) + "|"
+                + (actorName == null ? "" : actorName) + "|"
+                + (orgName == null ? "" : orgName);
+        String idempotencyKey = RESOURCE_LIFECYCLE_KEY_PREFIX + sha256Hex(fingerprint, IDEMPOTENCY_HASH_HEX_LENGTH);
         dispatch(to, email, idempotencyKey);
     }
 

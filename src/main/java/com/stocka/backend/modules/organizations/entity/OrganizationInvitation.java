@@ -3,6 +3,7 @@ package com.stocka.backend.modules.organizations.entity;
 import java.time.LocalDateTime;
 import java.util.Date;
 
+import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
@@ -18,6 +19,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 @Entity
 @Table(name = "organization_invitations")
@@ -61,6 +63,10 @@ public class OrganizationInvitation {
 
     @Column(name = "accepted_at")
     private LocalDateTime acceptedAt;
+
+    @Version
+    @ColumnDefault("0")
+    private Long version;
 
     public Integer getId() {
         return id;
@@ -149,5 +155,9 @@ public class OrganizationInvitation {
     public OrganizationInvitation setAcceptedAt(LocalDateTime acceptedAt) {
         this.acceptedAt = acceptedAt;
         return this;
+    }
+
+    public Long getVersion() {
+        return version;
     }
 }

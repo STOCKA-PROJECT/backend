@@ -13,6 +13,7 @@ public class PieceAttachmentProperties {
     private long maxDocumentBytes = 104_857_600L; // 100 MB
     private int maxImagesPerPiece = 50;
     private int maxDocumentsPerPiece = 50;
+    private int maxImageDimensionPixels = 16_384; // decompression-bomb guard (issue #14)
     private Set<String> allowedImageMimes = Set.of(
             "image/jpeg", "image/png", "image/webp", "image/gif"
     );
@@ -28,6 +29,9 @@ public class PieceAttachmentProperties {
 
     public int getMaxDocumentsPerPiece() { return maxDocumentsPerPiece; }
     public void setMaxDocumentsPerPiece(int v) { this.maxDocumentsPerPiece = v; }
+
+    public int getMaxImageDimensionPixels() { return maxImageDimensionPixels; }
+    public void setMaxImageDimensionPixels(int v) { this.maxImageDimensionPixels = v; }
 
     public Set<String> getAllowedImageMimes() { return allowedImageMimes; }
     public void setAllowedImageMimes(Set<String> v) { this.allowedImageMimes = v; }

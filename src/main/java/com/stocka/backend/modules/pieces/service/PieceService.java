@@ -11,6 +11,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -25,10 +26,14 @@ import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.locations.entity.Location;
 import com.stocka.backend.modules.locations.repository.LocationRepository;
+import com.stocka.backend.modules.notifications.events.ResourceKind;
+import com.stocka.backend.modules.notifications.events.ResourceLifecycleEvent;
+import com.stocka.backend.modules.notifications.preferences.entity.LifecycleAction;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.entity.OrganizationPieceAttribute;
 import com.stocka.backend.modules.organizations.repository.OrganizationMemberRepository;
 import com.stocka.backend.modules.organizations.repository.OrganizationPieceAttributeRepository;
+import com.stocka.backend.modules.organizations.service.OrganizationQuotaProperties;
 import com.stocka.backend.modules.organizations.service.OrganizationService;
 import com.stocka.backend.modules.pieces.dto.AttributeScope;
 import com.stocka.backend.modules.pieces.dto.AttributeValueInputDto;
@@ -82,6 +87,8 @@ public class PieceService {
     private final AttributeValueValidationRegistry validationRegistry;
     private final LocationRepository locationRepository;
     private final UserRepository userRepository;
+    private final OrganizationQuotaProperties quotas;
+    private final ApplicationEventPublisher events;
 
     public PieceService(
             PieceRepository pieceRepository,
@@ -96,7 +103,9 @@ public class PieceService {
             PieceTypeService pieceTypeService,
             AttributeValueValidationRegistry validationRegistry,
             LocationRepository locationRepository,
-            UserRepository userRepository
+            UserRepository userRepository,
+            OrganizationQuotaProperties quotas,
+            ApplicationEventPublisher events
     ) {
         this.pieceRepository = pieceRepository;
         this.valueRepository = valueRepository;
@@ -111,11 +120,14 @@ public class PieceService {
         this.validationRegistry = validationRegistry;
         this.locationRepository = locationRepository;
         this.userRepository = userRepository;
+        this.quotas = quotas;
+        this.events = events;
     }
 
     @Transactional
     public Piece create(Integer orgId, CreatePieceDto dto) {
         Organization org = organizationService.findById(orgId);
+        ensureUnderPiecesPerOrgQuota(org);
         Set<PieceType> types = resolveTypes(orgId, dto.getPieceTypeIds());
 
         String name = sanitizeName(dto.getName());
@@ -174,6 +186,7 @@ public class PieceService {
 
         User actor = currentUser();
         historyService.recordCreated(piece, actor);
+        publishLifecycle(piece, LifecycleAction.CREATED, actor);
         return piece;
     }
 
@@ -231,6 +244,7 @@ public class PieceService {
         Organization org = piece.getOrganization();
         User actor = currentUser();
         PieceStatus oldStatus = piece.getStatus();
+        boolean mutated = false;
 
         if (dto.getName() != null) {
             String newName = sanitizeName(dto.getName());
@@ -238,6 +252,7 @@ public class PieceService {
                 String old = piece.getName();
                 piece.setName(newName);
                 historyService.recordUpdated(piece, actor, "name", old, newName);
+                mutated = true;
             }
         }
         if (dto.getSerialNumber() != null) {
@@ -247,6 +262,7 @@ public class PieceService {
                 String old = piece.getSerialNumber();
                 piece.setSerialNumber(newSerial);
                 historyService.recordUpdated(piece, actor, "serialNumber", old, newSerial);
+                mutated = true;
             }
         }
         if (dto.getDescription() != null) {
@@ -255,11 +271,14 @@ public class PieceService {
             if (!java.util.Objects.equals(old, value)) {
                 piece.setDescription(value);
                 historyService.recordUpdated(piece, actor, "description", old, value);
+                mutated = true;
             }
         }
 
         if (dto.getPieceTypeIds() != null) {
-            applyTypesUpdate(orgId, piece, dto.getPieceTypeIds(), actor);
+            if (applyTypesUpdate(orgId, piece, dto.getPieceTypeIds(), actor)) {
+                mutated = true;
+            }
         }
 
         if (Boolean.TRUE.equals(dto.getClearOwner())) {
@@ -267,6 +286,7 @@ public class PieceService {
                 String oldName = displayUserName(piece.getOwner());
                 piece.setOwner(null);
                 historyService.recordOwnerChanged(piece, actor, oldName, null);
+                mutated = true;
             }
         } else if (dto.getOwnerUserId() != null) {
             User newOwner = resolveOwner(org, dto.getOwnerUserId(), true);
@@ -277,6 +297,7 @@ public class PieceService {
                 String newName = displayUserName(newOwner);
                 piece.setOwner(newOwner);
                 historyService.recordOwnerChanged(piece, actor, oldName, newName);
+                mutated = true;
             }
         }
 
@@ -285,6 +306,7 @@ public class PieceService {
                 String oldName = piece.getLocation().getName();
                 piece.setLocation(null);
                 historyService.recordLocationChanged(piece, actor, oldName, null);
+                mutated = true;
             }
         } else if (dto.getLocationId() != null) {
             Location newLoc = resolveLocation(org, dto.getLocationId(), true);
@@ -295,14 +317,19 @@ public class PieceService {
                 String newName = newLoc == null ? null : newLoc.getName();
                 piece.setLocation(newLoc);
                 historyService.recordLocationChanged(piece, actor, oldName, newName);
+                mutated = true;
             }
         }
 
         if (Boolean.TRUE.equals(dto.getClearCover())) {
-            applyCoverChange(piece, null, actor);
+            if (applyCoverChange(piece, null, actor)) {
+                mutated = true;
+            }
         } else if (dto.getCoverAttachmentId() != null) {
             PieceAttachment cover = resolveCoverAttachment(piece, dto.getCoverAttachmentId());
-            applyCoverChange(piece, cover, actor);
+            if (applyCoverChange(piece, cover, actor)) {
+                mutated = true;
+            }
         }
 
         Map<Integer, PieceTypeAttribute> typePool = collectTypeAttributePool(piece.getPieceTypes());
@@ -343,6 +370,7 @@ public class PieceService {
                     }
                     historyService.recordAttributeValueChanged(piece, actor,
                             "org:" + attribute.getName(), oldValue, normalized);
+                    mutated = true;
                 } else {
                     PieceTypeAttribute attribute = requireAttributeInPool(typePool, input.attributeId());
                     String normalized = validationRegistry.validate(attribute, input.value());
@@ -366,6 +394,7 @@ public class PieceService {
                     }
                     historyService.recordAttributeValueChanged(piece, actor,
                             attribute.getName(), oldValue, normalized);
+                    mutated = true;
                 }
             }
         }
@@ -375,8 +404,13 @@ public class PieceService {
         if (newStatus != oldStatus) {
             piece.setStatus(newStatus);
             historyService.recordStatusChanged(piece, actor, oldStatus, newStatus);
+            mutated = true;
         }
-        return pieceRepository.save(piece);
+        Piece saved = pieceRepository.save(piece);
+        if (mutated) {
+            publishLifecycle(saved, LifecycleAction.EDITED, actor);
+        }
+        return saved;
     }
 
     @Transactional
@@ -386,6 +420,7 @@ public class PieceService {
         piece.setDeletedAt(LocalDateTime.now());
         pieceRepository.save(piece);
         historyService.recordDeleted(piece, actor);
+        publishLifecycle(piece, LifecycleAction.DELETED, actor);
     }
 
     /**
@@ -477,9 +512,10 @@ public class PieceService {
     /**
      * Replaces the piece's set of types with {@code newTypeIds}, removing attribute values whose
      * attribute belonged exclusively to a type that is no longer attached. Records the change in
-     * the history when something actually moved.
+     * the history when something actually moved. Returns {@code true} when at least one type was
+     * added or removed so the caller knows whether to mark the piece as mutated.
      */
-    private void applyTypesUpdate(Integer orgId, Piece piece, List<Integer> newTypeIds, User actor) {
+    private boolean applyTypesUpdate(Integer orgId, Piece piece, List<Integer> newTypeIds, User actor) {
         Set<PieceType> newTypes = resolveTypes(orgId, newTypeIds);
         Set<Integer> oldIds = piece.getPieceTypes().stream()
                 .map(PieceType::getId)
@@ -488,7 +524,7 @@ public class PieceService {
                 .map(PieceType::getId)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         if (oldIds.equals(nextIds)) {
-            return;
+            return false;
         }
         String oldNames = formatTypeNames(piece.getPieceTypes());
         piece.setPieceTypes(newTypes);
@@ -502,6 +538,7 @@ public class PieceService {
             }
         }
         historyService.recordPieceTypesChanged(piece, actor, oldNames, formatTypeNames(newTypes));
+        return true;
     }
 
     /**
@@ -657,16 +694,29 @@ public class PieceService {
     /**
      * Persists the cover change on {@code piece} when it differs from the current value, recording
      * the move in piece history as a {@code PIECE_UPDATED} entry on the {@code coverAttachmentId}
-     * field.
+     * field. Returns {@code true} when the cover actually changed so the caller can mark the
+     * piece as mutated.
      */
-    private void applyCoverChange(Piece piece, PieceAttachment newCover, User actor) {
+    private boolean applyCoverChange(Piece piece, PieceAttachment newCover, User actor) {
         Integer oldId = piece.getCoverAttachment() == null ? null : piece.getCoverAttachment().getId();
         Integer newId = newCover == null ? null : newCover.getId();
-        if (java.util.Objects.equals(oldId, newId)) return;
+        if (java.util.Objects.equals(oldId, newId)) return false;
         piece.setCoverAttachment(newCover);
         historyService.recordUpdated(piece, actor, "coverAttachmentId",
                 oldId == null ? null : oldId.toString(),
                 newId == null ? null : newId.toString());
+        return true;
+    }
+
+    private void ensureUnderPiecesPerOrgQuota(Organization organization) {
+        long current = pieceRepository.countByOrganization(organization);
+        long max = quotas.getMaxPiecesPerOrg();
+        if (current >= max) {
+            throw new ApiException(
+                    HttpStatus.FORBIDDEN,
+                    ErrorCodes.ORGANIZATIONS_QUOTA_EXCEEDED,
+                    Map.of("limit", "max_pieces_per_org", "max", max, "current", current));
+        }
     }
 
     private String emptyToNull(String value) {
@@ -689,6 +739,18 @@ public class PieceService {
             return null;
         }
         return user;
+    }
+
+    private void publishLifecycle(Piece piece, LifecycleAction action, User actor) {
+        events.publishEvent(new ResourceLifecycleEvent(
+                piece.getOrganization().getId(),
+                ResourceKind.PIECE,
+                action,
+                piece.getId(),
+                piece.getName(),
+                actor == null ? null : actor.getId(),
+                piece.getOwner() == null ? null : piece.getOwner().getId()
+        ));
     }
 
     /**

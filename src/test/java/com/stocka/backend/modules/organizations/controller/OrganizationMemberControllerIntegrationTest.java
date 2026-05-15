@@ -131,13 +131,14 @@ class OrganizationMemberControllerIntegrationTest {
     }
 
     @Test
-    @DisplayName("PATCH /members/{id} 409 — cannot demote last OWNER")
-    void patch_lastOwner_409() throws Exception {
+    @DisplayName("PATCH /members/{id} 403 — actor cannot operate on own membership")
+    void patch_self_403() throws Exception {
         mockMvc.perform(patch("/organizations/" + orgId + "/members/" + adminMemberId)
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(om.writeValueAsString(Map.of("role", "USER"))))
-                .andExpect(status().isConflict());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.detail").value("no puedes operar sobre tu propia membresía"));
     }
 
     @Test
@@ -191,11 +192,12 @@ class OrganizationMemberControllerIntegrationTest {
     }
 
     @Test
-    @DisplayName("DELETE /members/{id} 409 — cannot remove last OWNER")
-    void delete_lastOwner_409() throws Exception {
+    @DisplayName("DELETE /members/{id} 403 — actor cannot operate on own membership")
+    void delete_self_403() throws Exception {
         mockMvc.perform(delete("/organizations/" + orgId + "/members/" + adminMemberId)
                         .header("Authorization", "Bearer " + adminToken))
-                .andExpect(status().isConflict());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.detail").value("no puedes operar sobre tu propia membresía"));
     }
 
     @Test

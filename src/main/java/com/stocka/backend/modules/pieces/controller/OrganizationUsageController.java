@@ -1,0 +1,31 @@
+package com.stocka.backend.modules.pieces.controller;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.stocka.backend.modules.organizations.dto.OrganizationUsageDto;
+import com.stocka.backend.modules.pieces.service.OrganizationUsageService;
+
+/**
+ * Exposes per-organization quota usage so OWNERs/MANAGERs can monitor consumption against
+ * the configured limits (issue #21).
+ */
+@RestController
+@RequestMapping("/organizations/{orgId}/usage")
+public class OrganizationUsageController {
+    private final OrganizationUsageService usageService;
+
+    public OrganizationUsageController(OrganizationUsageService usageService) {
+        this.usageService = usageService;
+    }
+
+    @GetMapping
+    @PreAuthorize("@orgSecurity.canManageOrgContent(#orgId, principal)")
+    public ResponseEntity<OrganizationUsageDto> getUsage(@PathVariable Integer orgId) {
+        return ResponseEntity.ok(usageService.getUsage(orgId));
+    }
+}

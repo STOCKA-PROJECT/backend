@@ -11,6 +11,8 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
+import com.stocka.backend.modules.notifications.events.ResourceKind;
+import com.stocka.backend.modules.notifications.preferences.entity.LifecycleAction;
 import com.stocka.backend.modules.users.entity.Language;
 
 import jakarta.mail.MessagingException;
@@ -84,18 +86,46 @@ public class SmtpEmailService implements EmailService {
         sendRendered(to, email);
     }
 
+    @Override
+    public void sendResourceLifecycleEmail(
+            String to, ResourceKind kind, LifecycleAction action,
+            String resourceName, String orgName, String actorName,
+            String resourceUrl, Language language
+    ) {
+        String suffix = kind.name() + "." + action.name();
+        boolean showCta = action != LifecycleAction.DELETED;
+        RenderedEmail email = renderer.render(
+                "resource-lifecycle",
+                "email.resourceLifecycle.subject." + suffix,
+                new Object[]{actorName, resourceName, orgName},
+                language.toLocale(),
+                Map.of(
+                        "titleKey", "email.resourceLifecycle.title." + suffix,
+                        "bodyKey", "email.resourceLifecycle.body." + suffix,
+                        "actorName", actorName,
+                        "resourceName", resourceName,
+                        "orgName", orgName,
+                        "resourceUrl", resourceUrl,
+                        "showCta", showCta
+                )
+        );
+
+        sendRendered(to, email);
+    }
+
     private void sendRendered(String to, RenderedEmail email) {
+        String safeTo = EmailHeaders.safeHeader(to);
         try {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, false, StandardCharsets.UTF_8.name());
-            helper.setFrom(fromAddress);
-            helper.setTo(to);
-            helper.setSubject(email.subject());
+            helper.setFrom(EmailHeaders.safeHeader(fromAddress));
+            helper.setTo(safeTo);
+            helper.setSubject(EmailHeaders.safeHeader(email.subject()));
             helper.setText(email.htmlBody(), true);
             mailSender.send(message);
-            log.info("[SMTP EMAIL] sent to {}", to);
+            log.info("[SMTP EMAIL] sent to {}", safeTo);
         } catch (MessagingException e) {
-            log.warn("[SMTP EMAIL] could not send to {}: {}", to, e.getMessage());
+            log.warn("[SMTP EMAIL] could not send to {}: {}", safeTo, e.getMessage());
         }
     }
 }

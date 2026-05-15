@@ -1,8 +1,17 @@
 package com.stocka.backend.modules.auth.dto;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
 public class ResetPasswordRequestDto {
+    @NotBlank
     private String token;
+
+    @NotBlank
+    @Size(min = 8)
     private String newPassword;
+
+    @NotBlank
     private String repeatPassword;
 
     public String getToken() {

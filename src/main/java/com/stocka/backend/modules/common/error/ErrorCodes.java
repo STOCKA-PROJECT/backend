@@ -45,15 +45,19 @@ public final class ErrorCodes {
     public static final String ORGANIZATIONS_NOT_FOUND = "organizations.not_found";
     public static final String ORGANIZATIONS_INVITATION_LIMIT_REACHED = "organizations.invitation_limit_reached";
     public static final String ORGANIZATIONS_INVITATION_EXPIRED = "organizations.invitation_expired";
+    public static final String ORGANIZATIONS_INVITATION_ALREADY_PROCESSED = "organizations.invitation_already_processed";
+    public static final String ORGANIZATIONS_QUOTA_EXCEEDED = "organizations.quota_exceeded";
 
     // ---- storage / upload -----------------------------------------------
     public static final String STORAGE_R2_UNAVAILABLE = "storage.r2_unavailable";
     public static final String UPLOAD_TOO_LARGE = "upload.too_large";
     public static final String UPLOAD_INVALID_KIND = "upload.invalid_kind";
+    public static final String UPLOAD_IMAGE_DIMENSIONS_TOO_LARGE = "upload.image_dimensions_too_large";
 
     // ---- generic --------------------------------------------------------
     public static final String VALIDATION_REQUIRED = "validation.required";
     public static final String VALIDATION_FAILED = "validation.failed";
     public static final String SERVER_INTERNAL_ERROR = "server.internal_error";
     public static final String REQUEST_MALFORMED_BODY = "request.malformed_body";
+    public static final String REQUEST_RATE_LIMITED = "request.rate_limited";
 }

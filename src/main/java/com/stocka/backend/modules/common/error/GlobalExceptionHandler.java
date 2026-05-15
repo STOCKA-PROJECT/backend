@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.MessageSource;
 import org.springframework.context.NoSuchMessageException;
 import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
@@ -29,6 +30,7 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import com.stocka.backend.modules.security.ratelimit.RateLimitedException;
 import com.stocka.backend.modules.storage.R2UnavailableException;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -66,6 +68,22 @@ public class GlobalExceptionHandler {
                 ex.getParams(),
                 request.getRequestURI());
         return ResponseEntity.status(ex.getStatus()).body(body);
+    }
+
+    /**
+     * Especialización de {@link ApiException} para añadir la cabecera
+     * {@code Retry-After} requerida por RFC 6585.
+     */
+    @ExceptionHandler(RateLimitedException.class)
+    public ResponseEntity<ProblemDetail> handleRateLimited(RateLimitedException ex, HttpServletRequest request) {
+        ProblemDetail body = factory.build(
+                ex.getStatus(),
+                ex.getCode(),
+                ex.getParams(),
+                request.getRequestURI());
+        return ResponseEntity.status(ex.getStatus())
+                .header(HttpHeaders.RETRY_AFTER, Long.toString(ex.getRetryAfterSeconds()))
+                .body(body);
     }
 
     @ExceptionHandler(R2UnavailableException.class)

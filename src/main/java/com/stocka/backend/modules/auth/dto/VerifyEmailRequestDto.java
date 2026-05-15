@@ -1,6 +1,9 @@
 package com.stocka.backend.modules.auth.dto;
 
+import jakarta.validation.constraints.NotBlank;
+
 public class VerifyEmailRequestDto {
+    @NotBlank
     private String token;
 
     public String getToken() {

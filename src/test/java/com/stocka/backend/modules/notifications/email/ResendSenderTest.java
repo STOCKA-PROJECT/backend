@@ -150,4 +150,53 @@ class ResendSenderTest {
             assertThat(id).isNull();
         }
     }
+
+    @Nested
+    @DisplayName("send (CRLF header sanitization)")
+    class CrlfSanitization {
+
+        @Test
+        @DisplayName("strips CR/LF from the subject before forwarding to the Resend SDK")
+        void should_sanitizeSubject() throws ResendException {
+            when(emails.send(any(CreateEmailOptions.class), any(RequestOptions.class)))
+                    .thenReturn(new CreateEmailResponse("id"));
+            ArgumentCaptor<CreateEmailOptions> optsCaptor = ArgumentCaptor.forClass(CreateEmailOptions.class);
+
+            sut.send("noreply@stocka", "user@x",
+                    "Invitation from bob\r\nBcc: leak@evil.com to join Acme",
+                    "<p/>", "k/1");
+
+            verify(emails).send(optsCaptor.capture(), any(RequestOptions.class));
+            String subject = optsCaptor.getValue().getSubject();
+            assertThat(subject).doesNotContain("\r").doesNotContain("\n");
+        }
+
+        @Test
+        @DisplayName("strips CR/LF from the From address")
+        void should_sanitizeFrom() throws ResendException {
+            when(emails.send(any(CreateEmailOptions.class), any(RequestOptions.class)))
+                    .thenReturn(new CreateEmailResponse("id"));
+            ArgumentCaptor<CreateEmailOptions> optsCaptor = ArgumentCaptor.forClass(CreateEmailOptions.class);
+
+            sut.send("noreply@stocka\r\nBcc: leak@evil.com", "user@x", "subj", "<p/>", "k/1");
+
+            verify(emails).send(optsCaptor.capture(), any(RequestOptions.class));
+            assertThat(optsCaptor.getValue().getFrom()).doesNotContain("\r").doesNotContain("\n");
+        }
+
+        @Test
+        @DisplayName("strips CR/LF from the To address")
+        void should_sanitizeTo() throws ResendException {
+            when(emails.send(any(CreateEmailOptions.class), any(RequestOptions.class)))
+                    .thenReturn(new CreateEmailResponse("id"));
+            ArgumentCaptor<CreateEmailOptions> optsCaptor = ArgumentCaptor.forClass(CreateEmailOptions.class);
+
+            sut.send("noreply@stocka", "user@x\r\nBcc: leak@evil.com", "subj", "<p/>", "k/1");
+
+            verify(emails).send(optsCaptor.capture(), any(RequestOptions.class));
+            for (String to : optsCaptor.getValue().getTo()) {
+                assertThat(to).doesNotContain("\r").doesNotContain("\n");
+            }
+        }
+    }
 }
