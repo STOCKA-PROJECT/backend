@@ -42,7 +42,7 @@ class InvitationControllerIntegrationTest {
     private String adminToken;
     private String inviteeToken;
 
-    private Integer orgId;
+    private String orgSlug;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -59,7 +59,7 @@ class InvitationControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         Map<?, ?> body = om.readValue(result.getResponse().getContentAsString(), Map.class);
-        orgId = (Integer) body.get("id");
+        orgSlug = (String) body.get("slug");
     }
 
     private void cleanDatabase() {
@@ -67,7 +67,7 @@ class InvitationControllerIntegrationTest {
     }
 
     private String createInvitation(String email, String role) throws Exception {
-        var result = mockMvc.perform(post("/organizations/" + orgId + "/invitations")
+        var result = mockMvc.perform(post("/organizations/" + orgSlug + "/invitations")
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(om.writeValueAsString(Map.of("email", email, "role", role))))
@@ -138,7 +138,7 @@ class InvitationControllerIntegrationTest {
                 .andExpect(jsonPath("$.status").value("ACCEPTED"));
 
         // Now invitee can list members of the org
-        mockMvc.perform(get("/organizations/" + orgId + "/members")
+        mockMvc.perform(get("/organizations/" + orgSlug + "/members")
                         .header("Authorization", "Bearer " + inviteeToken))
                 .andExpect(status().isOk());
     }

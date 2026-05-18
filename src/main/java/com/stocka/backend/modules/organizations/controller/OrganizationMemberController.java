@@ -18,20 +18,24 @@ import com.stocka.backend.modules.organizations.dto.MemberResponseDto;
 import com.stocka.backend.modules.organizations.dto.UpdateMemberRoleDto;
 import com.stocka.backend.modules.organizations.entity.OrganizationMember;
 import com.stocka.backend.modules.organizations.service.OrganizationMemberService;
+import com.stocka.backend.modules.organizations.service.OrganizationResolver;
 import com.stocka.backend.modules.users.entity.User;
 
 @RestController
-@RequestMapping("/organizations/{orgId}/members")
+@RequestMapping("/organizations/{orgSlug}/members")
 public class OrganizationMemberController {
     private final OrganizationMemberService memberService;
+    private final OrganizationResolver orgResolver;
 
-    public OrganizationMemberController(OrganizationMemberService memberService) {
+    public OrganizationMemberController(OrganizationMemberService memberService, OrganizationResolver orgResolver) {
         this.memberService = memberService;
+        this.orgResolver = orgResolver;
     }
 
     @GetMapping
-    @PreAuthorize("@orgSecurity.isMember(#orgId, principal)")
-    public ResponseEntity<List<MemberResponseDto>> list(@PathVariable Integer orgId) {
+    @PreAuthorize("@orgSecurity.isMember(#orgSlug, principal)")
+    public ResponseEntity<List<MemberResponseDto>> list(@PathVariable String orgSlug) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         List<MemberResponseDto> members = memberService.listMembers(orgId).stream()
                 .map(MemberResponseDto::from)
                 .toList();
@@ -39,29 +43,32 @@ public class OrganizationMemberController {
     }
 
     @PatchMapping("/{memberId}")
-    @PreAuthorize("@orgSecurity.isOwner(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.isOwner(#orgSlug, principal)")
     public ResponseEntity<MemberResponseDto> updateRole(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @PathVariable Integer memberId,
             @RequestBody UpdateMemberRoleDto dto
     ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         OrganizationMember member = memberService.updateMemberRole(orgId, memberId, dto.getRole(), currentUser());
         return ResponseEntity.ok(MemberResponseDto.from(member));
     }
 
     @DeleteMapping("/{memberId}")
-    @PreAuthorize("@orgSecurity.isOwnerOrManager(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.isOwnerOrManager(#orgSlug, principal)")
     public ResponseEntity<Void> remove(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @PathVariable Integer memberId
     ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         memberService.removeMember(orgId, memberId, currentUser());
         return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/me")
-    @PreAuthorize("@orgSecurity.isMember(#orgId, principal)")
-    public ResponseEntity<Void> leave(@PathVariable Integer orgId) {
+    @PreAuthorize("@orgSecurity.isMember(#orgSlug, principal)")
+    public ResponseEntity<Void> leave(@PathVariable String orgSlug) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         memberService.leaveOrganization(orgId, currentUser());
         return ResponseEntity.noContent().build();
     }
