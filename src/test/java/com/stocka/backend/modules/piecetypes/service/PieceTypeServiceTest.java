@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -44,6 +45,7 @@ class PieceTypeServiceTest {
     @Mock OrganizationService organizationService;
     @Mock ValidatorsJsonCodec validatorsCodec;
     @Mock PieceTypeUsage usage;
+    @Mock ApplicationEventPublisher events;
 
     private PieceTypeService sut;
 
@@ -54,7 +56,7 @@ class PieceTypeServiceTest {
         org.setId(1);
         sut = new PieceTypeService(
                 pieceTypeRepository, attributeRepository, organizationService,
-                validatorsCodec, Optional.of(usage));
+                validatorsCodec, Optional.of(usage), events);
         // Lenient because the static-helper tests don't go through the service layer.
         lenient().when(organizationService.findById(1)).thenReturn(org);
     }
