@@ -19,6 +19,7 @@ import com.stocka.backend.modules.organizations.dto.OrganizationPieceAttributeRe
 import com.stocka.backend.modules.organizations.dto.UpdateOrganizationPieceAttributeDto;
 import com.stocka.backend.modules.organizations.entity.OrganizationPieceAttribute;
 import com.stocka.backend.modules.organizations.service.OrganizationPieceAttributeService;
+import com.stocka.backend.modules.organizations.service.OrganizationResolver;
 import com.stocka.backend.modules.piecetypes.service.ValidatorsJsonCodec;
 
 /**
@@ -27,22 +28,26 @@ import com.stocka.backend.modules.piecetypes.service.ValidatorsJsonCodec;
  * piece-types and their attributes).
  */
 @RestController
-@RequestMapping("/organizations/{orgId}/piece-attributes")
+@RequestMapping("/organizations/{orgSlug}/piece-attributes")
 public class OrganizationPieceAttributeController {
     private final OrganizationPieceAttributeService attributeService;
     private final ValidatorsJsonCodec validatorsCodec;
+    private final OrganizationResolver orgResolver;
 
     public OrganizationPieceAttributeController(
             OrganizationPieceAttributeService attributeService,
-            ValidatorsJsonCodec validatorsCodec
+            ValidatorsJsonCodec validatorsCodec,
+            OrganizationResolver orgResolver
     ) {
         this.attributeService = attributeService;
         this.validatorsCodec = validatorsCodec;
+        this.orgResolver = orgResolver;
     }
 
     @GetMapping
-    @PreAuthorize("@orgSecurity.canReadOrgContent(#orgId, principal)")
-    public ResponseEntity<List<OrganizationPieceAttributeResponseDto>> list(@PathVariable Integer orgId) {
+    @PreAuthorize("@orgSecurity.canReadOrgContent(#orgSlug, principal)")
+    public ResponseEntity<List<OrganizationPieceAttributeResponseDto>> list(@PathVariable String orgSlug) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         List<OrganizationPieceAttributeResponseDto> body = attributeService.listAll(orgId).stream()
                 .map(this::toResponse)
                 .toList();
@@ -50,32 +55,35 @@ public class OrganizationPieceAttributeController {
     }
 
     @PostMapping
-    @PreAuthorize("@orgSecurity.canManageOrgContent(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.canManageOrgContent(#orgSlug, principal)")
     public ResponseEntity<OrganizationPieceAttributeResponseDto> create(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @RequestBody CreateOrganizationPieceAttributeDto dto
     ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         OrganizationPieceAttribute attr = attributeService.create(orgId, dto);
         return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(attr));
     }
 
     @PatchMapping("/{attributeId}")
-    @PreAuthorize("@orgSecurity.canManageOrgContent(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.canManageOrgContent(#orgSlug, principal)")
     public ResponseEntity<OrganizationPieceAttributeResponseDto> update(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @PathVariable Integer attributeId,
             @RequestBody UpdateOrganizationPieceAttributeDto dto
     ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         OrganizationPieceAttribute attr = attributeService.update(orgId, attributeId, dto);
         return ResponseEntity.ok(toResponse(attr));
     }
 
     @DeleteMapping("/{attributeId}")
-    @PreAuthorize("@orgSecurity.canManageOrgContent(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.canManageOrgContent(#orgSlug, principal)")
     public ResponseEntity<Void> delete(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @PathVariable Integer attributeId
     ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         attributeService.softDelete(orgId, attributeId);
         return ResponseEntity.noContent().build();
     }

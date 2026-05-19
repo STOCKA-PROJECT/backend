@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.stocka.backend.modules.organizations.dto.OrganizationUsageDto;
+import com.stocka.backend.modules.organizations.service.OrganizationResolver;
 import com.stocka.backend.modules.pieces.service.OrganizationUsageService;
 
 /**
@@ -15,17 +16,20 @@ import com.stocka.backend.modules.pieces.service.OrganizationUsageService;
  * the configured limits (issue #21).
  */
 @RestController
-@RequestMapping("/organizations/{orgId}/usage")
+@RequestMapping("/organizations/{orgSlug}/usage")
 public class OrganizationUsageController {
     private final OrganizationUsageService usageService;
+    private final OrganizationResolver orgResolver;
 
-    public OrganizationUsageController(OrganizationUsageService usageService) {
+    public OrganizationUsageController(OrganizationUsageService usageService, OrganizationResolver orgResolver) {
         this.usageService = usageService;
+        this.orgResolver = orgResolver;
     }
 
     @GetMapping
-    @PreAuthorize("@orgSecurity.canManageOrgContent(#orgId, principal)")
-    public ResponseEntity<OrganizationUsageDto> getUsage(@PathVariable Integer orgId) {
+    @PreAuthorize("@orgSecurity.canManageOrgContent(#orgSlug, principal)")
+    public ResponseEntity<OrganizationUsageDto> getUsage(@PathVariable String orgSlug) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         return ResponseEntity.ok(usageService.getUsage(orgId));
     }
 }

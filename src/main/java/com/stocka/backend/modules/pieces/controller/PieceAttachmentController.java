@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.stocka.backend.modules.organizations.service.OrganizationResolver;
 import com.stocka.backend.modules.pieces.dto.PieceAttachmentResponseDto;
 import com.stocka.backend.modules.pieces.entity.PieceAttachment;
 import com.stocka.backend.modules.pieces.entity.PieceAttachmentKind;
@@ -23,33 +24,37 @@ import com.stocka.backend.modules.pieces.service.PieceAttachmentService;
 import com.stocka.backend.modules.storage.PresignedDownload;
 
 @RestController
-@RequestMapping("/organizations/{orgId}/pieces/{pieceId}/attachments")
+@RequestMapping("/organizations/{orgSlug}/pieces/{pieceId}/attachments")
 public class PieceAttachmentController {
     private final PieceAttachmentService attachmentService;
+    private final OrganizationResolver orgResolver;
 
-    public PieceAttachmentController(PieceAttachmentService attachmentService) {
+    public PieceAttachmentController(PieceAttachmentService attachmentService, OrganizationResolver orgResolver) {
         this.attachmentService = attachmentService;
+        this.orgResolver = orgResolver;
     }
 
     @PostMapping(consumes = "multipart/form-data")
-    @PreAuthorize("@orgSecurity.canWritePieces(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.canWritePieces(#orgSlug, principal)")
     public ResponseEntity<PieceAttachmentResponseDto> upload(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @PathVariable Integer pieceId,
             @RequestParam("kind") PieceAttachmentKind kind,
             @RequestPart("file") MultipartFile file
     ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         PieceAttachment attachment = attachmentService.upload(orgId, pieceId, kind, file);
         return ResponseEntity.status(HttpStatus.CREATED).body(PieceAttachmentResponseDto.from(attachment));
     }
 
     @GetMapping
-    @PreAuthorize("@orgSecurity.canReadOrgContent(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.canReadOrgContent(#orgSlug, principal)")
     public ResponseEntity<List<PieceAttachmentResponseDto>> list(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @PathVariable Integer pieceId,
             @RequestParam(value = "kind", required = false) PieceAttachmentKind kind
     ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         List<PieceAttachmentResponseDto> out = attachmentService.list(orgId, pieceId, kind).stream()
                 .map(PieceAttachmentResponseDto::from)
                 .toList();
@@ -57,23 +62,25 @@ public class PieceAttachmentController {
     }
 
     @GetMapping("/{attachmentId}/download")
-    @PreAuthorize("@orgSecurity.canReadOrgContent(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.canReadOrgContent(#orgSlug, principal)")
     public ResponseEntity<Void> download(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @PathVariable Integer pieceId,
             @PathVariable Integer attachmentId
     ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         PresignedDownload presigned = attachmentService.presign(orgId, pieceId, attachmentId);
         return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(presigned.url())).build();
     }
 
     @DeleteMapping("/{attachmentId}")
-    @PreAuthorize("@orgSecurity.canWritePieces(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.canWritePieces(#orgSlug, principal)")
     public ResponseEntity<Void> delete(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @PathVariable Integer pieceId,
             @PathVariable Integer attachmentId
     ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         attachmentService.softDelete(orgId, pieceId, attachmentId);
         return ResponseEntity.noContent().build();
     }

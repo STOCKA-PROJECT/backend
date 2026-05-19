@@ -52,7 +52,7 @@ class OrganizationControllerIntegrationTest {
         IntegrationTestSupport.cleanDatabase(jdbcTemplate);
     }
 
-    private Integer createOrgAs(String token, String name, String slug) throws Exception {
+    private String createOrgAs(String token, String name, String slug) throws Exception {
         var result = mockMvc.perform(post("/organizations")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -60,7 +60,7 @@ class OrganizationControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         Map<?, ?> body = om.readValue(result.getResponse().getContentAsString(), Map.class);
-        return (Integer) body.get("id");
+        return (String) body.get("slug");
     }
 
     @Test
@@ -140,8 +140,8 @@ class OrganizationControllerIntegrationTest {
     @Test
     @DisplayName("GET /{id} 200 — member can read")
     void get_one_member() throws Exception {
-        Integer id = createOrgAs(adminToken, "Acme", "acme");
-        mockMvc.perform(get("/organizations/" + id)
+        String slug = createOrgAs(adminToken, "Acme", "acme");
+        mockMvc.perform(get("/organizations/" + slug)
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.currentUserRole").value("OWNER"));
@@ -150,8 +150,8 @@ class OrganizationControllerIntegrationTest {
     @Test
     @DisplayName("GET /{id} 403 — non-member cannot read")
     void get_one_403_for_nonMember() throws Exception {
-        Integer id = createOrgAs(adminToken, "Acme", "acme");
-        mockMvc.perform(get("/organizations/" + id)
+        String slug = createOrgAs(adminToken, "Acme", "acme");
+        mockMvc.perform(get("/organizations/" + slug)
                         .header("Authorization", "Bearer " + userBToken))
                 .andExpect(status().isForbidden());
     }
@@ -159,7 +159,7 @@ class OrganizationControllerIntegrationTest {
     @Test
     @DisplayName("GET /{id} 403 — non-existent org returns forbidden (PreAuthorize)")
     void get_one_403_for_unknown() throws Exception {
-        mockMvc.perform(get("/organizations/9999")
+        mockMvc.perform(get("/organizations/unknown-slug")
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isForbidden());
     }
@@ -167,8 +167,8 @@ class OrganizationControllerIntegrationTest {
     @Test
     @DisplayName("PATCH /{id} 200 — OWNER updates name")
     void patch_owner_updatesName() throws Exception {
-        Integer id = createOrgAs(adminToken, "Acme", "acme");
-        mockMvc.perform(patch("/organizations/" + id)
+        String slug = createOrgAs(adminToken, "Acme", "acme");
+        mockMvc.perform(patch("/organizations/" + slug)
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(om.writeValueAsString(Map.of("name", "New Name"))))
@@ -179,8 +179,8 @@ class OrganizationControllerIntegrationTest {
     @Test
     @DisplayName("PATCH /{id} 200 — OWNER updates slug")
     void patch_owner_updatesSlug() throws Exception {
-        Integer id = createOrgAs(adminToken, "Acme", "acme");
-        mockMvc.perform(patch("/organizations/" + id)
+        String slug = createOrgAs(adminToken, "Acme", "acme");
+        mockMvc.perform(patch("/organizations/" + slug)
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(om.writeValueAsString(Map.of("slug", "new-slug"))))
@@ -191,8 +191,8 @@ class OrganizationControllerIntegrationTest {
     @Test
     @DisplayName("PATCH /{id} 400 — reserved slug")
     void patch_reservedSlug() throws Exception {
-        Integer id = createOrgAs(adminToken, "Acme", "acme");
-        mockMvc.perform(patch("/organizations/" + id)
+        String slug = createOrgAs(adminToken, "Acme", "acme");
+        mockMvc.perform(patch("/organizations/" + slug)
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(om.writeValueAsString(Map.of("slug", "api"))))
@@ -202,8 +202,8 @@ class OrganizationControllerIntegrationTest {
     @Test
     @DisplayName("PATCH /{id} 403 — non-OWNER")
     void patch_nonOwner() throws Exception {
-        Integer id = createOrgAs(adminToken, "Acme", "acme");
-        mockMvc.perform(patch("/organizations/" + id)
+        String slug = createOrgAs(adminToken, "Acme", "acme");
+        mockMvc.perform(patch("/organizations/" + slug)
                         .header("Authorization", "Bearer " + userBToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(om.writeValueAsString(Map.of("name", "X"))))
@@ -213,11 +213,11 @@ class OrganizationControllerIntegrationTest {
     @Test
     @DisplayName("DELETE /{id} 204 — OWNER soft-deletes org")
     void delete_owner() throws Exception {
-        Integer id = createOrgAs(adminToken, "Acme", "acme");
-        mockMvc.perform(delete("/organizations/" + id)
+        String slug = createOrgAs(adminToken, "Acme", "acme");
+        mockMvc.perform(delete("/organizations/" + slug)
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isNoContent());
-        mockMvc.perform(get("/organizations/" + id)
+        mockMvc.perform(get("/organizations/" + slug)
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isForbidden());
     }
@@ -225,8 +225,8 @@ class OrganizationControllerIntegrationTest {
     @Test
     @DisplayName("DELETE /{id} 403 — non-OWNER cannot delete")
     void delete_nonOwner() throws Exception {
-        Integer id = createOrgAs(adminToken, "Acme", "acme");
-        mockMvc.perform(delete("/organizations/" + id)
+        String slug = createOrgAs(adminToken, "Acme", "acme");
+        mockMvc.perform(delete("/organizations/" + slug)
                         .header("Authorization", "Bearer " + userBToken))
                 .andExpect(status().isForbidden());
     }
@@ -236,8 +236,8 @@ class OrganizationControllerIntegrationTest {
     void admin_canReadAny() throws Exception {
         // Admin is global ADMIN — also creates the org so it's automatically OWNER.
         // Need a non-admin OWNER to test bypass. Create an org as userB then read as admin.
-        Integer id = createOrgAs(userBToken, "Acme", "acme");
-        mockMvc.perform(get("/organizations/" + id)
+        String slug = createOrgAs(userBToken, "Acme", "acme");
+        mockMvc.perform(get("/organizations/" + slug)
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk());
     }
@@ -297,5 +297,65 @@ class OrganizationControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.available").value(false))
                 .andExpect(jsonPath("$.reason").value("INVALID_FORMAT"));
+    }
+
+    // -------------------------------------------------------------------------
+    // GET /organizations/by-slug/{slug}
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("GET /by-slug 200 — current slug returns organization with historical=false")
+    void bySlug_should_resolveCurrentSlug() throws Exception {
+        String slug = createOrgAs(adminToken, "Acme", "acme");
+        mockMvc.perform(get("/organizations/by-slug/" + slug)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.org.slug").value("acme"))
+                .andExpect(jsonPath("$.org.currentUserRole").value("OWNER"))
+                .andExpect(jsonPath("$.historical").value(false))
+                .andExpect(jsonPath("$.currentSlug").value("acme"));
+    }
+
+    @Test
+    @DisplayName("GET /by-slug 200 — historical slug resolves to current org (regression: lazy proxy)")
+    void bySlug_should_resolveHistoricalSlug_without_lazyInitException() throws Exception {
+        createOrgAs(adminToken, "Acme", "acme");
+        mockMvc.perform(patch("/organizations/acme")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of("slug", "acme-renamed"))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/organizations/by-slug/acme")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.org.slug").value("acme-renamed"))
+                .andExpect(jsonPath("$.org.currentUserRole").value("OWNER"))
+                .andExpect(jsonPath("$.historical").value(true))
+                .andExpect(jsonPath("$.currentSlug").value("acme-renamed"));
+    }
+
+    @Test
+    @DisplayName("GET /by-slug 404 — unknown slug")
+    void bySlug_should_return404_when_unknown() throws Exception {
+        mockMvc.perform(get("/organizations/by-slug/does-not-exist")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("GET /by-slug 404 — hides existence from non-members")
+    void bySlug_should_hideFromNonMembers() throws Exception {
+        createOrgAs(adminToken, "Acme", "acme");
+        mockMvc.perform(get("/organizations/by-slug/acme")
+                        .header("Authorization", "Bearer " + userBToken))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("GET /by-slug 401 — should require authentication")
+    void bySlug_should_return401_when_noAuth() throws Exception {
+        mockMvc.perform(get("/organizations/by-slug/acme"))
+                .andExpect(status().isUnauthorized());
     }
 }

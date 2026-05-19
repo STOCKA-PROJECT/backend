@@ -17,7 +17,9 @@ import com.stocka.backend.modules.users.entity.User;
  * Authorization helpers used from {@code @PreAuthorize} expressions on REST controllers.
  *
  * <p>Bean name {@code orgSecurity} so SpEL can reference it as
- * {@code @PreAuthorize("@orgSecurity.canWritePieces(#orgId, principal)")}.
+ * {@code @PreAuthorize("@orgSecurity.canWritePieces(#orgSlug, principal)")}. The slug must
+ * be the current one; historical slugs are not honoured for authorization, since the
+ * deep-link redirect happens client-side via {@code GET /organizations/by-slug/{slug}}.
  */
 @Component("orgSecurity")
 public class OrganizationSecurity {
@@ -32,8 +34,8 @@ public class OrganizationSecurity {
         this.memberRepository = memberRepository;
     }
 
-    public boolean isMember(Integer orgId, Object principal) {
-        return hasAnyRole(orgId, principal, Set.of(
+    public boolean isMember(String orgSlug, Object principal) {
+        return hasAnyRole(orgSlug, principal, Set.of(
                 OrganizationRoleEnum.OWNER,
                 OrganizationRoleEnum.MANAGER,
                 OrganizationRoleEnum.USER,
@@ -41,35 +43,34 @@ public class OrganizationSecurity {
         ));
     }
 
-    public boolean isOwner(Integer orgId, Object principal) {
-        return hasAnyRole(orgId, principal, Set.of(OrganizationRoleEnum.OWNER));
+    public boolean isOwner(String orgSlug, Object principal) {
+        return hasAnyRole(orgSlug, principal, Set.of(OrganizationRoleEnum.OWNER));
     }
 
-    public boolean isOwnerOrManager(Integer orgId, Object principal) {
-        return hasAnyRole(orgId, principal, Set.of(
+    public boolean isOwnerOrManager(String orgSlug, Object principal) {
+        return hasAnyRole(orgSlug, principal, Set.of(
                 OrganizationRoleEnum.OWNER,
                 OrganizationRoleEnum.MANAGER
         ));
     }
 
-    public boolean isSpectator(Integer orgId, Object principal) {
-        return hasAnyRole(orgId, principal, Set.of(OrganizationRoleEnum.SPECTATOR));
+    public boolean isSpectator(String orgSlug, Object principal) {
+        return hasAnyRole(orgSlug, principal, Set.of(OrganizationRoleEnum.SPECTATOR));
     }
 
     /**
      * Anyone in the organization (including SPECTATOR) can read its content.
-     * Alias of {@link #isMember(Integer, Object)} kept for semantic clarity at call sites.
      */
-    public boolean canReadOrgContent(Integer orgId, Object principal) {
-        return isMember(orgId, principal);
+    public boolean canReadOrgContent(String orgSlug, Object principal) {
+        return isMember(orgSlug, principal);
     }
 
     /**
      * OWNER, MANAGER and USER can create/modify/delete pieces and their attachments.
      * SPECTATOR cannot.
      */
-    public boolean canWritePieces(Integer orgId, Object principal) {
-        return hasAnyRole(orgId, principal, Set.of(
+    public boolean canWritePieces(String orgSlug, Object principal) {
+        return hasAnyRole(orgSlug, principal, Set.of(
                 OrganizationRoleEnum.OWNER,
                 OrganizationRoleEnum.MANAGER,
                 OrganizationRoleEnum.USER
@@ -79,23 +80,25 @@ public class OrganizationSecurity {
     /**
      * Only OWNER and MANAGER can create/modify/delete locations and piece types.
      */
-    public boolean canManageOrgContent(Integer orgId, Object principal) {
-        return isOwnerOrManager(orgId, principal);
+    public boolean canManageOrgContent(String orgSlug, Object principal) {
+        return isOwnerOrManager(orgSlug, principal);
     }
 
-    private boolean hasAnyRole(Integer orgId, Object principal, Set<OrganizationRoleEnum> allowed) {
-        if (orgId == null || !(principal instanceof User user)) {
+    private boolean hasAnyRole(String orgSlug, Object principal, Set<OrganizationRoleEnum> allowed) {
+        if (orgSlug == null || orgSlug.isBlank()) {
             return false;
         }
-        if (isGlobalAdmin(user)) {
-            return organizationRepository.findById(orgId).isPresent();
+        if (!(principal instanceof User user)) {
+            return false;
         }
-        Optional<Organization> orgOpt = organizationRepository.findById(orgId);
+        Optional<Organization> orgOpt = organizationRepository.findBySlug(orgSlug);
         if (orgOpt.isEmpty()) {
             return false;
         }
-        Optional<OrganizationMember> memberOpt =
-                memberRepository.findByUserAndOrganization(user, orgOpt.get());
+        if (isGlobalAdmin(user)) {
+            return true;
+        }
+        Optional<OrganizationMember> memberOpt = memberRepository.findByUserAndOrganization(user, orgOpt.get());
         return memberOpt.map(m -> allowed.contains(m.getRole())).orElse(false);
     }
 

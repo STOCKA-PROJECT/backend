@@ -20,6 +20,7 @@ import com.stocka.backend.modules.locations.dto.LocationTreeNodeDto;
 import com.stocka.backend.modules.locations.dto.UpdateLocationDto;
 import com.stocka.backend.modules.locations.entity.Location;
 import com.stocka.backend.modules.locations.service.LocationService;
+import com.stocka.backend.modules.organizations.service.OrganizationResolver;
 
 /**
  * REST endpoints for hierarchical locations under an organization.
@@ -27,27 +28,31 @@ import com.stocka.backend.modules.locations.service.LocationService;
  * <p>Reads accept any organization member (including SPECTATOR); writes require OWNER or MANAGER.
  */
 @RestController
-@RequestMapping("/organizations/{orgId}/locations")
+@RequestMapping("/organizations/{orgSlug}/locations")
 public class LocationController {
     private final LocationService locationService;
+    private final OrganizationResolver orgResolver;
 
-    public LocationController(LocationService locationService) {
+    public LocationController(LocationService locationService, OrganizationResolver orgResolver) {
         this.locationService = locationService;
+        this.orgResolver = orgResolver;
     }
 
     @PostMapping
-    @PreAuthorize("@orgSecurity.canManageOrgContent(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.canManageOrgContent(#orgSlug, principal)")
     public ResponseEntity<LocationResponseDto> create(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @RequestBody CreateLocationDto dto
     ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         Location loc = locationService.create(orgId, dto);
         return ResponseEntity.status(HttpStatus.CREATED).body(LocationResponseDto.from(loc));
     }
 
     @GetMapping
-    @PreAuthorize("@orgSecurity.canReadOrgContent(#orgId, principal)")
-    public ResponseEntity<List<LocationResponseDto>> list(@PathVariable Integer orgId) {
+    @PreAuthorize("@orgSecurity.canReadOrgContent(#orgSlug, principal)")
+    public ResponseEntity<List<LocationResponseDto>> list(@PathVariable String orgSlug) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         List<LocationResponseDto> out = locationService.listAll(orgId).stream()
                 .map(LocationResponseDto::from)
                 .toList();
@@ -55,38 +60,42 @@ public class LocationController {
     }
 
     @GetMapping("/tree")
-    @PreAuthorize("@orgSecurity.canReadOrgContent(#orgId, principal)")
-    public ResponseEntity<List<LocationTreeNodeDto>> tree(@PathVariable Integer orgId) {
+    @PreAuthorize("@orgSecurity.canReadOrgContent(#orgSlug, principal)")
+    public ResponseEntity<List<LocationTreeNodeDto>> tree(@PathVariable String orgSlug) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         return ResponseEntity.ok(locationService.tree(orgId));
     }
 
     @GetMapping("/{locationId}")
-    @PreAuthorize("@orgSecurity.canReadOrgContent(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.canReadOrgContent(#orgSlug, principal)")
     public ResponseEntity<LocationResponseDto> getOne(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @PathVariable Integer locationId
     ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         Location loc = locationService.findInOrg(orgId, locationId);
         return ResponseEntity.ok(LocationResponseDto.from(loc, locationService.breadcrumb(loc)));
     }
 
     @PatchMapping("/{locationId}")
-    @PreAuthorize("@orgSecurity.canManageOrgContent(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.canManageOrgContent(#orgSlug, principal)")
     public ResponseEntity<LocationResponseDto> update(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @PathVariable Integer locationId,
             @RequestBody UpdateLocationDto dto
     ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         Location loc = locationService.update(orgId, locationId, dto);
         return ResponseEntity.ok(LocationResponseDto.from(loc, locationService.breadcrumb(loc)));
     }
 
     @DeleteMapping("/{locationId}")
-    @PreAuthorize("@orgSecurity.canManageOrgContent(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.canManageOrgContent(#orgSlug, principal)")
     public ResponseEntity<Void> delete(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @PathVariable Integer locationId
     ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         locationService.softDelete(orgId, locationId);
         return ResponseEntity.noContent().build();
     }

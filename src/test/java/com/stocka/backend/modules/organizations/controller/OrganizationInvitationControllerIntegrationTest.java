@@ -53,6 +53,7 @@ class OrganizationInvitationControllerIntegrationTest {
     private String userToken;
 
     private Integer orgId;
+    private String orgSlug;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -71,6 +72,7 @@ class OrganizationInvitationControllerIntegrationTest {
                 .andReturn();
         Map<?, ?> body = om.readValue(result.getResponse().getContentAsString(), Map.class);
         orgId = (Integer) body.get("id");
+        orgSlug = (String) body.get("slug");
 
         Organization orgEntity = organizationRepository.findById(orgId).orElseThrow();
         memberRepository.save(new OrganizationMember()
@@ -92,7 +94,7 @@ class OrganizationInvitationControllerIntegrationTest {
     }
 
     private void invite(String token, String email, String role, int expectedStatus) throws Exception {
-        mockMvc.perform(post("/organizations/" + orgId + "/invitations")
+        mockMvc.perform(post("/organizations/" + orgSlug + "/invitations")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(om.writeValueAsString(Map.of("email", email, "role", role))))
@@ -149,7 +151,7 @@ class OrganizationInvitationControllerIntegrationTest {
     @DisplayName("GET 200 — OWNER lists pending")
     void get_owner_listsPending() throws Exception {
         invite(adminToken, "x@test.com", "USER", 200);
-        mockMvc.perform(get("/organizations/" + orgId + "/invitations")
+        mockMvc.perform(get("/organizations/" + orgSlug + "/invitations")
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1));
@@ -158,7 +160,7 @@ class OrganizationInvitationControllerIntegrationTest {
     @Test
     @DisplayName("GET 403 — USER cannot list pending")
     void get_user_403() throws Exception {
-        mockMvc.perform(get("/organizations/" + orgId + "/invitations")
+        mockMvc.perform(get("/organizations/" + orgSlug + "/invitations")
                         .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isForbidden());
     }
@@ -166,7 +168,7 @@ class OrganizationInvitationControllerIntegrationTest {
     @Test
     @DisplayName("DELETE 204 — OWNER cancels pending invitation")
     void delete_owner_cancels() throws Exception {
-        var result = mockMvc.perform(post("/organizations/" + orgId + "/invitations")
+        var result = mockMvc.perform(post("/organizations/" + orgSlug + "/invitations")
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(om.writeValueAsString(Map.of("email", "x@test.com", "role", "USER"))))
@@ -175,7 +177,7 @@ class OrganizationInvitationControllerIntegrationTest {
         Map<?, ?> body = om.readValue(result.getResponse().getContentAsString(), Map.class);
         Integer invId = (Integer) body.get("id");
 
-        mockMvc.perform(delete("/organizations/" + orgId + "/invitations/" + invId)
+        mockMvc.perform(delete("/organizations/" + orgSlug + "/invitations/" + invId)
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isNoContent());
     }
@@ -183,7 +185,7 @@ class OrganizationInvitationControllerIntegrationTest {
     @Test
     @DisplayName("DELETE 403 — USER cannot cancel")
     void delete_user_403() throws Exception {
-        var result = mockMvc.perform(post("/organizations/" + orgId + "/invitations")
+        var result = mockMvc.perform(post("/organizations/" + orgSlug + "/invitations")
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(om.writeValueAsString(Map.of("email", "x@test.com", "role", "USER"))))
@@ -192,7 +194,7 @@ class OrganizationInvitationControllerIntegrationTest {
         Map<?, ?> body = om.readValue(result.getResponse().getContentAsString(), Map.class);
         Integer invId = (Integer) body.get("id");
 
-        mockMvc.perform(delete("/organizations/" + orgId + "/invitations/" + invId)
+        mockMvc.perform(delete("/organizations/" + orgSlug + "/invitations/" + invId)
                         .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isForbidden());
     }
@@ -200,7 +202,7 @@ class OrganizationInvitationControllerIntegrationTest {
     @Test
     @DisplayName("POST response includes the token (useful in dev)")
     void post_responseIncludesToken() throws Exception {
-        mockMvc.perform(post("/organizations/" + orgId + "/invitations")
+        mockMvc.perform(post("/organizations/" + orgSlug + "/invitations")
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(om.writeValueAsString(Map.of("email", "x@test.com", "role", "USER"))))

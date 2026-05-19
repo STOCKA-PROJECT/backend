@@ -44,9 +44,11 @@ import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.entity.OrganizationInvitation;
 import com.stocka.backend.modules.organizations.entity.OrganizationMember;
 import com.stocka.backend.modules.organizations.entity.OrganizationRoleEnum;
+import com.stocka.backend.modules.organizations.entity.OrganizationSlugHistory;
 import com.stocka.backend.modules.organizations.repository.OrganizationInvitationRepository;
 import com.stocka.backend.modules.organizations.repository.OrganizationMemberRepository;
 import com.stocka.backend.modules.organizations.repository.OrganizationRepository;
+import com.stocka.backend.modules.organizations.repository.OrganizationSlugHistoryRepository;
 import com.stocka.backend.modules.users.entity.User;
 
 @ExtendWith(MockitoExtension.class)
@@ -56,6 +58,7 @@ class OrganizationServiceTest {
     @Mock private OrganizationRepository organizationRepository;
     @Mock private OrganizationMemberRepository memberRepository;
     @Mock private OrganizationInvitationRepository invitationRepository;
+    @Mock private OrganizationSlugHistoryRepository slugHistoryRepository;
     @Mock private OrganizationAuditService auditService;
     @Spy private OrganizationQuotaProperties quotas = new OrganizationQuotaProperties();
 

@@ -26,21 +26,25 @@ import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.entity.OrganizationInvitation;
 import com.stocka.backend.modules.organizations.entity.OrganizationMember;
 import com.stocka.backend.modules.organizations.entity.OrganizationRoleEnum;
+import com.stocka.backend.modules.organizations.entity.OrganizationSlugHistory;
 import com.stocka.backend.modules.organizations.repository.OrganizationInvitationRepository;
 import com.stocka.backend.modules.organizations.repository.OrganizationMemberRepository;
 import com.stocka.backend.modules.organizations.repository.OrganizationRepository;
+import com.stocka.backend.modules.organizations.repository.OrganizationSlugHistoryRepository;
 import com.stocka.backend.modules.users.entity.User;
 
 @Service
 public class OrganizationService {
     private static final Pattern SLUG_PATTERN = Pattern.compile("^[a-z0-9-]{3,40}$");
     private static final Set<String> RESERVED_SLUGS = Set.of(
-            "admin", "api", "www", "app", "auth", "health", "users", "organizations", "invitations"
+            "admin", "api", "www", "app", "auth", "health", "users", "organizations", "invitations",
+            "dashboard", "mi-cuenta", "crear-organizacion"
     );
 
     private final OrganizationRepository organizationRepository;
     private final OrganizationMemberRepository memberRepository;
     private final OrganizationInvitationRepository invitationRepository;
+    private final OrganizationSlugHistoryRepository slugHistoryRepository;
     private final OrganizationAuditService auditService;
     private final OrganizationQuotaProperties quotas;
 
@@ -48,12 +52,14 @@ public class OrganizationService {
             OrganizationRepository organizationRepository,
             OrganizationMemberRepository memberRepository,
             OrganizationInvitationRepository invitationRepository,
+            OrganizationSlugHistoryRepository slugHistoryRepository,
             OrganizationAuditService auditService,
             OrganizationQuotaProperties quotas
     ) {
         this.organizationRepository = organizationRepository;
         this.memberRepository = memberRepository;
         this.invitationRepository = invitationRepository;
+        this.slugHistoryRepository = slugHistoryRepository;
         this.auditService = auditService;
         this.quotas = quotas;
     }
@@ -119,9 +125,11 @@ public class OrganizationService {
             changed = true;
         }
 
+        String previousSlug = null;
         if (dto.getSlug() != null && !dto.getSlug().equals(org.getSlug())) {
             validateSlug(dto.getSlug(), org.getId());
-            oldValues.put("slug", org.getSlug());
+            previousSlug = org.getSlug();
+            oldValues.put("slug", previousSlug);
             newValues.put("slug", dto.getSlug());
             org.setSlug(dto.getSlug());
             changed = true;
@@ -132,6 +140,11 @@ public class OrganizationService {
         }
 
         Organization saved = organizationRepository.save(org);
+        if (previousSlug != null) {
+            slugHistoryRepository.save(new OrganizationSlugHistory()
+                    .setOrganization(saved)
+                    .setOldSlug(previousSlug));
+        }
         auditService.log(saved, actor, AuditAction.ORG_UPDATED, null, Map.of(
                 "old", oldValues,
                 "new", newValues
@@ -176,7 +189,7 @@ public class OrganizationService {
         if (RESERVED_SLUGS.contains(slug)) {
             return AvailabilityResponse.unavailable(Reason.RESERVED);
         }
-        if (organizationRepository.existsBySlug(slug)) {
+        if (organizationRepository.existsBySlug(slug) || slugHistoryRepository.existsByOldSlug(slug)) {
             return AvailabilityResponse.unavailable(Reason.TAKEN);
         }
         return AvailabilityResponse.ok();
@@ -206,5 +219,14 @@ public class OrganizationService {
         if (existing.isPresent() && !existing.get().getId().equals(currentOrgId)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe una organización con ese slug");
         }
+        // Reject slugs that another organization used in the past: keeping them claimable
+        // would silently break old deep links by pointing them at a different org.
+        slugHistoryRepository.findByOldSlug(slug).ifPresent(history -> {
+            Integer ownerId = history.getOrganization().getId();
+            if (!ownerId.equals(currentOrgId)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Ese slug pertenece al historial de otra organización");
+            }
+        });
     }
 }
