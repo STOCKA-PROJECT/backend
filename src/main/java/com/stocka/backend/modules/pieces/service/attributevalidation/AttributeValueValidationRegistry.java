@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.piecetypes.dto.AttributeValidatorsDto;
 import com.stocka.backend.modules.piecetypes.entity.AttributeType;
 import com.stocka.backend.modules.piecetypes.entity.PieceTypeAttribute;
@@ -33,13 +34,19 @@ public class AttributeValueValidationRegistry {
     }
 
     /**
-     * Validates {@code rawValue} against {@code attribute}'s configuration.
+     * Validates {@code rawValue} against {@code attribute}'s configuration within the given
+     * organization context.
      *
+     * @param attribute    the attribute definition that drives validation
+     * @param rawValue     raw user input to normalize
+     * @param organization owning organization, used by validators that need org-scoped data
+     *                     (e.g. {@code MEMBER}); never {@code null}
      * @return the normalized string ready to store in {@code piece_attribute_values.value}, or
      *         {@code null} if the optional attribute received no value
      */
-    public String validate(PieceTypeAttribute attribute, String rawValue) {
-        return validate(attribute.getType(), attribute.getValidatorsJson(), attribute.isRequired(), rawValue);
+    public String validate(PieceTypeAttribute attribute, String rawValue, Organization organization) {
+        return validate(attribute.getType(), attribute.getValidatorsJson(), attribute.isRequired(),
+                rawValue, organization);
     }
 
     /**
@@ -50,15 +57,18 @@ public class AttributeValueValidationRegistry {
      * @param validatorsJson serialized validator blob; may be {@code null}
      * @param required       whether a missing value should be reported as a validation error
      * @param rawValue       raw user input to normalize
+     * @param organization   owning organization, used by validators that need org-scoped data
+     *                       (e.g. {@code MEMBER}); never {@code null}
      * @return normalized canonical value or {@code null} when the optional attribute has none
      */
-    public String validate(AttributeType type, String validatorsJson, boolean required, String rawValue) {
+    public String validate(AttributeType type, String validatorsJson, boolean required,
+                           String rawValue, Organization organization) {
         AttributeValueValidator validator = byType.get(type);
         if (validator == null) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
                     "No hay validador registrado para el tipo " + type);
         }
         AttributeValidatorsDto rules = validatorsCodec.deserialize(validatorsJson);
-        return validator.validateAndNormalize(rawValue, rules, required);
+        return validator.validateAndNormalize(rawValue, rules, required, organization);
     }
 }
