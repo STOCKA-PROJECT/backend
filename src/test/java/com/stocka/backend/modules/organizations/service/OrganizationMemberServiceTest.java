@@ -24,6 +24,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.stocka.backend.modules.notifications.preferences.service.NotificationPreferenceService;
 import com.stocka.backend.modules.organizations.entity.AuditAction;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.entity.OrganizationMember;
@@ -40,6 +41,7 @@ class OrganizationMemberServiceTest {
     @Mock private OrganizationMemberRepository memberRepository;
     @Mock private OrganizationService organizationService;
     @Mock private OrganizationAuditService auditService;
+    @Mock private NotificationPreferenceService notificationPreferenceService;
 
     @InjectMocks private OrganizationMemberService sut;
 

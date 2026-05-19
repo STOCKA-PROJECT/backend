@@ -29,6 +29,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
+import com.stocka.backend.modules.notifications.preferences.service.NotificationPreferenceService;
 import com.stocka.backend.modules.organizations.repository.OrganizationMemberRepository;
 import com.stocka.backend.modules.users.dto.ChangePasswordDto;
 import com.stocka.backend.modules.users.dto.UpdateUserProfileDto;
@@ -43,6 +44,7 @@ class UserServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private OrganizationMemberRepository memberRepository;
     @Mock private PasswordEncoder passwordEncoder;
+    @Mock private NotificationPreferenceService notificationPreferenceService;
 
     @InjectMocks
     private UserService sut;
