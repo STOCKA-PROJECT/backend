@@ -298,4 +298,64 @@ class OrganizationControllerIntegrationTest {
                 .andExpect(jsonPath("$.available").value(false))
                 .andExpect(jsonPath("$.reason").value("INVALID_FORMAT"));
     }
+
+    // -------------------------------------------------------------------------
+    // GET /organizations/by-slug/{slug}
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("GET /by-slug 200 — current slug returns organization with historical=false")
+    void bySlug_should_resolveCurrentSlug() throws Exception {
+        String slug = createOrgAs(adminToken, "Acme", "acme");
+        mockMvc.perform(get("/organizations/by-slug/" + slug)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.org.slug").value("acme"))
+                .andExpect(jsonPath("$.org.currentUserRole").value("OWNER"))
+                .andExpect(jsonPath("$.historical").value(false))
+                .andExpect(jsonPath("$.currentSlug").value("acme"));
+    }
+
+    @Test
+    @DisplayName("GET /by-slug 200 — historical slug resolves to current org (regression: lazy proxy)")
+    void bySlug_should_resolveHistoricalSlug_without_lazyInitException() throws Exception {
+        createOrgAs(adminToken, "Acme", "acme");
+        mockMvc.perform(patch("/organizations/acme")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of("slug", "acme-renamed"))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/organizations/by-slug/acme")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.org.slug").value("acme-renamed"))
+                .andExpect(jsonPath("$.org.currentUserRole").value("OWNER"))
+                .andExpect(jsonPath("$.historical").value(true))
+                .andExpect(jsonPath("$.currentSlug").value("acme-renamed"));
+    }
+
+    @Test
+    @DisplayName("GET /by-slug 404 — unknown slug")
+    void bySlug_should_return404_when_unknown() throws Exception {
+        mockMvc.perform(get("/organizations/by-slug/does-not-exist")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("GET /by-slug 404 — hides existence from non-members")
+    void bySlug_should_hideFromNonMembers() throws Exception {
+        createOrgAs(adminToken, "Acme", "acme");
+        mockMvc.perform(get("/organizations/by-slug/acme")
+                        .header("Authorization", "Bearer " + userBToken))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("GET /by-slug 401 — should require authentication")
+    void bySlug_should_return401_when_noAuth() throws Exception {
+        mockMvc.perform(get("/organizations/by-slug/acme"))
+                .andExpect(status().isUnauthorized());
+    }
 }
