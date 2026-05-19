@@ -14,6 +14,8 @@ import java.util.List;
  *   <li>DATE / DATETIME: {@code minDate}, {@code maxDate}, {@code allowFuture}, {@code allowPast}.</li>
  *   <li>SELECT / MULTI_SELECT: {@code options}; MULTI_SELECT also uses {@code minItems}/{@code maxItems}.</li>
  *   <li>URL / EMAIL: {@code maxLength}.</li>
+ *   <li>MEMBER: {@code eligibleRoles} restricts which organization roles may be selected; when
+ *       absent or empty any active member is allowed.</li>
  * </ul>
  *
  * Unknown fields are ignored. Defaults are applied by each validator if not provided.
@@ -33,6 +35,7 @@ public class AttributeValidatorsDto {
     private List<String> options;
     private Integer minItems;
     private Integer maxItems;
+    private List<String> eligibleRoles;
 
     public Integer getMinLength() { return minLength; }
     public AttributeValidatorsDto setMinLength(Integer v) { this.minLength = v; return this; }
@@ -75,4 +78,7 @@ public class AttributeValidatorsDto {
 
     public Integer getMaxItems() { return maxItems; }
     public AttributeValidatorsDto setMaxItems(Integer v) { this.maxItems = v; return this; }
+
+    public List<String> getEligibleRoles() { return eligibleRoles; }
+    public AttributeValidatorsDto setEligibleRoles(List<String> v) { this.eligibleRoles = v; return this; }
 }
