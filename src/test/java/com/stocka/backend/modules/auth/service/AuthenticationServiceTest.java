@@ -2,10 +2,8 @@ package com.stocka.backend.modules.auth.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -45,12 +43,14 @@ import com.stocka.backend.modules.security.repository.InvalidatedTokenRepository
 import com.stocka.backend.modules.security.service.JwtService;
 import com.stocka.backend.modules.users.entity.User;
 import com.stocka.backend.modules.users.repository.UserRepository;
+import com.stocka.backend.modules.users.service.UserService;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("AuthenticationService")
 class AuthenticationServiceTest {
 
     @Mock private UserRepository userRepository;
+    @Mock private UserService userService;
     @Mock private RoleRepository roleRepository;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private AuthenticationManager authenticationManager;
@@ -84,6 +84,8 @@ class AuthenticationServiceTest {
         @DisplayName("should return the saved user when input is valid")
         void should_returnSavedUser_when_inputIsValid() {
             when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
+            when(userService.checkUsernameAvailability(validDto.getUsername()))
+                    .thenReturn(AvailabilityResponse.ok());
             when(roleRepository.findByName(RoleEnum.USER)).thenReturn(Optional.of(userRole));
             when(passwordEncoder.encode(any())).thenReturn("hashed");
             User expected = new User();
@@ -128,7 +130,8 @@ class AuthenticationServiceTest {
         @DisplayName("should throw 409 + users.username_taken when username is already taken")
         void should_throwConflict_when_usernameAlreadyExists() {
             when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
-            when(userRepository.existsByUsername(validDto.getUsername())).thenReturn(true);
+            when(userService.checkUsernameAvailability(validDto.getUsername()))
+                    .thenReturn(AvailabilityResponse.unavailable(Reason.TAKEN));
 
             ApiException ex = assertThrows(
                     ApiException.class,
@@ -144,6 +147,8 @@ class AuthenticationServiceTest {
         void should_throwBadRequest_when_usernameInvalidFormat() {
             validDto.setUsername("Joan-Test!");
             when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
+            when(userService.checkUsernameAvailability("Joan-Test!"))
+                    .thenReturn(AvailabilityResponse.unavailable(Reason.INVALID_FORMAT));
 
             ApiException ex = assertThrows(
                     ApiException.class,
@@ -159,6 +164,8 @@ class AuthenticationServiceTest {
         void should_throwBadRequest_when_usernameReserved() {
             validDto.setUsername("admin");
             when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
+            when(userService.checkUsernameAvailability("admin"))
+                    .thenReturn(AvailabilityResponse.unavailable(Reason.RESERVED));
 
             ApiException ex = assertThrows(
                     ApiException.class,
@@ -173,6 +180,8 @@ class AuthenticationServiceTest {
         @DisplayName("should throw IllegalStateException when USER role does not exist in DB")
         void should_throwIllegalState_when_userRoleNotFound() {
             when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
+            when(userService.checkUsernameAvailability(validDto.getUsername()))
+                    .thenReturn(AvailabilityResponse.ok());
             when(roleRepository.findByName(RoleEnum.USER)).thenReturn(Optional.empty());
 
             assertThrows(
@@ -185,6 +194,8 @@ class AuthenticationServiceTest {
         @DisplayName("should set emailVerified=false on the created user (verification flow gates login)")
         void should_setEmailVerifiedFalse_on_createdUser() {
             when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
+            when(userService.checkUsernameAvailability(validDto.getUsername()))
+                    .thenReturn(AvailabilityResponse.ok());
             when(roleRepository.findByName(RoleEnum.USER)).thenReturn(Optional.of(userRole));
             when(passwordEncoder.encode(any())).thenReturn("hashed");
             ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
@@ -199,6 +210,8 @@ class AuthenticationServiceTest {
         @DisplayName("should send the verification email after persisting the user")
         void should_sendVerificationEmail_after_save() {
             when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
+            when(userService.checkUsernameAvailability(validDto.getUsername()))
+                    .thenReturn(AvailabilityResponse.ok());
             when(roleRepository.findByName(RoleEnum.USER)).thenReturn(Optional.of(userRole));
             when(passwordEncoder.encode(any())).thenReturn("hashed");
             User saved = new User();
@@ -215,6 +228,8 @@ class AuthenticationServiceTest {
         @DisplayName("should persist encoded password, not the raw one")
         void should_encodePassword_on_createdUser() {
             when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
+            when(userService.checkUsernameAvailability(validDto.getUsername()))
+                    .thenReturn(AvailabilityResponse.ok());
             when(roleRepository.findByName(RoleEnum.USER)).thenReturn(Optional.of(userRole));
             when(passwordEncoder.encode("password123")).thenReturn("hashed_value");
             ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
@@ -230,70 +245,20 @@ class AuthenticationServiceTest {
     @DisplayName("checkUsernameAvailability")
     class CheckUsernameAvailability {
 
-        @org.junit.jupiter.params.ParameterizedTest(name = "[{index}] invalid: \"{0}\"")
-        @org.junit.jupiter.params.provider.NullAndEmptySource
-        @org.junit.jupiter.params.provider.ValueSource(strings = {
-                "ab",                       // too short
-                "abcdefghijklmnopqrstuvwxy", // too long (25)
-                "Joan",                     // uppercase
-                "joan test",                // space
-                "joan-test",                // hyphen
-                "joan_test",                // underscore
-                "joan.test",                // dot
-                "joáñ",                     // unicode
-                "joan!"                     // special char
-        })
-        @DisplayName("should return INVALID_FORMAT for malformed usernames")
-        void should_returnInvalidFormat_when_malformed(String input) {
-            AvailabilityResponse res = sut.checkUsernameAvailability(input);
-
-            assertFalse(res.available());
-            assertEquals(Reason.INVALID_FORMAT, res.reason());
-        }
-
-        @org.junit.jupiter.params.ParameterizedTest(name = "[{index}] reserved: {0}")
-        @org.junit.jupiter.params.provider.ValueSource(strings = {
-                "admin", "api", "root", "support", "system", "stocka",
-                "auth", "users", "www", "app", "health"
-        })
-        @DisplayName("should return RESERVED for reserved usernames")
-        void should_returnReserved_when_reserved(String input) {
-            AvailabilityResponse res = sut.checkUsernameAvailability(input);
-
-            assertFalse(res.available());
-            assertEquals(Reason.RESERVED, res.reason());
-        }
+        // The full validation matrix (format, reserved, taken, history) lives in
+        // UserServiceTest; here we just verify the delegate returns whatever UserService
+        // computed without altering it.
 
         @Test
-        @DisplayName("should return TAKEN when the username already exists")
-        void should_returnTaken_when_usernameExists() {
-            when(userRepository.existsByUsername("joantest")).thenReturn(true);
+        @DisplayName("should delegate to UserService and return its result unchanged")
+        void should_delegateToUserService() {
+            AvailabilityResponse expected = AvailabilityResponse.unavailable(Reason.TAKEN);
+            when(userService.checkUsernameAvailability("joantest")).thenReturn(expected);
 
             AvailabilityResponse res = sut.checkUsernameAvailability("joantest");
 
-            assertFalse(res.available());
-            assertEquals(Reason.TAKEN, res.reason());
-        }
-
-        @Test
-        @DisplayName("should return available when format is valid, not reserved, and free")
-        void should_returnAvailable_when_validAndFree() {
-            when(userRepository.existsByUsername("joantest")).thenReturn(false);
-
-            AvailabilityResponse res = sut.checkUsernameAvailability("joantest");
-
-            assertTrue(res.available());
-            assertNull(res.reason());
-        }
-
-        @Test
-        @DisplayName("should accept usernames at the boundary lengths (3 and 24)")
-        void should_returnAvailable_when_lengthAtBoundaries() {
-            when(userRepository.existsByUsername("abc")).thenReturn(false);
-            when(userRepository.existsByUsername("abcdefghijklmnopqrstuvwx")).thenReturn(false);
-
-            assertTrue(sut.checkUsernameAvailability("abc").available());
-            assertTrue(sut.checkUsernameAvailability("abcdefghijklmnopqrstuvwx").available());
+            assertSame(expected, res);
+            verify(userService).checkUsernameAvailability("joantest");
         }
     }
 
