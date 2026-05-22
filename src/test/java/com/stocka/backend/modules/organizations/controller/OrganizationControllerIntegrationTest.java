@@ -358,4 +358,103 @@ class OrganizationControllerIntegrationTest {
         mockMvc.perform(get("/organizations/by-slug/acme"))
                 .andExpect(status().isUnauthorized());
     }
+
+    // -------------------------------------------------------------------------
+    // Slug recovery: rename → revert and reuse after deletion
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Slug recovery — owner can revert to a previous slug from own history")
+    void slugRecovery_owner_canRevertToOwnPreviousSlug() throws Exception {
+        createOrgAs(adminToken, "Acme", "acme");
+        // First rename "acme" → "acme-v2"; "acme" lands in the org's history.
+        mockMvc.perform(patch("/organizations/acme")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of("slug", "acme-v2"))))
+                .andExpect(status().isOk());
+
+        // Now revert: "acme-v2" → "acme" must be accepted because "acme" only appears in this
+        // org's own history.
+        mockMvc.perform(patch("/organizations/acme-v2")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of("slug", "acme"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.slug").value("acme"));
+
+        // by-slug on the previously-current "acme-v2" must now resolve as a historical alias.
+        mockMvc.perform(get("/organizations/by-slug/acme-v2")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.historical").value(true))
+                .andExpect(jsonPath("$.currentSlug").value("acme"));
+    }
+
+    @Test
+    @DisplayName("Slug recovery — historical slug of another active org is blocked (409)")
+    void slugRecovery_blockedWhenSlugInOtherActiveOrgHistory() throws Exception {
+        // userB creates "acme" then renames to "acme-renamed" → "acme" now in B's history.
+        createOrgAs(userBToken, "Acme", "acme");
+        mockMvc.perform(patch("/organizations/acme")
+                        .header("Authorization", "Bearer " + userBToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of("slug", "acme-renamed"))))
+                .andExpect(status().isOk());
+
+        // admin tries to claim "acme" while B is still alive → CONFLICT (cross-history collision).
+        mockMvc.perform(post("/organizations")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of("name", "Other Acme", "slug", "acme"))))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("Slug recovery — after soft-delete, the slug becomes claimable again")
+    void slugRecovery_freedByDeletion() throws Exception {
+        createOrgAs(userBToken, "Acme", "acme");
+        // userB also renames to seed the history table so the cleanup branch is exercised.
+        mockMvc.perform(patch("/organizations/acme")
+                        .header("Authorization", "Bearer " + userBToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of("slug", "acme-renamed"))))
+                .andExpect(status().isOk());
+        // Soft-delete frees both the active slug and every historical alias.
+        mockMvc.perform(delete("/organizations/acme-renamed")
+                        .header("Authorization", "Bearer " + userBToken))
+                .andExpect(status().isNoContent());
+
+        // by-slug on the released slug must 404 — the slug no longer belongs to any active org.
+        mockMvc.perform(get("/organizations/by-slug/acme")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/organizations/by-slug/acme-renamed")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isNotFound());
+
+        // Both the active and the historical slug must be available to a new owner.
+        mockMvc.perform(get("/organizations/check-slug")
+                        .param("slug", "acme")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.available").value(true));
+        mockMvc.perform(get("/organizations/check-slug")
+                        .param("slug", "acme-renamed")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.available").value(true));
+
+        // admin can create a fresh org with the released slug; by-slug now points at the new org.
+        mockMvc.perform(post("/organizations")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of("name", "Acme Reborn", "slug", "acme"))))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/organizations/by-slug/acme")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.historical").value(false))
+                .andExpect(jsonPath("$.currentSlug").value("acme"));
+    }
 }

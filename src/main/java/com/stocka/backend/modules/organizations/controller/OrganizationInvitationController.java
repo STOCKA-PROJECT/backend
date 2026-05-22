@@ -62,9 +62,8 @@ public class OrganizationInvitationController {
             @PathVariable String orgSlug,
             @PathVariable Integer invitationId
     ) {
-        // The slug is required by @PreAuthorize but the invitation is keyed by its own id.
-        orgResolver.requireCurrent(orgSlug);
-        invitationService.cancelInvitation(invitationId, currentUser());
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
+        invitationService.cancelInvitation(orgId, invitationId, currentUser());
         return ResponseEntity.noContent().build();
     }
 

@@ -1,6 +1,7 @@
 package com.stocka.backend.modules.organizations.service;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -170,10 +171,17 @@ public class OrganizationService {
             invitationRepository.save(inv);
         }
 
+        // Release the slug so anyone can claim it after the org is gone: drop every history row
+        // (frees previously used slugs) and rename the active slug to a marker that fails
+        // SLUG_PATTERN so it cannot collide with a real slug. The row is preserved for audit;
+        // only its slug column is mutated.
+        String releasedSlug = org.getSlug();
+        slugHistoryRepository.deleteByOrganization(org);
+        org.setSlug("__deleted_" + org.getId() + "_" + now.toEpochSecond(ZoneOffset.UTC) + "__");
         org.setDeletedAt(now);
         organizationRepository.save(org);
 
-        auditService.log(org, actor, AuditAction.ORG_DELETED, null, null);
+        auditService.log(org, actor, AuditAction.ORG_DELETED, null, Map.of("slug", releasedSlug));
     }
 
     /**

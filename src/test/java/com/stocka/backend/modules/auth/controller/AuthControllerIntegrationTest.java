@@ -450,5 +450,149 @@ class AuthControllerIntegrationTest {
             mockMvc.perform(get("/auth/check-username").param("username", "anyone"))
                     .andExpect(status().isOk());
         }
+
+        @Test
+        @DisplayName("200 — TAKEN when username is in another active user's history")
+        void should_returnTaken_when_usernameInActiveUserHistory() throws Exception {
+            // Sign up "oldname", verify email, rename to "newname". "oldname" is now history of
+            // an active user → must remain unavailable for anyone else.
+            signup("first@test.com", "oldname");
+            jdbcTemplate.update("UPDATE users SET email_verified = TRUE WHERE email = ?", "first@test.com");
+            String token = loginAndGetToken("first@test.com", "password123");
+
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/users/me")
+                            .header("Authorization", "Bearer " + token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of("username", "newname"))))
+                    .andExpect(status().isOk());
+
+            mockMvc.perform(get("/auth/check-username").param("username", "oldname"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.available").value(false))
+                    .andExpect(jsonPath("$.reason").value("TAKEN"));
+        }
+
+        @Test
+        @DisplayName("200 — username released when its owner is soft-deleted")
+        void should_returnAvailable_after_ownerSoftDelete() throws Exception {
+            signup("temp@test.com", "tempuser");
+            jdbcTemplate.update("UPDATE users SET email_verified = TRUE WHERE email = ?", "temp@test.com");
+            String token = loginAndGetToken("temp@test.com", "password123");
+
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                            .delete("/users/me")
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isNoContent());
+
+            mockMvc.perform(get("/auth/check-username").param("username", "tempuser"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.available").value(true));
+        }
+
+        private void signup(String email, String username) throws Exception {
+            Map<String, String> payload = Map.of(
+                    "name", "Test", "lastName", "User", "username", username,
+                    "email", email, "password", "password123", "repeatPassword", "password123"
+            );
+            mockMvc.perform(post("/auth/signup")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(payload)))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Username recovery: profile rename revert and reuse after deletion
+    // -------------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("Username recovery")
+    class UsernameRecovery {
+
+        @Test
+        @DisplayName("user can revert to a previous username from own history")
+        void user_canRevertToOwnPreviousUsername() throws Exception {
+            signup("user@test.com", "alpha");
+            jdbcTemplate.update("UPDATE users SET email_verified = TRUE WHERE email = ?", "user@test.com");
+            String token = loginAndGetToken("user@test.com", "password123");
+
+            // alpha → beta, then beta → alpha (own history recovery).
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/users/me")
+                            .header("Authorization", "Bearer " + token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of("username", "beta"))))
+                    .andExpect(status().isOk());
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/users/me")
+                            .header("Authorization", "Bearer " + token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of("username", "alpha"))))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.username").value("alpha"));
+        }
+
+        @Test
+        @DisplayName("another user cannot claim a username from an active user's history")
+        void otherUserCannotClaim_activeHistory() throws Exception {
+            signup("first@test.com", "shared");
+            jdbcTemplate.update("UPDATE users SET email_verified = TRUE WHERE email = ?", "first@test.com");
+            String token = loginAndGetToken("first@test.com", "password123");
+
+            // first renames to free "shared" only on the user-facing username (history is set).
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/users/me")
+                            .header("Authorization", "Bearer " + token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of("username", "firstnew"))))
+                    .andExpect(status().isOk());
+
+            // A different user trying to sign up with "shared" must be rejected.
+            Map<String, String> payload = Map.of(
+                    "name", "Other", "lastName", "User", "username", "shared",
+                    "email", "second@test.com", "password", "password123", "repeatPassword", "password123"
+            );
+            mockMvc.perform(post("/auth/signup")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(payload)))
+                    .andExpect(status().isConflict());
+        }
+
+        @Test
+        @DisplayName("after soft-delete the username is available again")
+        void usernameClaimableAfterSoftDelete() throws Exception {
+            signup("temp@test.com", "ghost");
+            jdbcTemplate.update("UPDATE users SET email_verified = TRUE WHERE email = ?", "temp@test.com");
+            String token = loginAndGetToken("temp@test.com", "password123");
+
+            // Seed history so the cleanup branch is exercised.
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/users/me")
+                            .header("Authorization", "Bearer " + token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of("username", "ghostnew"))))
+                    .andExpect(status().isOk());
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                            .delete("/users/me")
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isNoContent());
+
+            // A brand new user must be able to claim the now-released username.
+            Map<String, String> payload = Map.of(
+                    "name", "New", "lastName", "User", "username", "ghost",
+                    "email", "new@test.com", "password", "password123", "repeatPassword", "password123"
+            );
+            mockMvc.perform(post("/auth/signup")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(payload)))
+                    .andExpect(status().isOk());
+        }
+
+        private void signup(String email, String username) throws Exception {
+            Map<String, String> payload = Map.of(
+                    "name", "Test", "lastName", "User", "username", username,
+                    "email", email, "password", "password123", "repeatPassword", "password123"
+            );
+            mockMvc.perform(post("/auth/signup")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(payload)))
+                    .andExpect(status().isOk());
+        }
     }
 }

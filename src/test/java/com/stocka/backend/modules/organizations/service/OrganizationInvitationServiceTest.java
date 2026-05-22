@@ -386,10 +386,11 @@ class OrganizationInvitationServiceTest {
                         OrganizationInvitation inv = new OrganizationInvitation()
                                         .setId(50).setOrganization(org).setEmail("x@test.com")
                                         .setStatus(InvitationStatus.PENDING);
+                        when(organizationService.findById(1)).thenReturn(org);
                         when(invitationRepository.findById(50)).thenReturn(Optional.of(inv));
                         mockActorAs(owner, OrganizationRoleEnum.OWNER);
 
-                        sut.cancelInvitation(50, owner);
+                        sut.cancelInvitation(1, 50, owner);
 
                         assertEquals(InvitationStatus.CANCELLED, inv.getStatus());
                         verify(invitationRepository).save(inv);
@@ -403,10 +404,11 @@ class OrganizationInvitationServiceTest {
                         OrganizationInvitation inv = new OrganizationInvitation()
                                         .setId(50).setOrganization(org).setEmail("x@test.com")
                                         .setStatus(InvitationStatus.PENDING);
+                        when(organizationService.findById(1)).thenReturn(org);
                         when(invitationRepository.findById(50)).thenReturn(Optional.of(inv));
                         mockActorAs(manager, OrganizationRoleEnum.MANAGER);
 
-                        sut.cancelInvitation(50, manager);
+                        sut.cancelInvitation(1, 50, manager);
 
                         assertEquals(InvitationStatus.CANCELLED, inv.getStatus());
                 }
@@ -417,22 +419,42 @@ class OrganizationInvitationServiceTest {
                         OrganizationInvitation inv = new OrganizationInvitation()
                                         .setId(50).setOrganization(org).setEmail("x@test.com")
                                         .setStatus(InvitationStatus.PENDING);
+                        when(organizationService.findById(1)).thenReturn(org);
                         when(invitationRepository.findById(50)).thenReturn(Optional.of(inv));
                         mockActorAs(regularUser, OrganizationRoleEnum.USER);
 
                         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                                        () -> sut.cancelInvitation(50, regularUser));
+                                        () -> sut.cancelInvitation(1, 50, regularUser));
                         assertEquals(HttpStatus.FORBIDDEN, ex.getStatusCode());
                 }
 
                 @Test
                 @DisplayName("should throw 404 when invitation does not exist")
                 void should_throw404_when_notFound() {
+                        when(organizationService.findById(1)).thenReturn(org);
                         when(invitationRepository.findById(50)).thenReturn(Optional.empty());
 
                         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                                        () -> sut.cancelInvitation(50, owner));
+                                        () -> sut.cancelInvitation(1, 50, owner));
                         assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+                }
+
+                @Test
+                @DisplayName("should throw 404 when invitation belongs to a different organization")
+                void should_throw404_when_invitationBelongsToOtherOrg() {
+                        Organization otherOrg = new Organization().setId(99).setSlug("other");
+                        OrganizationInvitation inv = new OrganizationInvitation()
+                                        .setId(50).setOrganization(otherOrg).setEmail("x@test.com")
+                                        .setStatus(InvitationStatus.PENDING);
+                        when(organizationService.findById(1)).thenReturn(org);
+                        when(invitationRepository.findById(50)).thenReturn(Optional.of(inv));
+
+                        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                                        () -> sut.cancelInvitation(1, 50, owner));
+                        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+                        // Invitation status untouched and not persisted: nothing leaks across orgs.
+                        assertEquals(InvitationStatus.PENDING, inv.getStatus());
+                        verify(invitationRepository, never()).save(any());
                 }
 
                 @Test
@@ -440,11 +462,12 @@ class OrganizationInvitationServiceTest {
                 void should_throw400_when_notPending() {
                         OrganizationInvitation inv = new OrganizationInvitation()
                                         .setId(50).setOrganization(org).setStatus(InvitationStatus.ACCEPTED);
+                        when(organizationService.findById(1)).thenReturn(org);
                         when(invitationRepository.findById(50)).thenReturn(Optional.of(inv));
                         mockActorAs(owner, OrganizationRoleEnum.OWNER);
 
                         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                                        () -> sut.cancelInvitation(50, owner));
+                                        () -> sut.cancelInvitation(1, 50, owner));
                         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
                 }
         }

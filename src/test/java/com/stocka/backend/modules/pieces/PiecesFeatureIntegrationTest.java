@@ -1011,4 +1011,65 @@ class PiecesFeatureIntegrationTest {
                     .andExpect(status().isOk());
         }
     }
+
+    @Nested
+    @DisplayName("Cross-org piece integrity under slug change/reuse")
+    class CrossOrgPieceIntegrity {
+
+        @Test
+        @DisplayName("piece is accessible through the org's new slug after rename")
+        void pieceAccessibleByCurrentSlug_afterRename() throws Exception {
+            Integer typeId = createSimpleTypeAs(ownerToken, "Box", false);
+            Integer pieceId = createPieceAs(ownerToken, typeId, "P-rename", null, null);
+
+            mockMvc.perform(patch("/organizations/" + orgSlug)
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of("slug", "acme-v2"))))
+                    .andExpect(status().isOk());
+
+            mockMvc.perform(get("/organizations/acme-v2/pieces/" + pieceId)
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.id").value(pieceId));
+        }
+
+        @Test
+        @DisplayName("piece is NOT accessible through the historical slug (frontend redirects via by-slug)")
+        void pieceNotAccessibleThroughHistoricalSlug() throws Exception {
+            Integer typeId = createSimpleTypeAs(ownerToken, "Box", false);
+            Integer pieceId = createPieceAs(ownerToken, typeId, "P-historic", null, null);
+
+            mockMvc.perform(patch("/organizations/" + orgSlug)
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of("slug", "acme-v2"))))
+                    .andExpect(status().isOk());
+
+            // The piece endpoint is path-scoped to the CURRENT slug — historical "acme" is no
+            // longer a current slug, so @PreAuthorize on canReadOrgContent fails (403). The
+            // frontend middleware would call /organizations/by-slug/acme first and redirect.
+            mockMvc.perform(get("/organizations/" + orgSlug + "/pieces/" + pieceId)
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        @DisplayName("after soft-delete, the piece is no longer reachable via the released slug")
+        void pieceUnreachable_afterOrgSoftDelete() throws Exception {
+            Integer typeId = createSimpleTypeAs(ownerToken, "Box", false);
+            Integer pieceId = createPieceAs(ownerToken, typeId, "P-gone", null, null);
+
+            mockMvc.perform(delete("/organizations/" + orgSlug)
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isNoContent());
+
+            // The slug "acme" is no longer current (the row was renamed to a `__deleted__`
+            // marker), so authorization fails before the piece lookup. The deleted org's piece
+            // is therefore unreachable via the released slug, even by a global ADMIN.
+            mockMvc.perform(get("/organizations/" + orgSlug + "/pieces/" + pieceId)
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isForbidden());
+        }
+    }
 }

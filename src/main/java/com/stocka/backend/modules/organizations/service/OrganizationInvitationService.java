@@ -136,11 +136,14 @@ public class OrganizationInvitationService {
     }
 
     @Transactional
-    public void cancelInvitation(Integer invitationId, User actor) {
+    public void cancelInvitation(Integer orgId, Integer invitationId, User actor) {
+        Organization org = organizationService.findById(orgId);
+        // 404 (not "not in this org") so we don't leak invitation existence across orgs.
         OrganizationInvitation invitation = invitationRepository.findById(invitationId)
+                .filter(inv -> inv.getOrganization().getId().equals(org.getId()))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Invitación no encontrada"));
 
-        OrganizationRoleEnum actorRole = resolveActorRole(invitation.getOrganization(), actor);
+        OrganizationRoleEnum actorRole = resolveActorRole(org, actor);
         if (actorRole != OrganizationRoleEnum.OWNER && actorRole != OrganizationRoleEnum.MANAGER) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                     "No tienes permiso para cancelar esta invitación");
@@ -153,7 +156,7 @@ public class OrganizationInvitationService {
         invitation.setStatus(InvitationStatus.CANCELLED);
         invitationRepository.save(invitation);
 
-        auditService.log(invitation.getOrganization(), actor, AuditAction.INVITATION_CANCELLED, null, Map.of(
+        auditService.log(org, actor, AuditAction.INVITATION_CANCELLED, null, Map.of(
                 "email", invitation.getEmail()));
     }
 

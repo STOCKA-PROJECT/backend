@@ -3,6 +3,7 @@ package com.stocka.backend.modules.users.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -27,6 +28,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.stocka.backend.modules.common.dto.AvailabilityResponse;
+import com.stocka.backend.modules.common.dto.AvailabilityResponse.Reason;
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.notifications.preferences.service.NotificationPreferenceService;
@@ -35,13 +38,16 @@ import com.stocka.backend.modules.users.dto.ChangePasswordDto;
 import com.stocka.backend.modules.users.dto.UpdateUserProfileDto;
 import com.stocka.backend.modules.users.entity.Language;
 import com.stocka.backend.modules.users.entity.User;
+import com.stocka.backend.modules.users.entity.UserUsernameHistory;
 import com.stocka.backend.modules.users.repository.UserRepository;
+import com.stocka.backend.modules.users.repository.UserUsernameHistoryRepository;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("UserService")
 class UserServiceTest {
 
     @Mock private UserRepository userRepository;
+    @Mock private UserUsernameHistoryRepository usernameHistoryRepository;
     @Mock private OrganizationMemberRepository memberRepository;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private NotificationPreferenceService notificationPreferenceService;
@@ -97,11 +103,17 @@ class UserServiceTest {
     class SoftDeleteCurrentUser {
 
         @Test
-        @DisplayName("should set deletedAt and save the user")
+        @DisplayName("should set deletedAt, clear username history and release the username")
         void should_setDeletedAtAndSave() {
             sut.softDeleteCurrentUser(actor);
 
             assertNotNull(actor.getDeletedAt());
+            verify(usernameHistoryRepository).deleteByUser(actor);
+            // Active username is rewritten to a marker that fails USERNAME_PATTERN so it cannot
+            // collide with a real username; the row is preserved for audit.
+            assertTrue(actor.getUsernameValue().startsWith("__deleted_1_"));
+            assertTrue(actor.getUsernameValue().endsWith("__"));
+            assertFalse("joantest".equals(actor.getUsernameValue()));
             verify(userRepository).save(actor);
         }
 
@@ -297,17 +309,18 @@ class UserServiceTest {
         }
 
         @Test
-        @DisplayName("should throw 409 when new username is already used by another user")
+        @DisplayName("should throw 409 + users.username_taken when new username is already used by another user")
         void should_throw409_when_newUsername_alreadyUsed_byAnotherUser() {
             User other = new User().setId(2).setUsername("nuevo");
             when(userRepository.findByUsername("nuevo")).thenReturn(Optional.of(other));
 
-            ResponseStatusException ex = assertThrows(
-                    ResponseStatusException.class,
+            ApiException ex = assertThrows(
+                    ApiException.class,
                     () -> sut.updateProfile(actor, new UpdateUserProfileDto().setUsername("nuevo"))
             );
 
-            assertEquals(HttpStatus.CONFLICT, ex.getStatusCode());
+            assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+            assertEquals(ErrorCodes.USERS_USERNAME_TAKEN, ex.getCode());
             verify(userRepository, never()).save(any(User.class));
         }
 
@@ -320,6 +333,69 @@ class UserServiceTest {
             User result = sut.updateProfile(actor, new UpdateUserProfileDto().setUsername("nuevo"));
 
             assertEquals("nuevo", result.getUsernameValue());
+        }
+
+        @Test
+        @DisplayName("should throw 400 + users.username_invalid when new username has invalid format")
+        void should_throw400_when_newUsername_invalidFormat() {
+            ApiException ex = assertThrows(
+                    ApiException.class,
+                    () -> sut.updateProfile(actor, new UpdateUserProfileDto().setUsername("Bad-User!"))
+            );
+
+            assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+            assertEquals(ErrorCodes.USERS_USERNAME_INVALID, ex.getCode());
+            verify(userRepository, never()).save(any(User.class));
+        }
+
+        @Test
+        @DisplayName("should throw 400 + users.username_reserved when new username is reserved")
+        void should_throw400_when_newUsername_reserved() {
+            ApiException ex = assertThrows(
+                    ApiException.class,
+                    () -> sut.updateProfile(actor, new UpdateUserProfileDto().setUsername("admin"))
+            );
+
+            assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+            assertEquals(ErrorCodes.USERS_USERNAME_RESERVED, ex.getCode());
+            verify(userRepository, never()).save(any(User.class));
+        }
+
+        @Test
+        @DisplayName("should throw 409 + users.username_taken when new username belongs to another active user history")
+        void should_throw409_when_newUsername_inOtherUserHistory() {
+            User other = new User().setId(2);
+            UserUsernameHistory entry = new UserUsernameHistory().setUser(other).setOldUsername("nuevo");
+            when(userRepository.findByUsername("nuevo")).thenReturn(Optional.empty());
+            when(usernameHistoryRepository.findByOldUsername("nuevo")).thenReturn(Optional.of(entry));
+
+            ApiException ex = assertThrows(
+                    ApiException.class,
+                    () -> sut.updateProfile(actor, new UpdateUserProfileDto().setUsername("nuevo"))
+            );
+
+            assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+            assertEquals(ErrorCodes.USERS_USERNAME_TAKEN, ex.getCode());
+            verify(userRepository, never()).save(any(User.class));
+        }
+
+        @Test
+        @DisplayName("should allow re-claim of a previous username from the actor's own history")
+        void should_allowReclaim_when_inOwnHistory() {
+            // The actor previously used "old" and renamed to "joantest". Now they want to revert.
+            UserUsernameHistory entry = new UserUsernameHistory().setUser(actor).setOldUsername("old");
+            when(userRepository.findByUsername("old")).thenReturn(Optional.empty());
+            when(usernameHistoryRepository.findByOldUsername("old")).thenReturn(Optional.of(entry));
+            when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            User result = sut.updateProfile(actor, new UpdateUserProfileDto().setUsername("old"));
+
+            assertEquals("old", result.getUsernameValue());
+            ArgumentCaptor<UserUsernameHistory> savedHistory = ArgumentCaptor.forClass(UserUsernameHistory.class);
+            verify(usernameHistoryRepository).save(savedHistory.capture());
+            // The actor's previous active username ("joantest") is the one we just archived; "old"
+            // was already in the actor's history before the swap.
+            assertEquals("joantest", savedHistory.getValue().getOldUsername());
         }
 
         // ----- combinations / no-op -----
@@ -344,19 +420,19 @@ class UserServiceTest {
         @DisplayName("should update all fields when all are provided")
         void should_updateAllFields_when_allProvided() {
             when(userRepository.findByEmail("nuevo@test.com")).thenReturn(Optional.empty());
-            when(userRepository.findByUsername("nuevoUser")).thenReturn(Optional.empty());
+            when(userRepository.findByUsername("nuevouser")).thenReturn(Optional.empty());
             when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
             User result = sut.updateProfile(actor, new UpdateUserProfileDto()
                     .setName("Nuevo")
                     .setLastName("Apellido")
                     .setEmail("nuevo@test.com")
-                    .setUsername("nuevoUser"));
+                    .setUsername("nuevouser"));
 
             assertEquals("Nuevo", result.getName());
             assertEquals("Apellido", result.getLastName());
             assertEquals("nuevo@test.com", result.getEmail());
-            assertEquals("nuevoUser", result.getUsernameValue());
+            assertEquals("nuevouser", result.getUsernameValue());
             assertFalse(result.isEmailVerified());
         }
 
@@ -535,6 +611,93 @@ class UserServiceTest {
 
             verify(passwordEncoder, never()).matches(any(), any());
             verify(passwordEncoder, never()).encode(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("checkUsernameAvailability")
+    class CheckUsernameAvailability {
+
+        @org.junit.jupiter.params.ParameterizedTest(name = "[{index}] invalid: \"{0}\"")
+        @org.junit.jupiter.params.provider.NullAndEmptySource
+        @org.junit.jupiter.params.provider.ValueSource(strings = {
+                "ab",                       // too short
+                "abcdefghijklmnopqrstuvwxy", // too long (25)
+                "Joan",                     // uppercase
+                "joan test",                // space
+                "joan-test",                // hyphen
+                "joan_test",                // underscore
+                "joan.test",                // dot
+                "joáñ",                     // unicode
+                "joan!"                     // special char
+        })
+        @DisplayName("should return INVALID_FORMAT for malformed usernames")
+        void should_returnInvalidFormat_when_malformed(String input) {
+            AvailabilityResponse res = sut.checkUsernameAvailability(input);
+
+            assertFalse(res.available());
+            assertEquals(Reason.INVALID_FORMAT, res.reason());
+        }
+
+        @org.junit.jupiter.params.ParameterizedTest(name = "[{index}] reserved: {0}")
+        @org.junit.jupiter.params.provider.ValueSource(strings = {
+                "admin", "api", "root", "support", "system", "stocka",
+                "auth", "users", "www", "app", "health"
+        })
+        @DisplayName("should return RESERVED for reserved usernames")
+        void should_returnReserved_when_reserved(String input) {
+            AvailabilityResponse res = sut.checkUsernameAvailability(input);
+
+            assertFalse(res.available());
+            assertEquals(Reason.RESERVED, res.reason());
+        }
+
+        @Test
+        @DisplayName("should return TAKEN when the username already exists on an active user")
+        void should_returnTaken_when_usernameExists() {
+            when(userRepository.existsByUsername("joantest")).thenReturn(true);
+
+            AvailabilityResponse res = sut.checkUsernameAvailability("joantest");
+
+            assertFalse(res.available());
+            assertEquals(Reason.TAKEN, res.reason());
+        }
+
+        @Test
+        @DisplayName("should return TAKEN when the username belongs to an active user's history")
+        void should_returnTaken_when_usernameInActiveUserHistory() {
+            UserUsernameHistory entry = new UserUsernameHistory()
+                    .setUser(new User().setId(7))
+                    .setOldUsername("joantest");
+            when(userRepository.existsByUsername("joantest")).thenReturn(false);
+            when(usernameHistoryRepository.findByOldUsername("joantest"))
+                    .thenReturn(Optional.of(entry));
+
+            AvailabilityResponse res = sut.checkUsernameAvailability("joantest");
+
+            assertFalse(res.available());
+            assertEquals(Reason.TAKEN, res.reason());
+        }
+
+        @Test
+        @DisplayName("should return available when format is valid, not reserved, and free")
+        void should_returnAvailable_when_validAndFree() {
+            when(userRepository.existsByUsername("joantest")).thenReturn(false);
+
+            AvailabilityResponse res = sut.checkUsernameAvailability("joantest");
+
+            assertTrue(res.available());
+            assertNull(res.reason());
+        }
+
+        @Test
+        @DisplayName("should accept usernames at the boundary lengths (3 and 24)")
+        void should_returnAvailable_when_lengthAtBoundaries() {
+            when(userRepository.existsByUsername("abc")).thenReturn(false);
+            when(userRepository.existsByUsername("abcdefghijklmnopqrstuvwx")).thenReturn(false);
+
+            assertTrue(sut.checkUsernameAvailability("abc").available());
+            assertTrue(sut.checkUsernameAvailability("abcdefghijklmnopqrstuvwx").available());
         }
     }
 }

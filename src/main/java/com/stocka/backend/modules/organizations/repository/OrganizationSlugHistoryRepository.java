@@ -7,6 +7,7 @@ import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.entity.OrganizationSlugHistory;
 
 @Repository
@@ -29,4 +30,13 @@ public interface OrganizationSlugHistoryRepository extends CrudRepository<Organi
      * @return {@code true} when at least one organization has used it
      */
     boolean existsByOldSlug(String oldSlug);
+
+    /**
+     * Removes every history row that belongs to the given organization. Used on soft-delete to
+     * release the historical slugs so other organizations can claim them.
+     *
+     * @param organization the organization whose history must be cleared
+     * @return the number of rows removed
+     */
+    long deleteByOrganization(Organization organization);
 }

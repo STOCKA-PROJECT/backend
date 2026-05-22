@@ -1,8 +1,6 @@
 package com.stocka.backend.modules.auth.service;
 
 import java.util.Optional;
-import java.util.Set;
-import java.util.regex.Pattern;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -14,7 +12,6 @@ import org.springframework.stereotype.Service;
 import com.stocka.backend.modules.auth.dto.LoginUserDto;
 import com.stocka.backend.modules.auth.dto.RegisterUserDto;
 import com.stocka.backend.modules.common.dto.AvailabilityResponse;
-import com.stocka.backend.modules.common.dto.AvailabilityResponse.Reason;
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.roles.entity.Role;
@@ -26,19 +23,13 @@ import com.stocka.backend.modules.security.service.JwtService;
 import com.stocka.backend.modules.users.entity.Language;
 import com.stocka.backend.modules.users.entity.User;
 import com.stocka.backend.modules.users.repository.UserRepository;
+import com.stocka.backend.modules.users.service.UserService;
 
 @Service
 public class AuthenticationService {
 
-    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-z0-9]{3,24}$");
-
-    private static final Set<String> RESERVED_USERNAMES = Set.of(
-            "admin", "api", "root", "support", "system", "stocka",
-            "auth", "users", "www", "app", "health",
-            "null", "undefined"
-    );
-
     private final UserRepository userRepository;
+    private final UserService userService;
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
@@ -48,6 +39,7 @@ public class AuthenticationService {
 
     public AuthenticationService(
             UserRepository userRepository,
+            UserService userService,
             RoleRepository roleRepository,
             PasswordEncoder passwordEncoder,
             AuthenticationManager authenticationManager,
@@ -56,6 +48,7 @@ public class AuthenticationService {
             EmailVerificationService emailVerificationService
     ) {
         this.userRepository = userRepository;
+        this.userService = userService;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
@@ -75,7 +68,7 @@ public class AuthenticationService {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.USERS_EMAIL_TAKEN);
         }
 
-        AvailabilityResponse usernameCheck = checkUsernameAvailability(input.getUsername());
+        AvailabilityResponse usernameCheck = userService.checkUsernameAvailability(input.getUsername());
         if (!usernameCheck.available()) {
             switch (usernameCheck.reason()) {
                 case INVALID_FORMAT -> throw new ApiException(
@@ -109,22 +102,16 @@ public class AuthenticationService {
     }
 
     /**
-     * Checks whether the given username can be used to register a new user.
+     * Checks whether the given username can be used to register a new user. Delegates to
+     * {@link UserService#checkUsernameAvailability(String)} so signup, profile-rename and the
+     * standalone availability endpoint all share the same rules (format, reserved list,
+     * active uniqueness and historical usernames whose owner is still active).
      *
      * @param username candidate username; may be {@code null}
      * @return an {@link AvailabilityResponse} describing the result; never {@code null}
      */
     public AvailabilityResponse checkUsernameAvailability(String username) {
-        if (username == null || !USERNAME_PATTERN.matcher(username).matches()) {
-            return AvailabilityResponse.unavailable(Reason.INVALID_FORMAT);
-        }
-        if (RESERVED_USERNAMES.contains(username)) {
-            return AvailabilityResponse.unavailable(Reason.RESERVED);
-        }
-        if (userRepository.existsByUsername(username)) {
-            return AvailabilityResponse.unavailable(Reason.TAKEN);
-        }
-        return AvailabilityResponse.ok();
+        return userService.checkUsernameAvailability(username);
     }
 
     public void logout(String token) {

@@ -351,9 +351,9 @@ class OrganizationServiceTest {
     class SoftDelete {
 
         @Test
-        @DisplayName("should soft-delete org, members and cancel pending invitations")
+        @DisplayName("should soft-delete org, members, cancel pending invitations, clear slug history and release the slug")
         void should_softDeleteOrgMembersAndInvitations() {
-            Organization org = new Organization().setId(1);
+            Organization org = new Organization().setId(1).setSlug("acme");
             when(organizationRepository.findById(1)).thenReturn(Optional.of(org));
             OrganizationMember m1 = new OrganizationMember().setId(10);
             OrganizationMember m2 = new OrganizationMember().setId(11);
@@ -371,7 +371,16 @@ class OrganizationServiceTest {
             verify(invitationRepository, atLeastOnce()).save(inv);
             assertNotNull(org.getDeletedAt());
             verify(organizationRepository, atLeastOnce()).save(org);
-            verify(auditService).log(eq(org), eq(actor), eq(AuditAction.ORG_DELETED), eq(null), eq((Map<String, Object>) null));
+            verify(slugHistoryRepository).deleteByOrganization(org);
+            // Active slug is rewritten to a marker that fails SLUG_PATTERN so it cannot collide
+            // with a real slug and other orgs can now claim "acme".
+            assertTrue(org.getSlug().startsWith("__deleted_1_"));
+            assertTrue(org.getSlug().endsWith("__"));
+            assertFalse(org.getSlug().equals("acme"));
+
+            ArgumentCaptor<Map<String, Object>> oldValues = ArgumentCaptor.forClass(Map.class);
+            verify(auditService).log(eq(org), eq(actor), eq(AuditAction.ORG_DELETED), eq(null), oldValues.capture());
+            assertEquals("acme", oldValues.getValue().get("slug"));
         }
     }
 }
