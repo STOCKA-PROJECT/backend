@@ -53,6 +53,7 @@ class OrganizationMemberControllerIntegrationTest {
     private String outsiderToken;
 
     private Integer orgId;
+    private String orgSlug;
     private Integer adminMemberId;
     private Integer managerMemberId;
     private Integer userMemberId;
@@ -70,6 +71,7 @@ class OrganizationMemberControllerIntegrationTest {
         // Create org as admin → admin becomes OWNER
         Map<String, Object> org = createOrg();
         orgId = (Integer) org.get("id");
+        orgSlug = (String) org.get("slug");
 
         // Manually add manager and user as memberships
         Organization orgEntity = organizationRepository.findById(orgId).orElseThrow();
@@ -105,7 +107,7 @@ class OrganizationMemberControllerIntegrationTest {
     @Test
     @DisplayName("GET /members 200 — member can list")
     void list_member() throws Exception {
-        mockMvc.perform(get("/organizations/" + orgId + "/members")
+        mockMvc.perform(get("/organizations/" + orgSlug + "/members")
                         .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(3));
@@ -114,7 +116,7 @@ class OrganizationMemberControllerIntegrationTest {
     @Test
     @DisplayName("GET /members 403 — outsider")
     void list_outsider() throws Exception {
-        mockMvc.perform(get("/organizations/" + orgId + "/members")
+        mockMvc.perform(get("/organizations/" + orgSlug + "/members")
                         .header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isForbidden());
     }
@@ -122,7 +124,7 @@ class OrganizationMemberControllerIntegrationTest {
     @Test
     @DisplayName("PATCH /members/{id} 200 — OWNER promotes USER → MANAGER")
     void patch_owner_promotes() throws Exception {
-        mockMvc.perform(patch("/organizations/" + orgId + "/members/" + userMemberId)
+        mockMvc.perform(patch("/organizations/" + orgSlug + "/members/" + userMemberId)
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(om.writeValueAsString(Map.of("role", "MANAGER"))))
@@ -133,7 +135,7 @@ class OrganizationMemberControllerIntegrationTest {
     @Test
     @DisplayName("PATCH /members/{id} 403 — actor cannot operate on own membership")
     void patch_self_403() throws Exception {
-        mockMvc.perform(patch("/organizations/" + orgId + "/members/" + adminMemberId)
+        mockMvc.perform(patch("/organizations/" + orgSlug + "/members/" + adminMemberId)
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(om.writeValueAsString(Map.of("role", "USER"))))
@@ -144,7 +146,7 @@ class OrganizationMemberControllerIntegrationTest {
     @Test
     @DisplayName("PATCH /members/{id} 403 — MANAGER cannot change roles")
     void patch_manager_403() throws Exception {
-        mockMvc.perform(patch("/organizations/" + orgId + "/members/" + userMemberId)
+        mockMvc.perform(patch("/organizations/" + orgSlug + "/members/" + userMemberId)
                         .header("Authorization", "Bearer " + managerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(om.writeValueAsString(Map.of("role", "MANAGER"))))
@@ -154,7 +156,7 @@ class OrganizationMemberControllerIntegrationTest {
     @Test
     @DisplayName("DELETE /members/{id} 204 — OWNER removes USER")
     void delete_owner_removesUser() throws Exception {
-        mockMvc.perform(delete("/organizations/" + orgId + "/members/" + userMemberId)
+        mockMvc.perform(delete("/organizations/" + orgSlug + "/members/" + userMemberId)
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isNoContent());
     }
@@ -162,7 +164,7 @@ class OrganizationMemberControllerIntegrationTest {
     @Test
     @DisplayName("DELETE /members/{id} 204 — MANAGER removes USER")
     void delete_manager_removesUser() throws Exception {
-        mockMvc.perform(delete("/organizations/" + orgId + "/members/" + userMemberId)
+        mockMvc.perform(delete("/organizations/" + orgSlug + "/members/" + userMemberId)
                         .header("Authorization", "Bearer " + managerToken))
                 .andExpect(status().isNoContent());
     }
@@ -178,7 +180,7 @@ class OrganizationMemberControllerIntegrationTest {
                 .setOrganization(orgEntity)
                 .setRole(OrganizationRoleEnum.MANAGER)).getId();
 
-        mockMvc.perform(delete("/organizations/" + orgId + "/members/" + mgr2Id)
+        mockMvc.perform(delete("/organizations/" + orgSlug + "/members/" + mgr2Id)
                         .header("Authorization", "Bearer " + managerToken))
                 .andExpect(status().isForbidden());
     }
@@ -186,7 +188,7 @@ class OrganizationMemberControllerIntegrationTest {
     @Test
     @DisplayName("DELETE /members/{id} 403 — USER cannot remove anyone")
     void delete_user_403() throws Exception {
-        mockMvc.perform(delete("/organizations/" + orgId + "/members/" + managerMemberId)
+        mockMvc.perform(delete("/organizations/" + orgSlug + "/members/" + managerMemberId)
                         .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isForbidden());
     }
@@ -194,7 +196,7 @@ class OrganizationMemberControllerIntegrationTest {
     @Test
     @DisplayName("DELETE /members/{id} 403 — actor cannot operate on own membership")
     void delete_self_403() throws Exception {
-        mockMvc.perform(delete("/organizations/" + orgId + "/members/" + adminMemberId)
+        mockMvc.perform(delete("/organizations/" + orgSlug + "/members/" + adminMemberId)
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.detail").value("no puedes operar sobre tu propia membresía"));
@@ -203,7 +205,7 @@ class OrganizationMemberControllerIntegrationTest {
     @Test
     @DisplayName("DELETE /members/me 204 — USER leaves")
     void leave_user() throws Exception {
-        mockMvc.perform(delete("/organizations/" + orgId + "/members/me")
+        mockMvc.perform(delete("/organizations/" + orgSlug + "/members/me")
                         .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isNoContent());
     }
@@ -211,7 +213,7 @@ class OrganizationMemberControllerIntegrationTest {
     @Test
     @DisplayName("DELETE /members/me 409 — last OWNER cannot leave")
     void leave_lastOwner_409() throws Exception {
-        mockMvc.perform(delete("/organizations/" + orgId + "/members/me")
+        mockMvc.perform(delete("/organizations/" + orgSlug + "/members/me")
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isConflict());
     }

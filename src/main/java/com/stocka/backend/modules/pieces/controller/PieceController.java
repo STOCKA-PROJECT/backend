@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.stocka.backend.modules.organizations.service.OrganizationResolver;
 import com.stocka.backend.modules.pieces.dto.CreatePieceDto;
 import com.stocka.backend.modules.pieces.dto.PieceAttachmentResponseDto;
 import com.stocka.backend.modules.pieces.dto.PieceAttributeValueResponseDto;
@@ -31,30 +32,37 @@ import com.stocka.backend.modules.pieces.repository.PieceAttachmentRepository;
 import com.stocka.backend.modules.pieces.service.PieceService;
 
 @RestController
-@RequestMapping("/organizations/{orgId}/pieces")
+@RequestMapping("/organizations/{orgSlug}/pieces")
 public class PieceController {
     private final PieceService pieceService;
     private final PieceAttachmentRepository attachmentRepository;
+    private final OrganizationResolver orgResolver;
 
-    public PieceController(PieceService pieceService, PieceAttachmentRepository attachmentRepository) {
+    public PieceController(
+            PieceService pieceService,
+            PieceAttachmentRepository attachmentRepository,
+            OrganizationResolver orgResolver
+    ) {
         this.pieceService = pieceService;
         this.attachmentRepository = attachmentRepository;
+        this.orgResolver = orgResolver;
     }
 
     @PostMapping
-    @PreAuthorize("@orgSecurity.canWritePieces(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.canWritePieces(#orgSlug, principal)")
     public ResponseEntity<PieceResponseDto> create(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @RequestBody CreatePieceDto dto
     ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         Piece piece = pieceService.create(orgId, dto);
         return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(piece));
     }
 
     @GetMapping
-    @PreAuthorize("@orgSecurity.canReadOrgContent(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.canReadOrgContent(#orgSlug, principal)")
     public ResponseEntity<Page<PieceListItemDto>> list(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @RequestParam(required = false) Integer typeId,
             @RequestParam(required = false) Integer locationId,
             @RequestParam(required = false) Integer ownerUserId,
@@ -62,37 +70,41 @@ public class PieceController {
             @RequestParam(required = false) String q,
             @PageableDefault(size = 20, sort = "updatedAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         Page<Piece> page = pieceService.list(orgId, typeId, locationId, ownerUserId, status, q, pageable);
         return ResponseEntity.ok(page.map(PieceListItemDto::from));
     }
 
     @GetMapping("/{pieceId}")
-    @PreAuthorize("@orgSecurity.canReadOrgContent(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.canReadOrgContent(#orgSlug, principal)")
     public ResponseEntity<PieceResponseDto> getOne(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @PathVariable Integer pieceId
     ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         Piece piece = pieceService.findInOrg(orgId, pieceId);
         return ResponseEntity.ok(toResponse(piece));
     }
 
     @PatchMapping("/{pieceId}")
-    @PreAuthorize("@orgSecurity.canWritePieces(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.canWritePieces(#orgSlug, principal)")
     public ResponseEntity<PieceResponseDto> update(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @PathVariable Integer pieceId,
             @RequestBody UpdatePieceDto dto
     ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         Piece piece = pieceService.update(orgId, pieceId, dto);
         return ResponseEntity.ok(toResponse(piece));
     }
 
     @DeleteMapping("/{pieceId}")
-    @PreAuthorize("@orgSecurity.canWritePieces(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.canWritePieces(#orgSlug, principal)")
     public ResponseEntity<Void> delete(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @PathVariable Integer pieceId
     ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         pieceService.softDelete(orgId, pieceId);
         return ResponseEntity.noContent().build();
     }

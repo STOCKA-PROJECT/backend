@@ -44,9 +44,20 @@ import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.entity.OrganizationInvitation;
 import com.stocka.backend.modules.organizations.entity.OrganizationMember;
 import com.stocka.backend.modules.organizations.entity.OrganizationRoleEnum;
+import com.stocka.backend.modules.organizations.entity.OrganizationSlugHistory;
+import com.stocka.backend.modules.locations.repository.LocationRepository;
+import com.stocka.backend.modules.notifications.preferences.repository.NotificationPreferenceRepository;
 import com.stocka.backend.modules.organizations.repository.OrganizationInvitationRepository;
 import com.stocka.backend.modules.organizations.repository.OrganizationMemberRepository;
+import com.stocka.backend.modules.organizations.repository.OrganizationPieceAttributeRepository;
 import com.stocka.backend.modules.organizations.repository.OrganizationRepository;
+import com.stocka.backend.modules.organizations.repository.OrganizationSlugHistoryRepository;
+import com.stocka.backend.modules.pieces.repository.PieceAttachmentRepository;
+import com.stocka.backend.modules.pieces.repository.PieceAttributeValueRepository;
+import com.stocka.backend.modules.pieces.repository.PieceOrganizationAttributeValueRepository;
+import com.stocka.backend.modules.pieces.repository.PieceRepository;
+import com.stocka.backend.modules.piecetypes.repository.PieceTypeAttributeRepository;
+import com.stocka.backend.modules.piecetypes.repository.PieceTypeRepository;
 import com.stocka.backend.modules.users.entity.User;
 
 @ExtendWith(MockitoExtension.class)
@@ -56,8 +67,18 @@ class OrganizationServiceTest {
     @Mock private OrganizationRepository organizationRepository;
     @Mock private OrganizationMemberRepository memberRepository;
     @Mock private OrganizationInvitationRepository invitationRepository;
+    @Mock private OrganizationSlugHistoryRepository slugHistoryRepository;
     @Mock private OrganizationAuditService auditService;
     @Spy private OrganizationQuotaProperties quotas = new OrganizationQuotaProperties();
+    @Mock private PieceRepository pieceRepository;
+    @Mock private PieceAttachmentRepository pieceAttachmentRepository;
+    @Mock private PieceAttributeValueRepository pieceAttributeValueRepository;
+    @Mock private PieceOrganizationAttributeValueRepository pieceOrganizationAttributeValueRepository;
+    @Mock private LocationRepository locationRepository;
+    @Mock private PieceTypeRepository pieceTypeRepository;
+    @Mock private PieceTypeAttributeRepository pieceTypeAttributeRepository;
+    @Mock private OrganizationPieceAttributeRepository organizationPieceAttributeRepository;
+    @Mock private NotificationPreferenceRepository notificationPreferenceRepository;
 
     @InjectMocks private OrganizationService sut;
 
@@ -348,27 +369,49 @@ class OrganizationServiceTest {
     class SoftDelete {
 
         @Test
-        @DisplayName("should soft-delete org, members and cancel pending invitations")
+        @DisplayName("should soft-delete org, members, cancel pending invitations, clear slug history and release the slug")
         void should_softDeleteOrgMembersAndInvitations() {
-            Organization org = new Organization().setId(1);
+            Organization org = new Organization().setId(1).setSlug("acme");
             when(organizationRepository.findById(1)).thenReturn(Optional.of(org));
             OrganizationMember m1 = new OrganizationMember().setId(10);
             OrganizationMember m2 = new OrganizationMember().setId(11);
             when(memberRepository.findByOrganization(org)).thenReturn(List.of(m1, m2));
             OrganizationInvitation inv = new OrganizationInvitation().setId(20).setStatus(InvitationStatus.PENDING);
-            when(invitationRepository.findByOrganizationAndStatus(org, InvitationStatus.PENDING))
-                    .thenReturn(List.of(inv));
+            when(invitationRepository.findByOrganization(org)).thenReturn(List.of(inv));
 
             sut.softDelete(1, actor);
 
             assertNotNull(m1.getDeletedAt());
             assertNotNull(m2.getDeletedAt());
             verify(memberRepository, times(2)).save(any(OrganizationMember.class));
+            // PENDING -> CANCELLED + deletedAt is the audit-friendly path; closed invitations
+            // (ACCEPTED/REJECTED/EXPIRED/CANCELLED) only receive deletedAt because their status
+            // already documents how they ended.
             assertEquals(InvitationStatus.CANCELLED, inv.getStatus());
+            assertNotNull(inv.getDeletedAt());
             verify(invitationRepository, atLeastOnce()).save(inv);
+            // Cascade soft-delete to every child whose FK to Organization is non-nullable.
+            verify(pieceAttributeValueRepository).deleteByOrganization(org);
+            verify(pieceOrganizationAttributeValueRepository).deleteByOrganization(org);
+            verify(pieceAttachmentRepository).softDeleteByOrganization(org);
+            verify(pieceTypeAttributeRepository).softDeleteByOrganization(org);
+            verify(pieceTypeRepository).softDeleteByOrganization(org);
+            verify(organizationPieceAttributeRepository).softDeleteByOrganization(org);
+            verify(pieceRepository).softDeleteByOrganization(org);
+            verify(locationRepository).softDeleteByOrganization(org);
+            verify(notificationPreferenceRepository).softDeleteByOrganization(org);
             assertNotNull(org.getDeletedAt());
             verify(organizationRepository, atLeastOnce()).save(org);
-            verify(auditService).log(eq(org), eq(actor), eq(AuditAction.ORG_DELETED), eq(null), eq((Map<String, Object>) null));
+            verify(slugHistoryRepository).deleteByOrganization(org);
+            // Active slug is rewritten to a marker that fails SLUG_PATTERN so it cannot collide
+            // with a real slug and other orgs can now claim "acme".
+            assertTrue(org.getSlug().startsWith("__deleted_1_"));
+            assertTrue(org.getSlug().endsWith("__"));
+            assertFalse(org.getSlug().equals("acme"));
+
+            ArgumentCaptor<Map<String, Object>> oldValues = ArgumentCaptor.forClass(Map.class);
+            verify(auditService).log(eq(org), eq(actor), eq(AuditAction.ORG_DELETED), eq(null), oldValues.capture());
+            assertEquals("acme", oldValues.getValue().get("slug"));
         }
     }
 }

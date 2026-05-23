@@ -18,10 +18,13 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.stocka.backend.modules.common.dto.AvailabilityResponse;
 import com.stocka.backend.modules.organizations.dto.CreateOrganizationDto;
+import com.stocka.backend.modules.organizations.dto.OrganizationLookupResponseDto;
 import com.stocka.backend.modules.organizations.dto.OrganizationResponseDto;
 import com.stocka.backend.modules.organizations.dto.UpdateOrganizationDto;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.entity.OrganizationRoleEnum;
+import com.stocka.backend.modules.organizations.service.OrganizationResolver;
+import com.stocka.backend.modules.organizations.service.OrganizationResolver.Resolved;
 import com.stocka.backend.modules.organizations.service.OrganizationService;
 import com.stocka.backend.modules.users.entity.User;
 
@@ -29,9 +32,11 @@ import com.stocka.backend.modules.users.entity.User;
 @RequestMapping("/organizations")
 public class OrganizationController {
     private final OrganizationService organizationService;
+    private final OrganizationResolver orgResolver;
 
-    public OrganizationController(OrganizationService organizationService) {
+    public OrganizationController(OrganizationService organizationService, OrganizationResolver orgResolver) {
         this.organizationService = organizationService;
+        this.orgResolver = orgResolver;
     }
 
     @PostMapping
@@ -65,32 +70,59 @@ public class OrganizationController {
         return ResponseEntity.ok(orgs);
     }
 
-    @GetMapping("/{orgId}")
-    @PreAuthorize("@orgSecurity.isMember(#orgId, principal)")
-    public ResponseEntity<OrganizationResponseDto> getOne(@PathVariable Integer orgId) {
+    /**
+     * Resolves an organization by slug for the frontend router. Accepts both current and
+     * historical slugs so deep links generated before a slug rename can be redirected.
+     *
+     * @param slug current or historical slug
+     * @return the organization with the caller's role plus the up-to-date slug
+     */
+    @GetMapping("/by-slug/{slug}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<OrganizationLookupResponseDto> lookupBySlug(@PathVariable String slug) {
         User actor = currentUser();
-        Organization org = organizationService.findById(orgId);
+        Resolved resolved = orgResolver.resolve(slug);
+        Organization org = resolved.organization();
+        OrganizationRoleEnum role = organizationService.getCurrentUserRole(org, actor).orElse(null);
+        if (role == null && !com.stocka.backend.modules.organizations.security.OrganizationSecurity.isGlobalAdmin(actor)) {
+            // Hide existence: a non-member should not be able to probe slugs.
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(new OrganizationLookupResponseDto(
+                OrganizationResponseDto.from(org, role),
+                resolved.historical(),
+                resolved.currentSlug()
+        ));
+    }
+
+    @GetMapping("/{orgSlug}")
+    @PreAuthorize("@orgSecurity.isMember(#orgSlug, principal)")
+    public ResponseEntity<OrganizationResponseDto> getOne(@PathVariable String orgSlug) {
+        User actor = currentUser();
+        Organization org = orgResolver.requireCurrent(orgSlug);
         return ResponseEntity.ok(OrganizationResponseDto.from(org,
                 organizationService.getCurrentUserRole(org, actor).orElse(null)));
     }
 
-    @PatchMapping("/{orgId}")
-    @PreAuthorize("@orgSecurity.isOwner(#orgId, principal)")
+    @PatchMapping("/{orgSlug}")
+    @PreAuthorize("@orgSecurity.isOwner(#orgSlug, principal)")
     public ResponseEntity<OrganizationResponseDto> update(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @RequestBody UpdateOrganizationDto dto
     ) {
         User actor = currentUser();
-        Organization org = organizationService.update(orgId, dto, actor);
+        Organization current = orgResolver.requireCurrent(orgSlug);
+        Organization org = organizationService.update(current.getId(), dto, actor);
         return ResponseEntity.ok(OrganizationResponseDto.from(org,
                 organizationService.getCurrentUserRole(org, actor).orElse(null)));
     }
 
-    @DeleteMapping("/{orgId}")
-    @PreAuthorize("@orgSecurity.isOwner(#orgId, principal)")
-    public ResponseEntity<Void> delete(@PathVariable Integer orgId) {
+    @DeleteMapping("/{orgSlug}")
+    @PreAuthorize("@orgSecurity.isOwner(#orgSlug, principal)")
+    public ResponseEntity<Void> delete(@PathVariable String orgSlug) {
         User actor = currentUser();
-        organizationService.softDelete(orgId, actor);
+        Organization current = orgResolver.requireCurrent(orgSlug);
+        organizationService.softDelete(current.getId(), actor);
         return ResponseEntity.noContent().build();
     }
 

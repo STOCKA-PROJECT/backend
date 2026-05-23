@@ -7,7 +7,6 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -30,7 +29,9 @@ import com.stocka.backend.modules.notifications.events.ResourceKind;
 import com.stocka.backend.modules.notifications.events.ResourceLifecycleEvent;
 import com.stocka.backend.modules.notifications.preferences.entity.LifecycleAction;
 import com.stocka.backend.modules.organizations.entity.Organization;
+import com.stocka.backend.modules.organizations.entity.OrganizationMember;
 import com.stocka.backend.modules.organizations.entity.OrganizationPieceAttribute;
+import com.stocka.backend.modules.organizations.entity.OrganizationRoleEnum;
 import com.stocka.backend.modules.organizations.repository.OrganizationMemberRepository;
 import com.stocka.backend.modules.organizations.repository.OrganizationPieceAttributeRepository;
 import com.stocka.backend.modules.organizations.service.OrganizationQuotaProperties;
@@ -157,7 +158,7 @@ public class PieceService {
                     OrganizationPieceAttribute attribute = requireOrgAttributeInPool(orgPool, input.attributeId());
                     String normalized = validationRegistry.validate(
                             attribute.getType(), attribute.getValidatorsJson(),
-                            attribute.isRequired(), input.value());
+                            attribute.isRequired(), input.value(), org);
                     if (normalized != null) {
                         PieceOrganizationAttributeValue value = new PieceOrganizationAttributeValue()
                                 .setPiece(piece)
@@ -167,7 +168,7 @@ public class PieceService {
                     }
                 } else {
                     PieceTypeAttribute attribute = requireAttributeInPool(typePool, input.attributeId());
-                    String normalized = validationRegistry.validate(attribute, input.value());
+                    String normalized = validationRegistry.validate(attribute, input.value(), org);
                     if (normalized != null) {
                         PieceAttributeValue value = new PieceAttributeValue()
                                 .setPiece(piece)
@@ -349,7 +350,7 @@ public class PieceService {
                     OrganizationPieceAttribute attribute = requireOrgAttributeInPool(orgPool, input.attributeId());
                     String normalized = validationRegistry.validate(
                             attribute.getType(), attribute.getValidatorsJson(),
-                            attribute.isRequired(), input.value());
+                            attribute.isRequired(), input.value(), org);
                     PieceOrganizationAttributeValue existing = currentOrgValues.get(attribute.getId());
                     String oldValue = existing == null ? null : existing.getValue();
                     if (java.util.Objects.equals(oldValue, normalized)) continue;
@@ -373,7 +374,7 @@ public class PieceService {
                     mutated = true;
                 } else {
                     PieceTypeAttribute attribute = requireAttributeInPool(typePool, input.attributeId());
-                    String normalized = validationRegistry.validate(attribute, input.value());
+                    String normalized = validationRegistry.validate(attribute, input.value(), org);
                     PieceAttributeValue existing = currentTypeValues.get(attribute.getId());
                     String oldValue = existing == null ? null : existing.getValue();
                     if (java.util.Objects.equals(oldValue, normalized)) continue;
@@ -417,6 +418,14 @@ public class PieceService {
     public void softDelete(Integer orgId, Integer pieceId) {
         Piece piece = findInOrg(orgId, pieceId);
         User actor = currentUser();
+        // Cascade soft-delete to attachments and hard-delete attribute values. Without this,
+        // attachments (EAGER, non-nullable FK to Piece) would dangle and any future hydration
+        // of a value would explode under the piece's @SQLRestriction("deleted_at IS NULL").
+        // Attachment blobs in R2 are NOT removed here so a future organization restore can
+        // still recover them; only the explicit per-attachment delete drops the file.
+        attachmentRepository.softDeleteByPiece(piece);
+        valueRepository.deleteByPiece(piece);
+        orgValueRepository.deleteByPiece(piece);
         piece.setDeletedAt(LocalDateTime.now());
         pieceRepository.save(piece);
         historyService.recordDeleted(piece, actor);
@@ -623,10 +632,12 @@ public class PieceService {
         User user = userRepository.findById(ownerUserId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "El propietario no existe"));
-        Optional<?> membership = memberRepository.findByUserAndOrganization(user, org);
-        if (membership.isEmpty()) {
+        OrganizationMember membership = memberRepository.findByUserAndOrganization(user, org)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "El propietario debe ser miembro de la organización"));
+        if (membership.getRole() == OrganizationRoleEnum.SPECTATOR) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "El propietario debe ser miembro de la organización");
+                    "Un espectador no puede ser propietario de un artículo");
         }
         return user;
     }

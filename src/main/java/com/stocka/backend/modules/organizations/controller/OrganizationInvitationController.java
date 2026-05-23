@@ -18,30 +18,38 @@ import com.stocka.backend.modules.organizations.dto.CreateInvitationDto;
 import com.stocka.backend.modules.organizations.dto.InvitationResponseDto;
 import com.stocka.backend.modules.organizations.entity.OrganizationInvitation;
 import com.stocka.backend.modules.organizations.service.OrganizationInvitationService;
+import com.stocka.backend.modules.organizations.service.OrganizationResolver;
 import com.stocka.backend.modules.users.entity.User;
 
 @RestController
-@RequestMapping("/organizations/{orgId}/invitations")
+@RequestMapping("/organizations/{orgSlug}/invitations")
 public class OrganizationInvitationController {
     private final OrganizationInvitationService invitationService;
+    private final OrganizationResolver orgResolver;
 
-    public OrganizationInvitationController(OrganizationInvitationService invitationService) {
+    public OrganizationInvitationController(
+            OrganizationInvitationService invitationService,
+            OrganizationResolver orgResolver
+    ) {
         this.invitationService = invitationService;
+        this.orgResolver = orgResolver;
     }
 
     @PostMapping
-    @PreAuthorize("@orgSecurity.isOwnerOrManager(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.isOwnerOrManager(#orgSlug, principal)")
     public ResponseEntity<InvitationResponseDto> create(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @RequestBody CreateInvitationDto dto
     ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         OrganizationInvitation invitation = invitationService.createInvitation(orgId, dto, currentUser());
         return ResponseEntity.ok(InvitationResponseDto.from(invitation, true));
     }
 
     @GetMapping
-    @PreAuthorize("@orgSecurity.isOwnerOrManager(#orgId, principal)")
-    public ResponseEntity<List<InvitationResponseDto>> listPending(@PathVariable Integer orgId) {
+    @PreAuthorize("@orgSecurity.isOwnerOrManager(#orgSlug, principal)")
+    public ResponseEntity<List<InvitationResponseDto>> listPending(@PathVariable String orgSlug) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         List<InvitationResponseDto> pending = invitationService.listPendingInvitations(orgId).stream()
                 .map(i -> InvitationResponseDto.from(i, true))
                 .toList();
@@ -49,12 +57,13 @@ public class OrganizationInvitationController {
     }
 
     @DeleteMapping("/{invitationId}")
-    @PreAuthorize("@orgSecurity.isOwnerOrManager(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.isOwnerOrManager(#orgSlug, principal)")
     public ResponseEntity<Void> cancel(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @PathVariable Integer invitationId
     ) {
-        invitationService.cancelInvitation(invitationId, currentUser());
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
+        invitationService.cancelInvitation(orgId, invitationId, currentUser());
         return ResponseEntity.noContent().build();
     }
 

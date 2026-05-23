@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.stocka.backend.modules.organizations.service.OrganizationResolver;
 import com.stocka.backend.modules.piecetypes.dto.CreatePieceTypeDto;
 import com.stocka.backend.modules.piecetypes.dto.PieceTypeAttributeResponseDto;
 import com.stocka.backend.modules.piecetypes.dto.PieceTypeResponseDto;
@@ -24,29 +25,37 @@ import com.stocka.backend.modules.piecetypes.service.PieceTypeService;
 import com.stocka.backend.modules.piecetypes.service.ValidatorsJsonCodec;
 
 @RestController
-@RequestMapping("/organizations/{orgId}/piece-types")
+@RequestMapping("/organizations/{orgSlug}/piece-types")
 public class PieceTypeController {
     private final PieceTypeService pieceTypeService;
     private final ValidatorsJsonCodec validatorsCodec;
+    private final OrganizationResolver orgResolver;
 
-    public PieceTypeController(PieceTypeService pieceTypeService, ValidatorsJsonCodec validatorsCodec) {
+    public PieceTypeController(
+            PieceTypeService pieceTypeService,
+            ValidatorsJsonCodec validatorsCodec,
+            OrganizationResolver orgResolver
+    ) {
         this.pieceTypeService = pieceTypeService;
         this.validatorsCodec = validatorsCodec;
+        this.orgResolver = orgResolver;
     }
 
     @PostMapping
-    @PreAuthorize("@orgSecurity.canManageOrgContent(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.canManageOrgContent(#orgSlug, principal)")
     public ResponseEntity<PieceTypeResponseDto> create(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @RequestBody CreatePieceTypeDto dto
     ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         PieceType type = pieceTypeService.create(orgId, dto);
         return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(type));
     }
 
     @GetMapping
-    @PreAuthorize("@orgSecurity.canReadOrgContent(#orgId, principal)")
-    public ResponseEntity<List<PieceTypeResponseDto>> list(@PathVariable Integer orgId) {
+    @PreAuthorize("@orgSecurity.canReadOrgContent(#orgSlug, principal)")
+    public ResponseEntity<List<PieceTypeResponseDto>> list(@PathVariable String orgSlug) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         List<PieceTypeResponseDto> out = pieceTypeService.listAll(orgId).stream()
                 .map(this::toResponse)
                 .toList();
@@ -54,30 +63,33 @@ public class PieceTypeController {
     }
 
     @GetMapping("/{typeId}")
-    @PreAuthorize("@orgSecurity.canReadOrgContent(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.canReadOrgContent(#orgSlug, principal)")
     public ResponseEntity<PieceTypeResponseDto> getOne(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @PathVariable Integer typeId
     ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         return ResponseEntity.ok(toResponse(pieceTypeService.findInOrg(orgId, typeId)));
     }
 
     @PatchMapping("/{typeId}")
-    @PreAuthorize("@orgSecurity.canManageOrgContent(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.canManageOrgContent(#orgSlug, principal)")
     public ResponseEntity<PieceTypeResponseDto> update(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @PathVariable Integer typeId,
             @RequestBody UpdatePieceTypeDto dto
     ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         return ResponseEntity.ok(toResponse(pieceTypeService.update(orgId, typeId, dto)));
     }
 
     @DeleteMapping("/{typeId}")
-    @PreAuthorize("@orgSecurity.canManageOrgContent(#orgId, principal)")
+    @PreAuthorize("@orgSecurity.canManageOrgContent(#orgSlug, principal)")
     public ResponseEntity<Void> delete(
-            @PathVariable Integer orgId,
+            @PathVariable String orgSlug,
             @PathVariable Integer typeId
     ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         pieceTypeService.softDelete(orgId, typeId);
         return ResponseEntity.noContent().build();
     }

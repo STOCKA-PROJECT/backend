@@ -90,7 +90,7 @@ public class PendingResourceEventDispatcher {
         String actorName = resolveActorName(row.getActorUserId());
         String resourceName = row.getResourceName() == null ? "" : row.getResourceName();
         String orgName = org.getName();
-        String resourceUrl = buildResourceUrl(org.getId(), row.getResourceKind(), row.getResourceId(), effective);
+        String resourceUrl = buildResourceUrl(org.getSlug(), row.getResourceKind(), row.getResourceId(), effective);
 
         for (OrganizationMember member : memberRepository.findByOrganization(org)) {
             User recipient = member.getUser();
@@ -193,24 +193,23 @@ public class PendingResourceEventDispatcher {
     }
 
     /**
-     * Builds the absolute URL that the email CTA points to. The active organization is held in
-     * frontend state (no slug in the URL), so the link carries {@code ?org={id}} as a query
-     * param: a dashboard-wide middleware reads it and switches the active org before the page
-     * runs its fetches, so the deep link works even when the recipient has another org open.
-     *
-     * <p>Locations and piece types only have list pages today; pieces have a per-id detail
-     * page. A DELETED resource has no detail to link to and falls back to the dashboard root.
+     * Builds the absolute URL that the email CTA points to. The active organization lives in
+     * the path as a slug ({@code /dashboard/{slug}/...}), so the deep link is self-contained
+     * and works regardless of which organization the recipient currently has open. A DELETED
+     * resource has no detail to link to and falls back to the org dashboard root.
      */
-    private String buildResourceUrl(Integer orgId, ResourceKind kind, Integer resourceId, LifecycleAction effective) {
-        String orgQuery = orgId == null ? "" : "?org=" + orgId;
+    private String buildResourceUrl(String orgSlug, ResourceKind kind, Integer resourceId, LifecycleAction effective) {
+        if (orgSlug == null || orgSlug.isBlank()) {
+            return frontendBaseUrl + "/dashboard";
+        }
+        String base = frontendBaseUrl + "/dashboard/" + orgSlug;
         if (effective == LifecycleAction.DELETED) {
-            return frontendBaseUrl + "/dashboard" + orgQuery;
+            return base;
         }
         return switch (kind) {
-            case PIECE -> frontendBaseUrl + "/dashboard/articulos/"
-                    + (resourceId == null ? "" : resourceId) + orgQuery;
-            case LOCATION -> frontendBaseUrl + "/dashboard/ubicaciones" + orgQuery;
-            case PIECE_TYPE -> frontendBaseUrl + "/dashboard/tipos-articulos" + orgQuery;
+            case PIECE -> base + "/articulos/" + (resourceId == null ? "" : resourceId);
+            case LOCATION -> base + "/ubicaciones";
+            case PIECE_TYPE -> base + "/tipos-articulos";
         };
     }
 

@@ -17,5 +17,6 @@ public enum AttributeType {
     SELECT,
     MULTI_SELECT,
     URL,
-    EMAIL
+    EMAIL,
+    MEMBER
 }

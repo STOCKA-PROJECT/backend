@@ -1,10 +1,13 @@
 package com.stocka.backend.modules.users.service;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -12,34 +15,62 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.stocka.backend.modules.auth.repository.EmailVerificationTokenRepository;
+import com.stocka.backend.modules.auth.repository.PasswordResetTokenRepository;
+import com.stocka.backend.modules.common.dto.AvailabilityResponse;
+import com.stocka.backend.modules.common.dto.AvailabilityResponse.Reason;
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.notifications.preferences.service.NotificationPreferenceService;
+import com.stocka.backend.modules.organizations.entity.OrganizationInvitation;
 import com.stocka.backend.modules.organizations.entity.OrganizationMember;
+import com.stocka.backend.modules.organizations.repository.OrganizationInvitationRepository;
 import com.stocka.backend.modules.organizations.repository.OrganizationMemberRepository;
 import com.stocka.backend.modules.users.dto.ChangePasswordDto;
 import com.stocka.backend.modules.users.dto.UpdateUserProfileDto;
 import com.stocka.backend.modules.users.entity.Language;
 import com.stocka.backend.modules.users.entity.User;
+import com.stocka.backend.modules.users.entity.UserUsernameHistory;
 import com.stocka.backend.modules.users.repository.UserRepository;
+import com.stocka.backend.modules.users.repository.UserUsernameHistoryRepository;
 
 @Service
 public class UserService {
 
     private static final int MIN_PASSWORD_LENGTH = 8;
 
+    static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-z0-9]{3,24}$");
+
+    static final Set<String> RESERVED_USERNAMES = Set.of(
+            "admin", "api", "root", "support", "system", "stocka",
+            "auth", "users", "www", "app", "health",
+            "null", "undefined"
+    );
+
     private final UserRepository userRepository;
+    private final UserUsernameHistoryRepository usernameHistoryRepository;
     private final OrganizationMemberRepository memberRepository;
+    private final OrganizationInvitationRepository invitationRepository;
+    private final EmailVerificationTokenRepository emailVerificationTokenRepository;
+    private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final NotificationPreferenceService notificationPreferenceService;
 
     public UserService(
             UserRepository userRepository,
+            UserUsernameHistoryRepository usernameHistoryRepository,
             OrganizationMemberRepository memberRepository,
+            OrganizationInvitationRepository invitationRepository,
+            EmailVerificationTokenRepository emailVerificationTokenRepository,
+            PasswordResetTokenRepository passwordResetTokenRepository,
             PasswordEncoder passwordEncoder,
             NotificationPreferenceService notificationPreferenceService) {
         this.userRepository = userRepository;
+        this.usernameHistoryRepository = usernameHistoryRepository;
         this.memberRepository = memberRepository;
+        this.invitationRepository = invitationRepository;
+        this.emailVerificationTokenRepository = emailVerificationTokenRepository;
+        this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.notificationPreferenceService = notificationPreferenceService;
     }
@@ -59,14 +90,34 @@ public class UserService {
                 memberRepository.save(m);
             }
         }
+        // Invitations originated by this user remain pointing to a User row that will be
+        // filtered by @SQLRestriction. The OrganizationInvitation.invitedBy FK is EAGER and
+        // non-nullable, so listing those invitations would otherwise blow up. Soft-delete
+        // them on the way out so they disappear cleanly from any future query.
+        for (OrganizationInvitation inv : invitationRepository.findByInvitedBy(user)) {
+            inv.setDeletedAt(now);
+            invitationRepository.save(inv);
+        }
+        // Email-verification and password-reset tokens have a User FK that is EAGER and
+        // non-nullable. They are short-lived and have no archival value once the user is
+        // gone, so we hard-delete them.
+        emailVerificationTokenRepository.deleteAllByUser(user);
+        passwordResetTokenRepository.deleteAllByUser(user);
         // Notification preferences are bound to (user, org) pairs; with the user gone
         // they are dead data — soft-delete them so a future restoration does not
         // resurrect stale opt-ins.
         notificationPreferenceService.softDeleteAllFor(user);
+
+        // Release the username so anyone can claim it after the user is gone: drop every history
+        // row (frees previously used usernames) and rename the active username to a marker that
+        // fails USERNAME_PATTERN so it cannot collide with a real one. The row stays for audit.
+        usernameHistoryRepository.deleteByUser(user);
+        user.setUsername("__deleted_" + user.getId() + "_" + now.toEpochSecond(ZoneOffset.UTC) + "__");
         user.setDeletedAt(now);
         userRepository.save(user);
     }
 
+    @Transactional
     public User updateProfile(User actor, UpdateUserProfileDto dto) {
         if (dto.getEmail() != null && !dto.getEmail().equals(actor.getEmail())) {
             Optional<User> existing = userRepository.findByEmail(dto.getEmail());
@@ -77,11 +128,10 @@ public class UserService {
             actor.setEmailVerified(false);
         }
 
+        String previousUsername = null;
         if (dto.getUsername() != null && !dto.getUsername().equals(actor.getUsernameValue())) {
-            Optional<User> existing = userRepository.findByUsername(dto.getUsername());
-            if (existing.isPresent() && !existing.get().getId().equals(actor.getId())) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe un usuario con ese username");
-            }
+            validateUsername(dto.getUsername(), actor.getId());
+            previousUsername = actor.getUsernameValue();
             actor.setUsername(dto.getUsername());
         }
 
@@ -97,7 +147,39 @@ public class UserService {
             actor.setLanguage(Language.fromString(dto.getLanguage()));
         }
 
-        return userRepository.save(actor);
+        User saved = userRepository.save(actor);
+        if (previousUsername != null) {
+            usernameHistoryRepository.save(new UserUsernameHistory()
+                    .setUser(saved)
+                    .setOldUsername(previousUsername));
+        }
+        return saved;
+    }
+
+    /**
+     * Checks whether the given username can be used to register a new user. A username is
+     * available when it has the right format, is not reserved, no active user holds it and no
+     * history entry pointing to an active user matches it. History rows whose owner is
+     * soft-deleted are transparently hidden by the {@code @SQLRestriction} on {@link User},
+     * which encodes the "username is released when the owner is gone" policy.
+     *
+     * @param username candidate username; may be {@code null}
+     * @return an {@link AvailabilityResponse} describing the result; never {@code null}
+     */
+    public AvailabilityResponse checkUsernameAvailability(String username) {
+        if (username == null || !USERNAME_PATTERN.matcher(username).matches()) {
+            return AvailabilityResponse.unavailable(Reason.INVALID_FORMAT);
+        }
+        if (RESERVED_USERNAMES.contains(username)) {
+            return AvailabilityResponse.unavailable(Reason.RESERVED);
+        }
+        if (userRepository.existsByUsername(username)) {
+            return AvailabilityResponse.unavailable(Reason.TAKEN);
+        }
+        if (usernameHistoryRepository.findByOldUsername(username).isPresent()) {
+            return AvailabilityResponse.unavailable(Reason.TAKEN);
+        }
+        return AvailabilityResponse.ok();
     }
 
     /**
@@ -158,5 +240,27 @@ public class UserService {
         actor.setPassword(passwordEncoder.encode(newPassword));
         actor.setPasswordChangedAt(LocalDateTime.now());
         userRepository.save(actor);
+    }
+
+    private void validateUsername(String username, Integer currentUserId) {
+        if (username == null || !USERNAME_PATTERN.matcher(username).matches()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.USERS_USERNAME_INVALID);
+        }
+        if (RESERVED_USERNAMES.contains(username)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.USERS_USERNAME_RESERVED);
+        }
+        Optional<User> existing = userRepository.findByUsername(username);
+        if (existing.isPresent() && !existing.get().getId().equals(currentUserId)) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.USERS_USERNAME_TAKEN);
+        }
+        // Reject usernames that another (still active) user used in the past. History rows whose
+        // owner is soft-deleted are hidden by @SQLRestriction on User, so released slots fall
+        // through to "available".
+        usernameHistoryRepository.findByOldUsername(username).ifPresent(history -> {
+            Integer ownerId = history.getUser().getId();
+            if (!ownerId.equals(currentUserId)) {
+                throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.USERS_USERNAME_TAKEN);
+            }
+        });
     }
 }

@@ -70,6 +70,7 @@ class PiecesFeatureIntegrationTest {
     private String spectatorToken;
     private String outsiderToken;
     private Integer orgId;
+    private String orgSlug;
     private Integer managerUserId;
     private Integer userUserId;
     private Integer spectatorUserId;
@@ -106,6 +107,7 @@ class PiecesFeatureIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         Map<?, ?> body = om.readValue(r.getResponse().getContentAsString(), Map.class);
+        orgSlug = (String) body.get("slug");
         return (Integer) body.get("id");
     }
 
@@ -128,7 +130,7 @@ class PiecesFeatureIntegrationTest {
         Map<String, Object> body = new java.util.HashMap<>();
         body.put("name", name);
         if (parentId != null) body.put("parentId", parentId);
-        MvcResult r = mockMvc.perform(post("/organizations/" + orgId + "/locations")
+        MvcResult r = mockMvc.perform(post("/organizations/" + orgSlug + "/locations")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(om.writeValueAsString(body)))
@@ -143,7 +145,7 @@ class PiecesFeatureIntegrationTest {
                 "type", "TEXT", "required", withRequiredAttr
         );
         Map<String, Object> body = Map.of("name", name, "attributes", List.of(attr));
-        MvcResult r = mockMvc.perform(post("/organizations/" + orgId + "/piece-types")
+        MvcResult r = mockMvc.perform(post("/organizations/" + orgSlug + "/piece-types")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(om.writeValueAsString(body)))
@@ -153,7 +155,7 @@ class PiecesFeatureIntegrationTest {
     }
 
     private Integer firstAttributeIdOfType(Integer typeId) throws Exception {
-        MvcResult r = mockMvc.perform(get("/organizations/" + orgId + "/piece-types/" + typeId)
+        MvcResult r = mockMvc.perform(get("/organizations/" + orgSlug + "/piece-types/" + typeId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
                 .andReturn();
@@ -170,7 +172,7 @@ class PiecesFeatureIntegrationTest {
         if (attributeId != null) {
             body.put("attributeValues", List.of(Map.of("attributeId", attributeId, "value", value)));
         }
-        MvcResult r = mockMvc.perform(post("/organizations/" + orgId + "/pieces")
+        MvcResult r = mockMvc.perform(post("/organizations/" + orgSlug + "/pieces")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(om.writeValueAsString(body)))
@@ -213,19 +215,19 @@ class PiecesFeatureIntegrationTest {
         void create_permissions() throws Exception {
             createLocationAs(ownerToken, "Warehouse", null);
 
-            mockMvc.perform(post("/organizations/" + orgId + "/locations")
+            mockMvc.perform(post("/organizations/" + orgSlug + "/locations")
                             .header("Authorization", "Bearer " + userToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of("name", "Forbidden"))))
                     .andExpect(status().isForbidden());
 
-            mockMvc.perform(post("/organizations/" + orgId + "/locations")
+            mockMvc.perform(post("/organizations/" + orgSlug + "/locations")
                             .header("Authorization", "Bearer " + spectatorToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of("name", "Forbidden"))))
                     .andExpect(status().isForbidden());
 
-            mockMvc.perform(post("/organizations/" + orgId + "/locations")
+            mockMvc.perform(post("/organizations/" + orgSlug + "/locations")
                             .header("Authorization", "Bearer " + outsiderToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of("name", "Forbidden"))))
@@ -235,7 +237,7 @@ class PiecesFeatureIntegrationTest {
         @Test
         @DisplayName("blank name returns 400")
         void create_blankName_returns400() throws Exception {
-            mockMvc.perform(post("/organizations/" + orgId + "/locations")
+            mockMvc.perform(post("/organizations/" + orgSlug + "/locations")
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of("name", "  "))))
@@ -248,7 +250,7 @@ class PiecesFeatureIntegrationTest {
             Integer root = createLocationAs(ownerToken, "Warehouse", null);
             createLocationAs(ownerToken, "Shelf A", root);
 
-            mockMvc.perform(get("/organizations/" + orgId + "/locations/tree")
+            mockMvc.perform(get("/organizations/" + orgSlug + "/locations/tree")
                             .header("Authorization", "Bearer " + spectatorToken))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.length()").value(1))
@@ -262,7 +264,7 @@ class PiecesFeatureIntegrationTest {
             Integer root = createLocationAs(ownerToken, "Warehouse", null);
             Integer child = createLocationAs(ownerToken, "Shelf A", root);
 
-            mockMvc.perform(patch("/organizations/" + orgId + "/locations/" + root)
+            mockMvc.perform(patch("/organizations/" + orgSlug + "/locations/" + root)
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of("parentId", child))))
@@ -275,7 +277,7 @@ class PiecesFeatureIntegrationTest {
             Integer root = createLocationAs(ownerToken, "Warehouse", null);
             createLocationAs(ownerToken, "Shelf A", root);
 
-            mockMvc.perform(delete("/organizations/" + orgId + "/locations/" + root)
+            mockMvc.perform(delete("/organizations/" + orgSlug + "/locations/" + root)
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isBadRequest());
         }
@@ -284,7 +286,7 @@ class PiecesFeatureIntegrationTest {
         @DisplayName("delete is allowed when location is empty")
         void delete_allowed_whenEmpty() throws Exception {
             Integer leaf = createLocationAs(ownerToken, "Standalone", null);
-            mockMvc.perform(delete("/organizations/" + orgId + "/locations/" + leaf)
+            mockMvc.perform(delete("/organizations/" + orgSlug + "/locations/" + leaf)
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isNoContent());
         }
@@ -299,13 +301,13 @@ class PiecesFeatureIntegrationTest {
         void create_permissions() throws Exception {
             createSimpleTypeAs(ownerToken, "Tool", true);
 
-            mockMvc.perform(post("/organizations/" + orgId + "/piece-types")
+            mockMvc.perform(post("/organizations/" + orgSlug + "/piece-types")
                             .header("Authorization", "Bearer " + userToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of("name", "X"))))
                     .andExpect(status().isForbidden());
 
-            mockMvc.perform(post("/organizations/" + orgId + "/piece-types")
+            mockMvc.perform(post("/organizations/" + orgSlug + "/piece-types")
                             .header("Authorization", "Bearer " + spectatorToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of("name", "X"))))
@@ -316,7 +318,7 @@ class PiecesFeatureIntegrationTest {
         @DisplayName("duplicate type name in org returns 409 with piece_types.name_conflict code")
         void duplicate_typeName_returns409() throws Exception {
             createSimpleTypeAs(ownerToken, "Tool", true);
-            mockMvc.perform(post("/organizations/" + orgId + "/piece-types")
+            mockMvc.perform(post("/organizations/" + orgSlug + "/piece-types")
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of("name", "Tool"))))
@@ -328,14 +330,14 @@ class PiecesFeatureIntegrationTest {
         @DisplayName("can recreate a type with the same name after soft-delete (slot is freed)")
         void recreateType_afterSoftDelete_succeeds() throws Exception {
             Integer typeId = createSimpleTypeAs(ownerToken, "Tira Led", true);
-            mockMvc.perform(delete("/organizations/" + orgId + "/piece-types/" + typeId)
+            mockMvc.perform(delete("/organizations/" + orgSlug + "/piece-types/" + typeId)
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isNoContent());
 
             // Should not collide with the soft-deleted row at the DB level.
             createSimpleTypeAs(ownerToken, "Tira Led", true);
 
-            mockMvc.perform(get("/organizations/" + orgId + "/piece-types")
+            mockMvc.perform(get("/organizations/" + orgSlug + "/piece-types")
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.length()").value(1))
@@ -346,16 +348,16 @@ class PiecesFeatureIntegrationTest {
         @DisplayName("two soft-deleted types with the same original name coexist without UK collisions")
         void softDelete_twiceSameName_doesNotCollide() throws Exception {
             Integer first = createSimpleTypeAs(ownerToken, "Tira Led", true);
-            mockMvc.perform(delete("/organizations/" + orgId + "/piece-types/" + first)
+            mockMvc.perform(delete("/organizations/" + orgSlug + "/piece-types/" + first)
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isNoContent());
 
             Integer second = createSimpleTypeAs(ownerToken, "Tira Led", true);
-            mockMvc.perform(delete("/organizations/" + orgId + "/piece-types/" + second)
+            mockMvc.perform(delete("/organizations/" + orgSlug + "/piece-types/" + second)
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isNoContent());
 
-            mockMvc.perform(get("/organizations/" + orgId + "/piece-types")
+            mockMvc.perform(get("/organizations/" + orgSlug + "/piece-types")
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.length()").value(0));
@@ -372,14 +374,14 @@ class PiecesFeatureIntegrationTest {
             Integer attrId = firstAttributeIdOfType(typeId);
 
             mockMvc.perform(delete(
-                            "/organizations/" + orgId + "/piece-types/" + typeId + "/attributes/" + attrId)
+                            "/organizations/" + orgSlug + "/piece-types/" + typeId + "/attributes/" + attrId)
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isNoContent());
 
             Map<String, Object> recreated = Map.of(
                     "name", "color", "displayName", "Color",
                     "type", "TEXT", "required", true);
-            mockMvc.perform(post("/organizations/" + orgId + "/piece-types/" + typeId + "/attributes")
+            mockMvc.perform(post("/organizations/" + orgSlug + "/piece-types/" + typeId + "/attributes")
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(recreated)))
@@ -400,13 +402,13 @@ class PiecesFeatureIntegrationTest {
                     "INSERT INTO organizations (id, name, slug, created_at, updated_at) "
                             + "VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
                     nextOrgId, "Beta", "beta");
-            Integer otherOrgId = nextOrgId.intValue();
+            String otherOrgSlug = "beta";
 
             Map<String, Object> attr = Map.of(
                     "name", "color", "displayName", "Color",
                     "type", "TEXT", "required", true);
             Map<String, Object> body = Map.of("name", "Tira Led", "attributes", List.of(attr));
-            mockMvc.perform(post("/organizations/" + otherOrgId + "/piece-types")
+            mockMvc.perform(post("/organizations/" + otherOrgSlug + "/piece-types")
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(body)))
@@ -420,7 +422,7 @@ class PiecesFeatureIntegrationTest {
             Integer attrId = firstAttributeIdOfType(typeId);
             createPieceAs(ownerToken, typeId, "Hammer", attrId, "red");
 
-            mockMvc.perform(delete("/organizations/" + orgId + "/piece-types/" + typeId)
+            mockMvc.perform(delete("/organizations/" + orgSlug + "/piece-types/" + typeId)
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isBadRequest());
         }
@@ -432,19 +434,19 @@ class PiecesFeatureIntegrationTest {
             Integer attrId = firstAttributeIdOfType(typeId);
             Integer pieceId = createPieceAs(ownerToken, typeId, "Hammer", attrId, "red");
 
-            mockMvc.perform(get("/organizations/" + orgId + "/pieces/" + pieceId)
+            mockMvc.perform(get("/organizations/" + orgSlug + "/pieces/" + pieceId)
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(jsonPath("$.status").value("ACTIVE"));
 
             Map<String, Object> newAttr = Map.of("name", "weight", "displayName", "Weight",
                     "type", "INTEGER", "required", true);
-            mockMvc.perform(post("/organizations/" + orgId + "/piece-types/" + typeId + "/attributes")
+            mockMvc.perform(post("/organizations/" + orgSlug + "/piece-types/" + typeId + "/attributes")
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(newAttr)))
                     .andExpect(status().isCreated());
 
-            mockMvc.perform(get("/organizations/" + orgId + "/pieces/" + pieceId)
+            mockMvc.perform(get("/organizations/" + orgSlug + "/pieces/" + pieceId)
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(jsonPath("$.status").value("PENDING"));
         }
@@ -464,7 +466,7 @@ class PiecesFeatureIntegrationTest {
             createPieceAs(managerToken, typeId, "Hammer-M", attrId, "red");
             createPieceAs(userToken, typeId, "Hammer-U", attrId, "red");
 
-            mockMvc.perform(post("/organizations/" + orgId + "/pieces")
+            mockMvc.perform(post("/organizations/" + orgSlug + "/pieces")
                             .header("Authorization", "Bearer " + spectatorToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
@@ -473,7 +475,7 @@ class PiecesFeatureIntegrationTest {
                             ))))
                     .andExpect(status().isForbidden());
 
-            mockMvc.perform(post("/organizations/" + orgId + "/pieces")
+            mockMvc.perform(post("/organizations/" + orgSlug + "/pieces")
                             .header("Authorization", "Bearer " + outsiderToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
@@ -488,7 +490,7 @@ class PiecesFeatureIntegrationTest {
         void status_pending_whenRequiredMissing() throws Exception {
             Integer typeId = createSimpleTypeAs(ownerToken, "Tool", true);
 
-            MvcResult r = mockMvc.perform(post("/organizations/" + orgId + "/pieces")
+            MvcResult r = mockMvc.perform(post("/organizations/" + orgSlug + "/pieces")
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
@@ -502,7 +504,7 @@ class PiecesFeatureIntegrationTest {
             Integer pieceId = (Integer) om.readValue(r.getResponse().getContentAsString(), Map.class).get("id");
             Integer attrId = firstAttributeIdOfType(typeId);
 
-            mockMvc.perform(patch("/organizations/" + orgId + "/pieces/" + pieceId)
+            mockMvc.perform(patch("/organizations/" + orgSlug + "/pieces/" + pieceId)
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
@@ -519,7 +521,7 @@ class PiecesFeatureIntegrationTest {
             // change the attribute to INTEGER via add+delete? Simpler: create fresh type with INTEGER attr
             Map<String, Object> attr = Map.of("name", "weight", "displayName", "Weight",
                     "type", "INTEGER", "required", true);
-            MvcResult r = mockMvc.perform(post("/organizations/" + orgId + "/piece-types")
+            MvcResult r = mockMvc.perform(post("/organizations/" + orgSlug + "/piece-types")
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
@@ -530,7 +532,7 @@ class PiecesFeatureIntegrationTest {
             Integer heavyTypeId = (Integer) om.readValue(r.getResponse().getContentAsString(), Map.class).get("id");
             Integer heavyAttrId = firstAttributeIdOfType(heavyTypeId);
 
-            mockMvc.perform(post("/organizations/" + orgId + "/pieces")
+            mockMvc.perform(post("/organizations/" + orgSlug + "/pieces")
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
@@ -550,7 +552,7 @@ class PiecesFeatureIntegrationTest {
             Integer outsiderId = jdbcTemplate.queryForObject("SELECT id FROM users WHERE email = ?",
                     Integer.class, "out@test.com");
 
-            mockMvc.perform(post("/organizations/" + orgId + "/pieces")
+            mockMvc.perform(post("/organizations/" + orgSlug + "/pieces")
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
@@ -568,7 +570,7 @@ class PiecesFeatureIntegrationTest {
             Integer attrId = firstAttributeIdOfType(typeId);
             Integer pieceId = createPieceAs(ownerToken, typeId, "Hammer", attrId, "red");
 
-            mockMvc.perform(get("/organizations/" + orgId + "/pieces/" + pieceId)
+            mockMvc.perform(get("/organizations/" + orgSlug + "/pieces/" + pieceId)
                             .header("Authorization", "Bearer " + spectatorToken))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.name").value("Hammer"));
@@ -581,7 +583,7 @@ class PiecesFeatureIntegrationTest {
             Integer attrId = firstAttributeIdOfType(typeId);
             createPieceAs(ownerToken, typeId, "Hammer", attrId, "red");
             // pending one (no value)
-            mockMvc.perform(post("/organizations/" + orgId + "/pieces")
+            mockMvc.perform(post("/organizations/" + orgSlug + "/pieces")
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
@@ -590,13 +592,13 @@ class PiecesFeatureIntegrationTest {
                             ))))
                     .andExpect(status().isCreated());
 
-            mockMvc.perform(get("/organizations/" + orgId + "/pieces?status=PENDING")
+            mockMvc.perform(get("/organizations/" + orgSlug + "/pieces?status=PENDING")
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.content.length()").value(1))
                     .andExpect(jsonPath("$.content[0].name").value("Anvil"));
 
-            mockMvc.perform(get("/organizations/" + orgId + "/pieces?q=hammer")
+            mockMvc.perform(get("/organizations/" + orgSlug + "/pieces?q=hammer")
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(jsonPath("$.content.length()").value(1))
                     .andExpect(jsonPath("$.content[0].name").value("Hammer"));
@@ -615,14 +617,14 @@ class PiecesFeatureIntegrationTest {
             Integer pieceId = createPieceAs(ownerToken, typeId, "Hammer", attrId, "red");
 
             MockMultipartFile jpg = new MockMultipartFile("file", "p.jpg", "image/jpeg", jpegBytes(1, 1));
-            mockMvc.perform(multipart("/organizations/" + orgId + "/pieces/" + pieceId + "/attachments")
+            mockMvc.perform(multipart("/organizations/" + orgSlug + "/pieces/" + pieceId + "/attachments")
                             .file(jpg)
                             .param("kind", "IMAGE")
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isCreated());
 
             MockMultipartFile pdf = new MockMultipartFile("file", "p.pdf", "application/pdf", new byte[]{1, 2, 3});
-            mockMvc.perform(multipart("/organizations/" + orgId + "/pieces/" + pieceId + "/attachments")
+            mockMvc.perform(multipart("/organizations/" + orgSlug + "/pieces/" + pieceId + "/attachments")
                             .file(pdf)
                             .param("kind", "IMAGE")
                             .header("Authorization", "Bearer " + ownerToken))
@@ -637,14 +639,14 @@ class PiecesFeatureIntegrationTest {
             Integer pieceId = createPieceAs(ownerToken, typeId, "Hammer", attrId, "red");
 
             MockMultipartFile jpgAsDoc = new MockMultipartFile("file", "p.jpg", "image/jpeg", jpegBytes(1, 1));
-            mockMvc.perform(multipart("/organizations/" + orgId + "/pieces/" + pieceId + "/attachments")
+            mockMvc.perform(multipart("/organizations/" + orgSlug + "/pieces/" + pieceId + "/attachments")
                             .file(jpgAsDoc)
                             .param("kind", "DOCUMENT")
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isCreated());
 
             MockMultipartFile zip = new MockMultipartFile("file", "x.zip", "application/zip", new byte[]{1});
-            mockMvc.perform(multipart("/organizations/" + orgId + "/pieces/" + pieceId + "/attachments")
+            mockMvc.perform(multipart("/organizations/" + orgSlug + "/pieces/" + pieceId + "/attachments")
                             .file(zip)
                             .param("kind", "DOCUMENT")
                             .header("Authorization", "Bearer " + ownerToken))
@@ -663,7 +665,7 @@ class PiecesFeatureIntegrationTest {
             byte[] fakePng = "MZ    ".getBytes(StandardCharsets.US_ASCII);
             MockMultipartFile attack = new MockMultipartFile(
                     "file", "payload.exe", "image/png", fakePng);
-            mockMvc.perform(multipart("/organizations/" + orgId + "/pieces/" + pieceId + "/attachments")
+            mockMvc.perform(multipart("/organizations/" + orgSlug + "/pieces/" + pieceId + "/attachments")
                             .file(attack)
                             .param("kind", "IMAGE")
                             .header("Authorization", "Bearer " + ownerToken))
@@ -683,7 +685,7 @@ class PiecesFeatureIntegrationTest {
                     + "<script>alert(1)</script></svg>";
             MockMultipartFile svgFile = new MockMultipartFile(
                     "file", "logo.svg", "image/png", svg.getBytes(StandardCharsets.UTF_8));
-            mockMvc.perform(multipart("/organizations/" + orgId + "/pieces/" + pieceId + "/attachments")
+            mockMvc.perform(multipart("/organizations/" + orgSlug + "/pieces/" + pieceId + "/attachments")
                             .file(svgFile)
                             .param("kind", "IMAGE")
                             .header("Authorization", "Bearer " + ownerToken))
@@ -701,7 +703,7 @@ class PiecesFeatureIntegrationTest {
             // 1-bit grayscale → tiny on disk but 16385 pixels wide, exceeding the dimension cap.
             byte[] bomb = imageBytes("png", 16_385, 1, BufferedImage.TYPE_BYTE_BINARY);
             MockMultipartFile bombFile = new MockMultipartFile("file", "bomb.png", "image/png", bomb);
-            mockMvc.perform(multipart("/organizations/" + orgId + "/pieces/" + pieceId + "/attachments")
+            mockMvc.perform(multipart("/organizations/" + orgSlug + "/pieces/" + pieceId + "/attachments")
                             .file(bombFile)
                             .param("kind", "IMAGE")
                             .header("Authorization", "Bearer " + ownerToken))
@@ -718,7 +720,7 @@ class PiecesFeatureIntegrationTest {
 
             MockMultipartFile pdf = new MockMultipartFile("file", "manual.pdf",
                     "application/pdf", "%PDF-1.4\n%%EOF".getBytes(StandardCharsets.US_ASCII));
-            MvcResult r = mockMvc.perform(multipart("/organizations/" + orgId + "/pieces/" + pieceId + "/attachments")
+            MvcResult r = mockMvc.perform(multipart("/organizations/" + orgSlug + "/pieces/" + pieceId + "/attachments")
                             .file(pdf)
                             .param("kind", "DOCUMENT")
                             .header("Authorization", "Bearer " + ownerToken))
@@ -726,7 +728,7 @@ class PiecesFeatureIntegrationTest {
                     .andReturn();
             Integer attachmentId = (Integer) om.readValue(r.getResponse().getContentAsString(), Map.class).get("id");
 
-            MvcResult download = mockMvc.perform(get("/organizations/" + orgId + "/pieces/" + pieceId
+            MvcResult download = mockMvc.perform(get("/organizations/" + orgSlug + "/pieces/" + pieceId
                             + "/attachments/" + attachmentId + "/download")
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isFound())
@@ -747,7 +749,7 @@ class PiecesFeatureIntegrationTest {
             Integer pieceId = createPieceAs(ownerToken, typeId, "Hammer", attrId, "red");
 
             MockMultipartFile jpg = new MockMultipartFile("file", "p.jpg", "image/jpeg", jpegBytes(1, 1));
-            MvcResult r = mockMvc.perform(multipart("/organizations/" + orgId + "/pieces/" + pieceId + "/attachments")
+            MvcResult r = mockMvc.perform(multipart("/organizations/" + orgSlug + "/pieces/" + pieceId + "/attachments")
                             .file(jpg)
                             .param("kind", "IMAGE")
                             .header("Authorization", "Bearer " + ownerToken))
@@ -755,13 +757,13 @@ class PiecesFeatureIntegrationTest {
                     .andReturn();
             Integer attachmentId = (Integer) om.readValue(r.getResponse().getContentAsString(), Map.class).get("id");
 
-            mockMvc.perform(multipart("/organizations/" + orgId + "/pieces/" + pieceId + "/attachments")
+            mockMvc.perform(multipart("/organizations/" + orgSlug + "/pieces/" + pieceId + "/attachments")
                             .file(jpg)
                             .param("kind", "IMAGE")
                             .header("Authorization", "Bearer " + spectatorToken))
                     .andExpect(status().isForbidden());
 
-            mockMvc.perform(get("/organizations/" + orgId + "/pieces/" + pieceId
+            mockMvc.perform(get("/organizations/" + orgSlug + "/pieces/" + pieceId
                             + "/attachments/" + attachmentId + "/download")
                             .header("Authorization", "Bearer " + spectatorToken))
                     .andExpect(status().isFound())
@@ -780,7 +782,7 @@ class PiecesFeatureIntegrationTest {
             Integer attrId = firstAttributeIdOfType(typeId);
 
             // Create as PENDING (no value)
-            MvcResult r = mockMvc.perform(post("/organizations/" + orgId + "/pieces")
+            MvcResult r = mockMvc.perform(post("/organizations/" + orgSlug + "/pieces")
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
@@ -792,7 +794,7 @@ class PiecesFeatureIntegrationTest {
             Integer pieceId = (Integer) om.readValue(r.getResponse().getContentAsString(), Map.class).get("id");
 
             // Set required value → goes ACTIVE
-            mockMvc.perform(patch("/organizations/" + orgId + "/pieces/" + pieceId)
+            mockMvc.perform(patch("/organizations/" + orgSlug + "/pieces/" + pieceId)
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
@@ -802,13 +804,13 @@ class PiecesFeatureIntegrationTest {
 
             // Upload an attachment
             MockMultipartFile jpg = new MockMultipartFile("file", "p.jpg", "image/jpeg", jpegBytes(1, 1));
-            mockMvc.perform(multipart("/organizations/" + orgId + "/pieces/" + pieceId + "/attachments")
+            mockMvc.perform(multipart("/organizations/" + orgSlug + "/pieces/" + pieceId + "/attachments")
                             .file(jpg)
                             .param("kind", "IMAGE")
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isCreated());
 
-            mockMvc.perform(get("/organizations/" + orgId + "/pieces/" + pieceId + "/history")
+            mockMvc.perform(get("/organizations/" + orgSlug + "/pieces/" + pieceId + "/history")
                             .header("Authorization", "Bearer " + spectatorToken))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.content[?(@.action == 'PIECE_CREATED')].length()").exists())
@@ -831,7 +833,7 @@ class PiecesFeatureIntegrationTest {
             Map<String, Object> heavyAttr = Map.of(
                     "name", "weight", "displayName", "Weight",
                     "type", "INTEGER", "required", true);
-            MvcResult heavyR = mockMvc.perform(post("/organizations/" + orgId + "/piece-types")
+            MvcResult heavyR = mockMvc.perform(post("/organizations/" + orgSlug + "/piece-types")
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
@@ -843,7 +845,7 @@ class PiecesFeatureIntegrationTest {
             Integer heavyAttrId = firstAttributeIdOfType(heavyType);
 
             // Only fills the Tool attribute → Heavy.weight is missing → PENDING
-            MvcResult r = mockMvc.perform(post("/organizations/" + orgId + "/pieces")
+            MvcResult r = mockMvc.perform(post("/organizations/" + orgSlug + "/pieces")
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
@@ -858,7 +860,7 @@ class PiecesFeatureIntegrationTest {
             Integer pieceId = (Integer) om.readValue(r.getResponse().getContentAsString(), Map.class).get("id");
 
             // Set the missing required value → flips to ACTIVE
-            mockMvc.perform(patch("/organizations/" + orgId + "/pieces/" + pieceId)
+            mockMvc.perform(patch("/organizations/" + orgSlug + "/pieces/" + pieceId)
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
@@ -871,7 +873,7 @@ class PiecesFeatureIntegrationTest {
         @Test
         @DisplayName("create with empty pieceTypeIds is allowed and yields ACTIVE status")
         void emptyTypes_allowed_andActive() throws Exception {
-            mockMvc.perform(post("/organizations/" + orgId + "/pieces")
+            mockMvc.perform(post("/organizations/" + orgSlug + "/pieces")
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
@@ -886,7 +888,7 @@ class PiecesFeatureIntegrationTest {
         @Test
         @DisplayName("create with no pieceTypeIds field at all is allowed")
         void missingTypes_allowed() throws Exception {
-            mockMvc.perform(post("/organizations/" + orgId + "/pieces")
+            mockMvc.perform(post("/organizations/" + orgSlug + "/pieces")
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
@@ -903,7 +905,7 @@ class PiecesFeatureIntegrationTest {
             Integer otherType = createSimpleTypeAs(ownerToken, "Other", false);
             Integer otherAttr = firstAttributeIdOfType(otherType);
 
-            mockMvc.perform(post("/organizations/" + orgId + "/pieces")
+            mockMvc.perform(post("/organizations/" + orgSlug + "/pieces")
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
@@ -924,7 +926,7 @@ class PiecesFeatureIntegrationTest {
             Integer pieceId = createPieceAs(ownerToken, typeA, "Hammer", typeAAttr, "red");
 
             // Replace typeA with typeB — the old value should disappear from the response.
-            mockMvc.perform(patch("/organizations/" + orgId + "/pieces/" + pieceId)
+            mockMvc.perform(patch("/organizations/" + orgSlug + "/pieces/" + pieceId)
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
@@ -936,7 +938,7 @@ class PiecesFeatureIntegrationTest {
                     .andExpect(jsonPath("$.attributeValues.length()").value(0));
 
             // History should record PIECE_TYPES_CHANGED.
-            mockMvc.perform(get("/organizations/" + orgId + "/pieces/" + pieceId + "/history")
+            mockMvc.perform(get("/organizations/" + orgSlug + "/pieces/" + pieceId + "/history")
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.content[?(@.action == 'PIECE_TYPES_CHANGED')].length()").exists());
@@ -953,7 +955,7 @@ class PiecesFeatureIntegrationTest {
             createPieceAs(ownerToken, typeA, "OnlyA", typeAAttr, "red");
 
             // Piece2: typeA + typeB
-            mockMvc.perform(post("/organizations/" + orgId + "/pieces")
+            mockMvc.perform(post("/organizations/" + orgSlug + "/pieces")
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
@@ -963,14 +965,14 @@ class PiecesFeatureIntegrationTest {
                     .andExpect(status().isCreated());
 
             // Filter by typeB → only the multi-type piece
-            mockMvc.perform(get("/organizations/" + orgId + "/pieces?typeId=" + typeB)
+            mockMvc.perform(get("/organizations/" + orgSlug + "/pieces?typeId=" + typeB)
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.content.length()").value(1))
                     .andExpect(jsonPath("$.content[0].name").value("AandB"));
 
             // Filter by typeA → both
-            mockMvc.perform(get("/organizations/" + orgId + "/pieces?typeId=" + typeA)
+            mockMvc.perform(get("/organizations/" + orgSlug + "/pieces?typeId=" + typeA)
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.content.length()").value(2));
@@ -988,7 +990,7 @@ class PiecesFeatureIntegrationTest {
                     "SELECT id FROM organization_members WHERE user_id = ? AND organization_id = ?",
                     Integer.class, userUserId, orgId);
 
-            mockMvc.perform(patch("/organizations/" + orgId + "/members/" + memberId)
+            mockMvc.perform(patch("/organizations/" + orgSlug + "/members/" + memberId)
                             .header("Authorization", "Bearer " + ownerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of("role", "SPECTATOR"))))
@@ -999,7 +1001,7 @@ class PiecesFeatureIntegrationTest {
         @Test
         @DisplayName("MANAGER can invite a SPECTATOR")
         void managerCanInviteSpectator() throws Exception {
-            mockMvc.perform(post("/organizations/" + orgId + "/invitations")
+            mockMvc.perform(post("/organizations/" + orgSlug + "/invitations")
                             .header("Authorization", "Bearer " + managerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(om.writeValueAsString(Map.of(
@@ -1007,6 +1009,67 @@ class PiecesFeatureIntegrationTest {
                                     "role", "SPECTATOR"
                             ))))
                     .andExpect(status().isOk());
+        }
+    }
+
+    @Nested
+    @DisplayName("Cross-org piece integrity under slug change/reuse")
+    class CrossOrgPieceIntegrity {
+
+        @Test
+        @DisplayName("piece is accessible through the org's new slug after rename")
+        void pieceAccessibleByCurrentSlug_afterRename() throws Exception {
+            Integer typeId = createSimpleTypeAs(ownerToken, "Box", false);
+            Integer pieceId = createPieceAs(ownerToken, typeId, "P-rename", null, null);
+
+            mockMvc.perform(patch("/organizations/" + orgSlug)
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of("slug", "acme-v2"))))
+                    .andExpect(status().isOk());
+
+            mockMvc.perform(get("/organizations/acme-v2/pieces/" + pieceId)
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.id").value(pieceId));
+        }
+
+        @Test
+        @DisplayName("piece is NOT accessible through the historical slug (frontend redirects via by-slug)")
+        void pieceNotAccessibleThroughHistoricalSlug() throws Exception {
+            Integer typeId = createSimpleTypeAs(ownerToken, "Box", false);
+            Integer pieceId = createPieceAs(ownerToken, typeId, "P-historic", null, null);
+
+            mockMvc.perform(patch("/organizations/" + orgSlug)
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(Map.of("slug", "acme-v2"))))
+                    .andExpect(status().isOk());
+
+            // The piece endpoint is path-scoped to the CURRENT slug — historical "acme" is no
+            // longer a current slug, so @PreAuthorize on canReadOrgContent fails (403). The
+            // frontend middleware would call /organizations/by-slug/acme first and redirect.
+            mockMvc.perform(get("/organizations/" + orgSlug + "/pieces/" + pieceId)
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        @DisplayName("after soft-delete, the piece is no longer reachable via the released slug")
+        void pieceUnreachable_afterOrgSoftDelete() throws Exception {
+            Integer typeId = createSimpleTypeAs(ownerToken, "Box", false);
+            Integer pieceId = createPieceAs(ownerToken, typeId, "P-gone", null, null);
+
+            mockMvc.perform(delete("/organizations/" + orgSlug)
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isNoContent());
+
+            // The slug "acme" is no longer current (the row was renamed to a `__deleted__`
+            // marker), so authorization fails before the piece lookup. The deleted org's piece
+            // is therefore unreachable via the released slug, even by a global ADMIN.
+            mockMvc.perform(get("/organizations/" + orgSlug + "/pieces/" + pieceId)
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isForbidden());
         }
     }
 }

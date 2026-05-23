@@ -2,6 +2,7 @@ package com.stocka.backend.modules.pieces.service.attributevalidation;
 
 import org.springframework.web.server.ResponseStatusException;
 
+import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.piecetypes.dto.AttributeValidatorsDto;
 import com.stocka.backend.modules.piecetypes.entity.AttributeType;
 
@@ -37,4 +38,23 @@ public interface AttributeValueValidator {
      * @throws ResponseStatusException 400 with a Spanish message on any validation failure
      */
     String validateAndNormalize(String raw, AttributeValidatorsDto rules, boolean required);
+
+    /**
+     * Variant that receives the owning {@link Organization} for validators that need to consult
+     * organization-scoped data (e.g. {@code MEMBER} resolves a user against the org's membership
+     * roster). The default implementation ignores the context and delegates to the
+     * organization-agnostic overload.
+     *
+     * @param raw          raw user input (possibly null/blank)
+     * @param rules        validators for this attribute (never null; may be empty)
+     * @param required     whether the attribute is mandatory
+     * @param organization the organization that owns the piece being validated; never {@code null}
+     *                     when this overload is invoked through the registry
+     * @return canonical string ready to be stored, or {@code null} when the optional value is empty
+     * @throws ResponseStatusException 400 with a Spanish message on any validation failure
+     */
+    default String validateAndNormalize(String raw, AttributeValidatorsDto rules, boolean required,
+                                        Organization organization) {
+        return validateAndNormalize(raw, rules, required);
+    }
 }
