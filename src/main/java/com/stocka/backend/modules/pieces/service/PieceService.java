@@ -418,6 +418,14 @@ public class PieceService {
     public void softDelete(Integer orgId, Integer pieceId) {
         Piece piece = findInOrg(orgId, pieceId);
         User actor = currentUser();
+        // Cascade soft-delete to attachments and hard-delete attribute values. Without this,
+        // attachments (EAGER, non-nullable FK to Piece) would dangle and any future hydration
+        // of a value would explode under the piece's @SQLRestriction("deleted_at IS NULL").
+        // Attachment blobs in R2 are NOT removed here so a future organization restore can
+        // still recover them; only the explicit per-attachment delete drops the file.
+        attachmentRepository.softDeleteByPiece(piece);
+        valueRepository.deleteByPiece(piece);
+        orgValueRepository.deleteByPiece(piece);
         piece.setDeletedAt(LocalDateTime.now());
         pieceRepository.save(piece);
         historyService.recordDeleted(piece, actor);

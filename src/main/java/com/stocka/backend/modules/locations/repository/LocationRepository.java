@@ -3,6 +3,8 @@ package com.stocka.backend.modules.locations.repository;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.stereotype.Repository;
 
@@ -22,4 +24,16 @@ public interface LocationRepository extends CrudRepository<Location, Integer> {
     Optional<Location> findByOrganizationAndParentAndName(Organization organization, Location parent, String name);
 
     Optional<Location> findByOrganizationAndParentIsNullAndName(Organization organization, String name);
+
+    /**
+     * Bulk soft-delete every still-active location of {@code organization}. Used by the
+     * organization cascade so locations do not dangle when their parent org is removed.
+     *
+     * @param organization owner whose locations must be soft-deleted
+     * @return number of rows affected
+     */
+    @Modifying
+    @Query("update Location l set l.deletedAt = CURRENT_TIMESTAMP "
+            + "where l.organization = ?1 and l.deletedAt is null")
+    int softDeleteByOrganization(Organization organization);
 }

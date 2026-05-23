@@ -45,10 +45,19 @@ import com.stocka.backend.modules.organizations.entity.OrganizationInvitation;
 import com.stocka.backend.modules.organizations.entity.OrganizationMember;
 import com.stocka.backend.modules.organizations.entity.OrganizationRoleEnum;
 import com.stocka.backend.modules.organizations.entity.OrganizationSlugHistory;
+import com.stocka.backend.modules.locations.repository.LocationRepository;
+import com.stocka.backend.modules.notifications.preferences.repository.NotificationPreferenceRepository;
 import com.stocka.backend.modules.organizations.repository.OrganizationInvitationRepository;
 import com.stocka.backend.modules.organizations.repository.OrganizationMemberRepository;
+import com.stocka.backend.modules.organizations.repository.OrganizationPieceAttributeRepository;
 import com.stocka.backend.modules.organizations.repository.OrganizationRepository;
 import com.stocka.backend.modules.organizations.repository.OrganizationSlugHistoryRepository;
+import com.stocka.backend.modules.pieces.repository.PieceAttachmentRepository;
+import com.stocka.backend.modules.pieces.repository.PieceAttributeValueRepository;
+import com.stocka.backend.modules.pieces.repository.PieceOrganizationAttributeValueRepository;
+import com.stocka.backend.modules.pieces.repository.PieceRepository;
+import com.stocka.backend.modules.piecetypes.repository.PieceTypeAttributeRepository;
+import com.stocka.backend.modules.piecetypes.repository.PieceTypeRepository;
 import com.stocka.backend.modules.users.entity.User;
 
 @ExtendWith(MockitoExtension.class)
@@ -61,6 +70,15 @@ class OrganizationServiceTest {
     @Mock private OrganizationSlugHistoryRepository slugHistoryRepository;
     @Mock private OrganizationAuditService auditService;
     @Spy private OrganizationQuotaProperties quotas = new OrganizationQuotaProperties();
+    @Mock private PieceRepository pieceRepository;
+    @Mock private PieceAttachmentRepository pieceAttachmentRepository;
+    @Mock private PieceAttributeValueRepository pieceAttributeValueRepository;
+    @Mock private PieceOrganizationAttributeValueRepository pieceOrganizationAttributeValueRepository;
+    @Mock private LocationRepository locationRepository;
+    @Mock private PieceTypeRepository pieceTypeRepository;
+    @Mock private PieceTypeAttributeRepository pieceTypeAttributeRepository;
+    @Mock private OrganizationPieceAttributeRepository organizationPieceAttributeRepository;
+    @Mock private NotificationPreferenceRepository notificationPreferenceRepository;
 
     @InjectMocks private OrganizationService sut;
 
@@ -359,16 +377,29 @@ class OrganizationServiceTest {
             OrganizationMember m2 = new OrganizationMember().setId(11);
             when(memberRepository.findByOrganization(org)).thenReturn(List.of(m1, m2));
             OrganizationInvitation inv = new OrganizationInvitation().setId(20).setStatus(InvitationStatus.PENDING);
-            when(invitationRepository.findByOrganizationAndStatus(org, InvitationStatus.PENDING))
-                    .thenReturn(List.of(inv));
+            when(invitationRepository.findByOrganization(org)).thenReturn(List.of(inv));
 
             sut.softDelete(1, actor);
 
             assertNotNull(m1.getDeletedAt());
             assertNotNull(m2.getDeletedAt());
             verify(memberRepository, times(2)).save(any(OrganizationMember.class));
+            // PENDING -> CANCELLED + deletedAt is the audit-friendly path; closed invitations
+            // (ACCEPTED/REJECTED/EXPIRED/CANCELLED) only receive deletedAt because their status
+            // already documents how they ended.
             assertEquals(InvitationStatus.CANCELLED, inv.getStatus());
+            assertNotNull(inv.getDeletedAt());
             verify(invitationRepository, atLeastOnce()).save(inv);
+            // Cascade soft-delete to every child whose FK to Organization is non-nullable.
+            verify(pieceAttributeValueRepository).deleteByOrganization(org);
+            verify(pieceOrganizationAttributeValueRepository).deleteByOrganization(org);
+            verify(pieceAttachmentRepository).softDeleteByOrganization(org);
+            verify(pieceTypeAttributeRepository).softDeleteByOrganization(org);
+            verify(pieceTypeRepository).softDeleteByOrganization(org);
+            verify(organizationPieceAttributeRepository).softDeleteByOrganization(org);
+            verify(pieceRepository).softDeleteByOrganization(org);
+            verify(locationRepository).softDeleteByOrganization(org);
+            verify(notificationPreferenceRepository).softDeleteByOrganization(org);
             assertNotNull(org.getDeletedAt());
             verify(organizationRepository, atLeastOnce()).save(org);
             verify(slugHistoryRepository).deleteByOrganization(org);

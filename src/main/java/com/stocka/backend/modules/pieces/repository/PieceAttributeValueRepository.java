@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.pieces.entity.Piece;
 import com.stocka.backend.modules.pieces.entity.PieceAttributeValue;
 import com.stocka.backend.modules.piecetypes.entity.PieceTypeAttribute;
@@ -27,4 +28,16 @@ public interface PieceAttributeValueRepository extends JpaRepository<PieceAttrib
     @Modifying
     @Query("DELETE FROM PieceAttributeValue v WHERE v.piece = :piece")
     int deleteByPiece(@Param("piece") Piece piece);
+
+    /**
+     * Hard-delete every value belonging to any piece of {@code organization}. Used by the
+     * organization cascade — values are fully subordinate to their piece and carry no
+     * historical interest once the org is gone.
+     *
+     * @param organization grand-parent whose nested values must be removed
+     * @return number of rows affected
+     */
+    @Modifying
+    @Query("DELETE FROM PieceAttributeValue v WHERE v.piece.organization = :organization")
+    int deleteByOrganization(@Param("organization") Organization organization);
 }

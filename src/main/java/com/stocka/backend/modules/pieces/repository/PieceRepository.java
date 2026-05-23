@@ -7,6 +7,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -59,4 +60,17 @@ public interface PieceRepository extends JpaRepository<Piece, Integer>, JpaSpeci
      */
     boolean existsByOrganization_IdAndSerialNumberAndIdNot(
             Integer organizationId, String serialNumber, Integer excludePieceId);
+
+    /**
+     * Bulk soft-delete every still-active piece of {@code organization}. Invoked when an
+     * organization itself is being soft-deleted so children do not remain referencing a
+     * filtered-out parent (see {@code @SQLRestriction} on {@code Organization}).
+     *
+     * @param organization owner whose pieces must be soft-deleted
+     * @return number of rows affected
+     */
+    @Modifying
+    @Query("update Piece p set p.deletedAt = CURRENT_TIMESTAMP "
+            + "where p.organization = ?1 and p.deletedAt is null")
+    int softDeleteByOrganization(Organization organization);
 }

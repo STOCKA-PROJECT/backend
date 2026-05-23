@@ -19,6 +19,8 @@ import com.stocka.backend.modules.common.dto.AvailabilityResponse;
 import com.stocka.backend.modules.common.dto.AvailabilityResponse.Reason;
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
+import com.stocka.backend.modules.locations.repository.LocationRepository;
+import com.stocka.backend.modules.notifications.preferences.repository.NotificationPreferenceRepository;
 import com.stocka.backend.modules.organizations.dto.CreateOrganizationDto;
 import com.stocka.backend.modules.organizations.dto.UpdateOrganizationDto;
 import com.stocka.backend.modules.organizations.entity.AuditAction;
@@ -30,8 +32,15 @@ import com.stocka.backend.modules.organizations.entity.OrganizationRoleEnum;
 import com.stocka.backend.modules.organizations.entity.OrganizationSlugHistory;
 import com.stocka.backend.modules.organizations.repository.OrganizationInvitationRepository;
 import com.stocka.backend.modules.organizations.repository.OrganizationMemberRepository;
+import com.stocka.backend.modules.organizations.repository.OrganizationPieceAttributeRepository;
 import com.stocka.backend.modules.organizations.repository.OrganizationRepository;
 import com.stocka.backend.modules.organizations.repository.OrganizationSlugHistoryRepository;
+import com.stocka.backend.modules.pieces.repository.PieceAttachmentRepository;
+import com.stocka.backend.modules.pieces.repository.PieceAttributeValueRepository;
+import com.stocka.backend.modules.pieces.repository.PieceOrganizationAttributeValueRepository;
+import com.stocka.backend.modules.pieces.repository.PieceRepository;
+import com.stocka.backend.modules.piecetypes.repository.PieceTypeAttributeRepository;
+import com.stocka.backend.modules.piecetypes.repository.PieceTypeRepository;
 import com.stocka.backend.modules.users.entity.User;
 
 @Service
@@ -48,6 +57,15 @@ public class OrganizationService {
     private final OrganizationSlugHistoryRepository slugHistoryRepository;
     private final OrganizationAuditService auditService;
     private final OrganizationQuotaProperties quotas;
+    private final PieceRepository pieceRepository;
+    private final PieceAttachmentRepository pieceAttachmentRepository;
+    private final PieceAttributeValueRepository pieceAttributeValueRepository;
+    private final PieceOrganizationAttributeValueRepository pieceOrganizationAttributeValueRepository;
+    private final LocationRepository locationRepository;
+    private final PieceTypeRepository pieceTypeRepository;
+    private final PieceTypeAttributeRepository pieceTypeAttributeRepository;
+    private final OrganizationPieceAttributeRepository organizationPieceAttributeRepository;
+    private final NotificationPreferenceRepository notificationPreferenceRepository;
 
     public OrganizationService(
             OrganizationRepository organizationRepository,
@@ -55,7 +73,16 @@ public class OrganizationService {
             OrganizationInvitationRepository invitationRepository,
             OrganizationSlugHistoryRepository slugHistoryRepository,
             OrganizationAuditService auditService,
-            OrganizationQuotaProperties quotas
+            OrganizationQuotaProperties quotas,
+            PieceRepository pieceRepository,
+            PieceAttachmentRepository pieceAttachmentRepository,
+            PieceAttributeValueRepository pieceAttributeValueRepository,
+            PieceOrganizationAttributeValueRepository pieceOrganizationAttributeValueRepository,
+            LocationRepository locationRepository,
+            PieceTypeRepository pieceTypeRepository,
+            PieceTypeAttributeRepository pieceTypeAttributeRepository,
+            OrganizationPieceAttributeRepository organizationPieceAttributeRepository,
+            NotificationPreferenceRepository notificationPreferenceRepository
     ) {
         this.organizationRepository = organizationRepository;
         this.memberRepository = memberRepository;
@@ -63,6 +90,15 @@ public class OrganizationService {
         this.slugHistoryRepository = slugHistoryRepository;
         this.auditService = auditService;
         this.quotas = quotas;
+        this.pieceRepository = pieceRepository;
+        this.pieceAttachmentRepository = pieceAttachmentRepository;
+        this.pieceAttributeValueRepository = pieceAttributeValueRepository;
+        this.pieceOrganizationAttributeValueRepository = pieceOrganizationAttributeValueRepository;
+        this.locationRepository = locationRepository;
+        this.pieceTypeRepository = pieceTypeRepository;
+        this.pieceTypeAttributeRepository = pieceTypeAttributeRepository;
+        this.organizationPieceAttributeRepository = organizationPieceAttributeRepository;
+        this.notificationPreferenceRepository = notificationPreferenceRepository;
     }
 
     @Transactional
@@ -158,16 +194,39 @@ public class OrganizationService {
         Organization org = findById(orgId);
         LocalDateTime now = LocalDateTime.now();
 
+        // Cascade soft-delete to every child whose FK to Organization is non-nullable. Without
+        // this, EAGER hydration of those children would later trip on the org's
+        // @SQLRestriction("deleted_at IS NULL") (Hibernate -> ObjectNotFoundException). The bulk
+        // updates below stamp deletedAt only on still-active rows so the call is idempotent.
+        // Order: leaves first (so a partial failure does not leave parent rows referencing
+        // missing children), but with bulk UPDATEs + soft-delete the order is non-critical.
+        pieceAttributeValueRepository.deleteByOrganization(org);
+        pieceOrganizationAttributeValueRepository.deleteByOrganization(org);
+        pieceAttachmentRepository.softDeleteByOrganization(org);
+        pieceTypeAttributeRepository.softDeleteByOrganization(org);
+        pieceTypeRepository.softDeleteByOrganization(org);
+        organizationPieceAttributeRepository.softDeleteByOrganization(org);
+        pieceRepository.softDeleteByOrganization(org);
+        locationRepository.softDeleteByOrganization(org);
+        notificationPreferenceRepository.softDeleteByOrganization(org);
+
         List<OrganizationMember> members = memberRepository.findByOrganization(org);
         for (OrganizationMember m : members) {
             m.setDeletedAt(now);
             memberRepository.save(m);
         }
 
-        List<OrganizationInvitation> pending =
-                invitationRepository.findByOrganizationAndStatus(org, InvitationStatus.PENDING);
-        for (OrganizationInvitation inv : pending) {
-            inv.setStatus(InvitationStatus.CANCELLED);
+        // Soft-delete every invitation pointing to this org regardless of status. Pending ones
+        // also flip their status to CANCELLED for audit clarity; closed invitations
+        // (ACCEPTED/REJECTED/EXPIRED/CANCELLED) only receive deletedAt because their status
+        // already documents how they ended. This prevents future hydration failures when
+        // listing invitations whose org has been soft-deleted (Organization carries
+        // @SQLRestriction("deleted_at IS NULL"), so EAGER joins would otherwise blow up).
+        for (OrganizationInvitation inv : invitationRepository.findByOrganization(org)) {
+            if (inv.getStatus() == InvitationStatus.PENDING) {
+                inv.setStatus(InvitationStatus.CANCELLED);
+            }
+            inv.setDeletedAt(now);
             invitationRepository.save(inv);
         }
 

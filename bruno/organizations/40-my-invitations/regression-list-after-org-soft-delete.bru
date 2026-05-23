@@ -1,0 +1,40 @@
+meta {
+  name: REGRESSION GET /invitations/me after org soft-delete
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/invitations/me?includeHistory=true
+  body: none
+  auth: bearer
+}
+
+params:query {
+  includeHistory: true
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  Regression for the soft-delete cascade audit.
+
+  Before the audit, listing the history of invitations for a user who had been
+  invited to a now-soft-deleted organization returned HTTP 500 with
+  `ObjectRetrievalFailureException: No row with the given identifier exists for
+  entity Organization`. Root cause: OrganizationInvitation.organization is an
+  EAGER non-nullable FK and Organization carries
+  @SQLRestriction("deleted_at IS NULL"), so Hibernate exploded when hydrating
+  invitations that referenced a filtered-out org.
+
+  Fix (V6 / wedge 1): OrganizationInvitation now carries deleted_at +
+  @SQLRestriction("deleted_at IS NULL"), and OrganizationService.softDelete
+  cascade-marks every invitation (any status) when the org is removed.
+
+  How to reproduce the regression manually:
+    1) Log in as a user with at least one invitation to org X.
+    2) Soft-delete org X via DELETE /organizations/{X}.
+    3) Run this request — it must return 200 with an array, NOT 500.
+}

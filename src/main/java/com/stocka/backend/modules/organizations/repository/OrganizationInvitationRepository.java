@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 import com.stocka.backend.modules.organizations.entity.InvitationStatus;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.entity.OrganizationInvitation;
+import com.stocka.backend.modules.users.entity.User;
 
 @Repository
 public interface OrganizationInvitationRepository extends JpaRepository<OrganizationInvitation, Integer> {
@@ -19,9 +20,13 @@ public interface OrganizationInvitationRepository extends JpaRepository<Organiza
 
     List<OrganizationInvitation> findByOrganizationAndStatus(Organization organization, InvitationStatus status);
 
+    List<OrganizationInvitation> findByOrganization(Organization organization);
+
     List<OrganizationInvitation> findByEmailAndStatus(String email, InvitationStatus status);
 
     List<OrganizationInvitation> findByEmailOrderByCreatedAtDesc(String email);
+
+    List<OrganizationInvitation> findByInvitedBy(User invitedBy);
 
     long countByOrganizationAndStatus(Organization organization, InvitationStatus status);
 }

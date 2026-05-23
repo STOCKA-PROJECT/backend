@@ -28,11 +28,14 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.stocka.backend.modules.auth.repository.EmailVerificationTokenRepository;
+import com.stocka.backend.modules.auth.repository.PasswordResetTokenRepository;
 import com.stocka.backend.modules.common.dto.AvailabilityResponse;
 import com.stocka.backend.modules.common.dto.AvailabilityResponse.Reason;
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.notifications.preferences.service.NotificationPreferenceService;
+import com.stocka.backend.modules.organizations.repository.OrganizationInvitationRepository;
 import com.stocka.backend.modules.organizations.repository.OrganizationMemberRepository;
 import com.stocka.backend.modules.users.dto.ChangePasswordDto;
 import com.stocka.backend.modules.users.dto.UpdateUserProfileDto;
@@ -49,6 +52,9 @@ class UserServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private UserUsernameHistoryRepository usernameHistoryRepository;
     @Mock private OrganizationMemberRepository memberRepository;
+    @Mock private OrganizationInvitationRepository invitationRepository;
+    @Mock private EmailVerificationTokenRepository emailVerificationTokenRepository;
+    @Mock private PasswordResetTokenRepository passwordResetTokenRepository;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private NotificationPreferenceService notificationPreferenceService;
 
@@ -130,6 +136,24 @@ class UserServiceTest {
             assertNotNull(second);
             // second timestamp is >= first; we don't assert strict ordering due to clock granularity.
             verify(userRepository, org.mockito.Mockito.times(2)).save(actor);
+        }
+
+        @Test
+        @DisplayName("should soft-delete invitations originated by this user and hard-delete auth tokens")
+        void should_cascadeToInvitationsAndTokens() {
+            com.stocka.backend.modules.organizations.entity.OrganizationInvitation inv =
+                    new com.stocka.backend.modules.organizations.entity.OrganizationInvitation().setId(99);
+            when(invitationRepository.findByInvitedBy(actor)).thenReturn(List.of(inv));
+
+            sut.softDeleteCurrentUser(actor);
+
+            // OrganizationInvitation.invitedBy FK is EAGER + non-nullable; leaving the row alive
+            // after the inviter is gone would later blow up with ObjectNotFoundException.
+            assertNotNull(inv.getDeletedAt());
+            verify(invitationRepository).save(inv);
+            // Single-use, short-lived tokens carry no archival value once the user is gone.
+            verify(emailVerificationTokenRepository).deleteAllByUser(actor);
+            verify(passwordResetTokenRepository).deleteAllByUser(actor);
         }
     }
 

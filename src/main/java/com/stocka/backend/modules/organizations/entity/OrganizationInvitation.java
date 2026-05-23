@@ -5,8 +5,10 @@ import java.util.Date;
 
 import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.SQLRestriction;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.stocka.backend.modules.users.entity.User;
 
 import jakarta.persistence.Column;
@@ -23,6 +25,7 @@ import jakarta.persistence.Version;
 
 @Entity
 @Table(name = "organization_invitations")
+@SQLRestriction("deleted_at IS NULL")
 public class OrganizationInvitation {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
@@ -63,6 +66,10 @@ public class OrganizationInvitation {
 
     @Column(name = "accepted_at")
     private LocalDateTime acceptedAt;
+
+    @JsonIgnore
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
 
     @Version
     @ColumnDefault("0")
@@ -154,6 +161,15 @@ public class OrganizationInvitation {
 
     public OrganizationInvitation setAcceptedAt(LocalDateTime acceptedAt) {
         this.acceptedAt = acceptedAt;
+        return this;
+    }
+
+    public LocalDateTime getDeletedAt() {
+        return deletedAt;
+    }
+
+    public OrganizationInvitation setDeletedAt(LocalDateTime deletedAt) {
+        this.deletedAt = deletedAt;
         return this;
     }
 

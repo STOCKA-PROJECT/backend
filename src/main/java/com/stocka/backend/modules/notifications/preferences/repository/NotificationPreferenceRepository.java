@@ -31,4 +31,9 @@ public interface NotificationPreferenceRepository extends CrudRepository<Notific
     @Query("update NotificationPreference p set p.deletedAt = CURRENT_TIMESTAMP "
             + "where p.user = ?1 and p.deletedAt is null")
     int softDeleteByUser(User user);
+
+    @Modifying
+    @Query("update NotificationPreference p set p.deletedAt = CURRENT_TIMESTAMP "
+            + "where p.organization = ?1 and p.deletedAt is null")
+    int softDeleteByOrganization(Organization organization);
 }

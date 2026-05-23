@@ -15,12 +15,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.stocka.backend.modules.auth.repository.EmailVerificationTokenRepository;
+import com.stocka.backend.modules.auth.repository.PasswordResetTokenRepository;
 import com.stocka.backend.modules.common.dto.AvailabilityResponse;
 import com.stocka.backend.modules.common.dto.AvailabilityResponse.Reason;
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.notifications.preferences.service.NotificationPreferenceService;
+import com.stocka.backend.modules.organizations.entity.OrganizationInvitation;
 import com.stocka.backend.modules.organizations.entity.OrganizationMember;
+import com.stocka.backend.modules.organizations.repository.OrganizationInvitationRepository;
 import com.stocka.backend.modules.organizations.repository.OrganizationMemberRepository;
 import com.stocka.backend.modules.users.dto.ChangePasswordDto;
 import com.stocka.backend.modules.users.dto.UpdateUserProfileDto;
@@ -46,6 +50,9 @@ public class UserService {
     private final UserRepository userRepository;
     private final UserUsernameHistoryRepository usernameHistoryRepository;
     private final OrganizationMemberRepository memberRepository;
+    private final OrganizationInvitationRepository invitationRepository;
+    private final EmailVerificationTokenRepository emailVerificationTokenRepository;
+    private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final NotificationPreferenceService notificationPreferenceService;
 
@@ -53,11 +60,17 @@ public class UserService {
             UserRepository userRepository,
             UserUsernameHistoryRepository usernameHistoryRepository,
             OrganizationMemberRepository memberRepository,
+            OrganizationInvitationRepository invitationRepository,
+            EmailVerificationTokenRepository emailVerificationTokenRepository,
+            PasswordResetTokenRepository passwordResetTokenRepository,
             PasswordEncoder passwordEncoder,
             NotificationPreferenceService notificationPreferenceService) {
         this.userRepository = userRepository;
         this.usernameHistoryRepository = usernameHistoryRepository;
         this.memberRepository = memberRepository;
+        this.invitationRepository = invitationRepository;
+        this.emailVerificationTokenRepository = emailVerificationTokenRepository;
+        this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.notificationPreferenceService = notificationPreferenceService;
     }
@@ -77,6 +90,19 @@ public class UserService {
                 memberRepository.save(m);
             }
         }
+        // Invitations originated by this user remain pointing to a User row that will be
+        // filtered by @SQLRestriction. The OrganizationInvitation.invitedBy FK is EAGER and
+        // non-nullable, so listing those invitations would otherwise blow up. Soft-delete
+        // them on the way out so they disappear cleanly from any future query.
+        for (OrganizationInvitation inv : invitationRepository.findByInvitedBy(user)) {
+            inv.setDeletedAt(now);
+            invitationRepository.save(inv);
+        }
+        // Email-verification and password-reset tokens have a User FK that is EAGER and
+        // non-nullable. They are short-lived and have no archival value once the user is
+        // gone, so we hard-delete them.
+        emailVerificationTokenRepository.deleteAllByUser(user);
+        passwordResetTokenRepository.deleteAllByUser(user);
         // Notification preferences are bound to (user, org) pairs; with the user gone
         // they are dead data — soft-delete them so a future restoration does not
         // resurrect stale opt-ins.
