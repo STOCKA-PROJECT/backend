@@ -7,6 +7,29 @@
 ALTER TABLE organization_invitations
     ADD COLUMN IF NOT EXISTS deleted_at DATETIME(6) NULL;
 
+-- Defensive create for notification_preferences. The notifications feature (PR #40)
+-- shipped without a Flyway migration, so prod (ddl-auto=validate) has no such table
+-- when this migration is first applied. V7 is the canonical creation, but the UPDATEs
+-- below reference notification_preferences directly, so we need the table to exist
+-- before V7 runs. IF NOT EXISTS keeps it a no-op on dev where Hibernate already
+-- created it.
+CREATE TABLE IF NOT EXISTS notification_preferences (
+    id INT NOT NULL AUTO_INCREMENT,
+    user_id INT NOT NULL,
+    organization_id INT NOT NULL,
+    pieces_actions VARCHAR(64) NOT NULL,
+    piece_scope VARCHAR(16) NOT NULL,
+    locations_actions VARCHAR(64) NOT NULL,
+    piece_types_actions VARCHAR(64) NOT NULL,
+    created_at DATETIME(6) NULL,
+    updated_at DATETIME(6) NULL,
+    deleted_at DATETIME(6) NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT uk_notif_pref_user_org UNIQUE (user_id, organization_id),
+    CONSTRAINT fk_notif_pref_user FOREIGN KEY (user_id) REFERENCES users(id),
+    CONSTRAINT fk_notif_pref_org FOREIGN KEY (organization_id) REFERENCES organizations(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE INDEX IF NOT EXISTS idx_organization_invitations_deleted_at
     ON organization_invitations(deleted_at);
 
