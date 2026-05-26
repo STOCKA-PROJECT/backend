@@ -43,6 +43,14 @@ public class JwtService {
     /** Value of {@link #CLAIM_TOKEN_TYPE} for ordinary access tokens. */
     public static final String TYPE_ACCESS = "access";
 
+    /**
+     * Short-lived intermediate token issued by {@code /auth/login} when the
+     * account has 2FA enabled. Carries enough state (subject = email) for
+     * {@code /auth/login/2fa} to finish the authentication without making the
+     * client resend the password.
+     */
+    public static final String TYPE_MFA_CHALLENGE = "mfa_challenge";
+
     private static final int MIN_HEX_LENGTH = 64;
 
     @Value("${security.jwt.secret-key}")
@@ -126,6 +134,46 @@ public class JwtService {
                 .expiration(new Date(System.currentTimeMillis() + jwtExpiration))
                 .signWith(getSignInKey())
                 .compact();
+    }
+
+    /**
+     * Builds a short-lived {@link #TYPE_MFA_CHALLENGE} token used between the
+     * password step and the 2FA step. The TTL is intentionally short — long
+     * enough for the user to fetch the code from their phone but not long
+     * enough to bypass password rate-limits on retry.
+     *
+     * @param email user being authenticated
+     * @param ttlSeconds lifetime
+     * @return signed JWT
+     */
+    public String generateMfaChallengeToken(String email, long ttlSeconds) {
+        long now = System.currentTimeMillis();
+        return Jwts.builder()
+                .claims(Map.of(CLAIM_TOKEN_TYPE, TYPE_MFA_CHALLENGE,
+                        CLAIM_TOKEN_VERSION, currentTokenVersion))
+                .subject(email)
+                .issuedAt(new Date(now))
+                .expiration(new Date(now + ttlSeconds * 1000L))
+                .signWith(getSignInKey())
+                .compact();
+    }
+
+    /**
+     * Validates a {@link #TYPE_MFA_CHALLENGE} token's signature, expiration
+     * and type. Subject (the email) is exposed via {@link #extractUsername}.
+     *
+     * @param token signed JWT
+     * @return {@code true} when the token can be trusted as an MFA challenge
+     */
+    public boolean isMfaChallengeValid(String token) {
+        try {
+            if (extractExpiration(token).before(new Date())) return false;
+            if (!TYPE_MFA_CHALLENGE.equals(extractTokenType(token))) return false;
+            Integer version = extractTokenVersion(token);
+            return version != null && version == currentTokenVersion;
+        } catch (RuntimeException ignored) {
+            return false;
+        }
     }
 
     /**

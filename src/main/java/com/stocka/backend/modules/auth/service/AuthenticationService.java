@@ -156,6 +156,12 @@ public class AuthenticationService {
         refreshTokenService.revokeAllForUser(user, RevocationReason.PASSWORD_CHANGED);
     }
 
+    /**
+     * Verifies password + email-verified. Does <em>not</em> record
+     * {@code LOGIN_SUCCESS} — the controller does so after the optional 2FA
+     * step succeeds (otherwise we'd be recording successful logins on
+     * accounts where the second factor was never presented).
+     */
     public User authenticate(LoginUserDto input) {
         User user;
         try {
@@ -174,7 +180,6 @@ public class AuthenticationService {
                     "{\"reason\":\"email_not_verified\"}");
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.AUTH_EMAIL_NOT_VERIFIED);
         }
-        securityAuditService.recordSuccess(SecurityEventType.LOGIN_SUCCESS, user);
         return user;
     }
 }

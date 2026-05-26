@@ -47,10 +47,14 @@ public final class IntegrationTestSupport {
         jdbc.execute("DELETE FROM organizations");
         jdbc.execute("DELETE FROM security_audit_entries");
         jdbc.execute("DELETE FROM user_devices");
+        jdbc.execute("DELETE FROM two_factor_recovery_codes");
+        jdbc.execute("DELETE FROM two_factor_setup_tokens");
         jdbc.execute("DELETE FROM invalidated_tokens");
         jdbc.execute("DELETE FROM refresh_tokens");
         jdbc.execute("DELETE FROM password_reset_tokens");
         jdbc.execute("DELETE FROM email_verification_tokens");
+        jdbc.update("UPDATE users SET two_factor_enabled = FALSE, two_factor_secret = NULL, "
+                + "two_factor_enabled_at = NULL WHERE email = ?", ADMIN_EMAIL);
         jdbc.execute("DELETE FROM user_username_history");
         jdbc.update("DELETE FROM users WHERE email <> ?", ADMIN_EMAIL);
         jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");

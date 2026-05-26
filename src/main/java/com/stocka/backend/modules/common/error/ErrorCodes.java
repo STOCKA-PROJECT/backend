@@ -31,6 +31,12 @@ public final class ErrorCodes {
     public static final String AUTH_REFRESH_TOKEN_EXPIRED = "auth.refresh_token_expired";
     public static final String AUTH_REFRESH_TOKEN_REUSED = "auth.refresh_token_reused";
     public static final String AUTH_TOKEN_EXPIRED = "auth.token_expired";
+    public static final String AUTH_2FA_INVALID_CODE = "auth.2fa_invalid_code";
+    public static final String AUTH_2FA_SETUP_TOKEN_INVALID = "auth.2fa_setup_token_invalid";
+    public static final String AUTH_2FA_MFA_TOKEN_EXPIRED = "auth.2fa_mfa_token_expired";
+    public static final String AUTH_2FA_ALREADY_ENABLED = "auth.2fa_already_enabled";
+    public static final String AUTH_2FA_NOT_ENABLED = "auth.2fa_not_enabled";
+    public static final String AUTH_2FA_REQUIRED = "auth.2fa_required";
 
     // ---- users ----------------------------------------------------------
     public static final String USERS_EMAIL_TAKEN = "users.email_taken";

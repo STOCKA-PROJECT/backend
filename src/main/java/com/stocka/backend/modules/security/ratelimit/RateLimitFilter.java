@@ -51,6 +51,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
     /** {@code POST /auth/refresh}: 30/min por IP — varias pestañas pueden refrescar a la vez. */
     static final RateLimitPolicy AUTH_REFRESH_IP =
             new RateLimitPolicy("auth.refresh.ip", 30, 30, Duration.ofMinutes(1));
+    /** {@code POST /auth/login/2fa}: 5/min por IP — frena fuerza bruta sobre el código de 6 dígitos. */
+    static final RateLimitPolicy AUTH_2FA_LOGIN_IP =
+            new RateLimitPolicy("auth.2fa_login.ip", 5, 5, Duration.ofMinutes(1));
     /** {@code POST /auth/signup}: 3 registros/h por IP. */
     static final RateLimitPolicy AUTH_SIGNUP_IP =
             new RateLimitPolicy("auth.signup.ip", 3, 3, Duration.ofHours(1));
@@ -161,6 +164,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private static final List<Mapping> MAPPINGS = List.of(
             new Mapping("POST", "/auth/login",                 AUTH_LOGIN_IP),
             new Mapping("POST", "/auth/refresh",               AUTH_REFRESH_IP),
+            new Mapping("POST", "/auth/login/2fa",             AUTH_2FA_LOGIN_IP),
             new Mapping("POST", "/auth/signup",                AUTH_SIGNUP_IP),
             new Mapping("POST", "/auth/forgot-password",       AUTH_FORGOT_IP),
             new Mapping("POST", "/auth/reset-password",        AUTH_RESET_IP),
