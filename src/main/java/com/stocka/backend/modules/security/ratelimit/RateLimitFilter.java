@@ -54,6 +54,12 @@ public class RateLimitFilter extends OncePerRequestFilter {
     /** {@code POST /auth/login/2fa}: 5/min por IP — frena fuerza bruta sobre el código de 6 dígitos. */
     static final RateLimitPolicy AUTH_2FA_LOGIN_IP =
             new RateLimitPolicy("auth.2fa_login.ip", 5, 5, Duration.ofMinutes(1));
+    /** {@code GET /auth/oauth/google/authorize}: 30/min por IP. */
+    static final RateLimitPolicy OAUTH_AUTHORIZE_IP =
+            new RateLimitPolicy("auth.oauth_authorize.ip", 30, 30, Duration.ofMinutes(1));
+    /** {@code POST /auth/oauth/google/callback}: 10/min por IP. */
+    static final RateLimitPolicy OAUTH_CALLBACK_IP =
+            new RateLimitPolicy("auth.oauth_callback.ip", 10, 10, Duration.ofMinutes(1));
     /** {@code POST /auth/signup}: 3 registros/h por IP. */
     static final RateLimitPolicy AUTH_SIGNUP_IP =
             new RateLimitPolicy("auth.signup.ip", 3, 3, Duration.ofHours(1));
@@ -165,6 +171,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
             new Mapping("POST", "/auth/login",                 AUTH_LOGIN_IP),
             new Mapping("POST", "/auth/refresh",               AUTH_REFRESH_IP),
             new Mapping("POST", "/auth/login/2fa",             AUTH_2FA_LOGIN_IP),
+            new Mapping("GET",  "/auth/oauth/google/authorize", OAUTH_AUTHORIZE_IP),
+            new Mapping("POST", "/auth/oauth/google/callback",  OAUTH_CALLBACK_IP),
             new Mapping("POST", "/auth/signup",                AUTH_SIGNUP_IP),
             new Mapping("POST", "/auth/forgot-password",       AUTH_FORGOT_IP),
             new Mapping("POST", "/auth/reset-password",        AUTH_RESET_IP),

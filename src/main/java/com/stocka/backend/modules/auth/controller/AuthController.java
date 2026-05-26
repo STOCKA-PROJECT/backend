@@ -19,12 +19,18 @@ import com.stocka.backend.modules.auth.dto.LoginUserDto;
 import com.stocka.backend.modules.auth.dto.RegisterUserDto;
 import com.stocka.backend.modules.auth.dto.ResendVerificationRequestDto;
 import com.stocka.backend.modules.auth.dto.ResetPasswordRequestDto;
+import com.stocka.backend.modules.auth.dto.OAuthAuthorizeResponseDto;
+import com.stocka.backend.modules.auth.dto.OAuthCallbackRequestDto;
 import com.stocka.backend.modules.auth.dto.TwoFactorChallengeRequestDto;
 import com.stocka.backend.modules.auth.dto.TwoFactorConfirmRequestDto;
 import com.stocka.backend.modules.auth.dto.TwoFactorDisableRequestDto;
 import com.stocka.backend.modules.auth.dto.TwoFactorRecoveryCodesResponseDto;
 import com.stocka.backend.modules.auth.dto.TwoFactorSetupResponseDto;
 import com.stocka.backend.modules.auth.dto.VerifyEmailRequestDto;
+import com.stocka.backend.modules.auth.entity.OAuthIdentity;
+import com.stocka.backend.modules.auth.oauth.GoogleOAuthClient;
+import com.stocka.backend.modules.auth.oauth.GoogleOAuthService;
+import com.stocka.backend.modules.auth.oauth.OAuthAccountLinker;
 import com.stocka.backend.modules.auth.service.AuthenticationService;
 import com.stocka.backend.modules.auth.service.EmailVerificationService;
 import com.stocka.backend.modules.auth.service.PasswordResetService;
@@ -69,6 +75,8 @@ public class AuthController {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final SecurityAuditService securityAuditService;
+    private final GoogleOAuthService googleOAuthService;
+    private final OAuthAccountLinker oauthAccountLinker;
     private final long mfaChallengeTtlSeconds;
 
     public AuthController(
@@ -84,6 +92,8 @@ public class AuthController {
             UserRepository userRepository,
             PasswordEncoder passwordEncoder,
             SecurityAuditService securityAuditService,
+            GoogleOAuthService googleOAuthService,
+            OAuthAccountLinker oauthAccountLinker,
             @Value("${security.twofactor.mfa-challenge-ttl-seconds:300}") long mfaChallengeTtlSeconds
     ) {
         this.authenticationService = authenticationService;
@@ -98,6 +108,8 @@ public class AuthController {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.securityAuditService = securityAuditService;
+        this.googleOAuthService = googleOAuthService;
+        this.oauthAccountLinker = oauthAccountLinker;
         this.mfaChallengeTtlSeconds = mfaChallengeTtlSeconds;
     }
 
@@ -266,6 +278,59 @@ public class AuthController {
         }
         List<String> codes = twoFactorService.generateRecoveryCodes(user);
         return ResponseEntity.ok(new TwoFactorRecoveryCodesResponseDto(codes));
+    }
+
+    /**
+     * Starts the Google OAuth flow. Returns the authorize URL and the
+     * matching state cookie. The frontend just follows the URL.
+     */
+    @org.springframework.web.bind.annotation.GetMapping("/oauth/google/authorize")
+    public ResponseEntity<OAuthAuthorizeResponseDto> oauthAuthorize() {
+        GoogleOAuthService.AuthorizationResult result = googleOAuthService.buildAuthorization();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, result.stateCookie().toString())
+                .body(new OAuthAuthorizeResponseDto(result.authorizationUrl()));
+    }
+
+    /**
+     * Completes the Google OAuth flow. Verifies the state pair, exchanges the
+     * code for a profile, links or signs up the user, then issues the
+     * same session payload as the password-only path.
+     */
+    @PostMapping("/oauth/google/callback")
+    public ResponseEntity<LoginResponseDto> oauthCallback(
+            @Valid @RequestBody OAuthCallbackRequestDto dto,
+            HttpServletRequest request) {
+        GoogleOAuthClient.UserInfo profile = googleOAuthService.verifyAndFetchProfile(
+                dto.getState(), request, dto.getCode());
+        User user = oauthAccountLinker.linkOrLogin(profile);
+        if (!user.isEmailVerified()) {
+            // Defensive — linkOrLogin shouldn't reach here without
+            // email_verified=true, but in case Google later returns a
+            // non-verified email for an existing account we surface the
+            // verification gate instead of issuing a session.
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.AUTH_EMAIL_NOT_VERIFIED);
+        }
+        // The session-issuing path returns a ResponseEntity with the refresh
+        // cookie attached. We add the state-clearing cookie on top via the
+        // mutable headers — building a new entity from scratch would force us
+        // to duplicate that logic.
+        ResponseEntity<LoginResponseDto> issued = issueSession(user, dto.isRememberMe(), request);
+        ResponseEntity.BodyBuilder builder = ResponseEntity.status(issued.getStatusCode());
+        issued.getHeaders().forEach((name, values) ->
+                values.forEach(v -> builder.header(name, v)));
+        builder.header(HttpHeaders.SET_COOKIE, googleOAuthService.buildClearingStateCookie().toString());
+        return builder.body(issued.getBody());
+    }
+
+    /**
+     * Removes the Google identity from the current account.
+     */
+    @PostMapping("/oauth/google/unlink")
+    @org.springframework.security.access.prepost.PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> oauthUnlink() {
+        oauthAccountLinker.unlink(currentUser(), OAuthIdentity.Provider.GOOGLE);
+        return ResponseEntity.noContent().build();
     }
 
     private static User currentUser() {

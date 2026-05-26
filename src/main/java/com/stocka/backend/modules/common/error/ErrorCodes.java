@@ -37,6 +37,10 @@ public final class ErrorCodes {
     public static final String AUTH_2FA_ALREADY_ENABLED = "auth.2fa_already_enabled";
     public static final String AUTH_2FA_NOT_ENABLED = "auth.2fa_not_enabled";
     public static final String AUTH_2FA_REQUIRED = "auth.2fa_required";
+    public static final String OAUTH_NOT_CONFIGURED = "auth.oauth_not_configured";
+    public static final String OAUTH_STATE_INVALID = "auth.oauth_state_invalid";
+    public static final String OAUTH_PROVIDER_ERROR = "auth.oauth_provider_error";
+    public static final String OAUTH_LINK_NOT_FOUND = "auth.oauth_link_not_found";
 
     // ---- users ----------------------------------------------------------
     public static final String USERS_EMAIL_TAKEN = "users.email_taken";
