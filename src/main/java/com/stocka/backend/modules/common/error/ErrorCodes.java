@@ -38,6 +38,10 @@ public final class ErrorCodes {
     public static final String USERS_USERNAME_INVALID = "users.username_invalid";
     public static final String USERS_USERNAME_RESERVED = "users.username_reserved";
 
+    // ---- sessions / devices ---------------------------------------------
+    public static final String SESSIONS_NOT_FOUND = "sessions.not_found";
+    public static final String SESSIONS_NAME_INVALID = "sessions.name_invalid";
+
     // ---- pieces / piece types / locations -------------------------------
     public static final String PIECES_NOT_FOUND = "pieces.not_found";
     public static final String PIECE_TYPES_NOT_FOUND = "piece_types.not_found";

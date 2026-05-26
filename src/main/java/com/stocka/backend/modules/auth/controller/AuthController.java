@@ -27,9 +27,13 @@ import com.stocka.backend.modules.auth.service.RefreshTokenCookieFactory;
 import com.stocka.backend.modules.auth.service.RefreshTokenService;
 import com.stocka.backend.modules.auth.service.RefreshTokenService.IssuedRefreshToken;
 import com.stocka.backend.modules.common.dto.AvailabilityResponse;
+import com.stocka.backend.modules.security.ratelimit.ClientIpResolver;
 import com.stocka.backend.modules.security.service.JwtService;
 import com.stocka.backend.modules.users.dto.UserResponseDto;
 import com.stocka.backend.modules.users.entity.User;
+import com.stocka.backend.modules.users.service.UserDeviceService;
+
+import java.util.Map;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -43,6 +47,8 @@ public class AuthController {
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
     private final RefreshTokenCookieFactory refreshCookieFactory;
+    private final UserDeviceService userDeviceService;
+    private final ClientIpResolver clientIpResolver;
 
     public AuthController(
             AuthenticationService authenticationService,
@@ -50,7 +56,9 @@ public class AuthController {
             EmailVerificationService emailVerificationService,
             JwtService jwtService,
             RefreshTokenService refreshTokenService,
-            RefreshTokenCookieFactory refreshCookieFactory
+            RefreshTokenCookieFactory refreshCookieFactory,
+            UserDeviceService userDeviceService,
+            ClientIpResolver clientIpResolver
     ) {
         this.authenticationService = authenticationService;
         this.passwordResetService = passwordResetService;
@@ -58,6 +66,8 @@ public class AuthController {
         this.jwtService = jwtService;
         this.refreshTokenService = refreshTokenService;
         this.refreshCookieFactory = refreshCookieFactory;
+        this.userDeviceService = userDeviceService;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @PostMapping("/logout")
@@ -96,11 +106,20 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<LoginResponseDto> login(@Valid @RequestBody LoginUserDto loginUserDto) {
+    public ResponseEntity<LoginResponseDto> login(
+            @Valid @RequestBody LoginUserDto loginUserDto,
+            HttpServletRequest request) {
         User authenticatedUser = authenticationService.authenticate(loginUserDto);
-        String jwtToken = jwtService.generateToken(authenticatedUser);
         IssuedRefreshToken refresh = refreshTokenService.issueForLogin(
                 authenticatedUser, loginUserDto.isRememberMe());
+        userDeviceService.registerForLogin(
+                authenticatedUser,
+                refresh.entity().getFamilyId(),
+                request.getHeader(HttpHeaders.USER_AGENT),
+                clientIpResolver.resolve(request));
+        String jwtToken = jwtService.generateToken(
+                Map.of(JwtService.CLAIM_FAMILY_ID, refresh.entity().getFamilyId()),
+                authenticatedUser);
 
         LoginResponseDto body = new LoginResponseDto()
                 .setAccessToken(jwtToken)
@@ -128,9 +147,14 @@ public class AuthController {
                         HttpStatus.UNAUTHORIZED, "missing_refresh_cookie"));
         IssuedRefreshToken rotated = refreshTokenService.rotate(
                 rawToken, request.getHeader(HttpHeaders.USER_AGENT));
+        userDeviceService.touchOnRefresh(
+                rotated.entity().getFamilyId(),
+                clientIpResolver.resolve(request));
 
         User user = rotated.entity().getUser();
-        String accessToken = jwtService.generateToken(user);
+        String accessToken = jwtService.generateToken(
+                Map.of(JwtService.CLAIM_FAMILY_ID, rotated.entity().getFamilyId()),
+                user);
         LoginResponseDto body = new LoginResponseDto()
                 .setAccessToken(accessToken)
                 .setExpiresIn(jwtService.getExpirationTime())

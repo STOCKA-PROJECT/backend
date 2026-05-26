@@ -33,6 +33,13 @@ public class JwtService {
     /** Claim name carrying the global token version. */
     public static final String CLAIM_TOKEN_VERSION = "tokenVersion";
 
+    /**
+     * Claim name carrying the refresh-token family the access token was minted
+     * from. Used by {@code GET /users/me/sessions} to flag the current session
+     * without having to read the (path-restricted) refresh cookie.
+     */
+    public static final String CLAIM_FAMILY_ID = "familyId";
+
     /** Value of {@link #CLAIM_TOKEN_TYPE} for ordinary access tokens. */
     public static final String TYPE_ACCESS = "access";
 
@@ -92,6 +99,16 @@ public class JwtService {
      */
     public Integer extractTokenVersion(String token) {
         return extractClaim(token, c -> c.get(CLAIM_TOKEN_VERSION, Integer.class));
+    }
+
+    /**
+     * Returns the {@code familyId} claim or {@code null} when absent.
+     *
+     * @param token signed JWT
+     * @return refresh-token family id the access token was minted from
+     */
+    public String extractFamilyId(String token) {
+        return extractClaim(token, c -> c.get(CLAIM_FAMILY_ID, String.class));
     }
 
     public String generateToken(UserDetails userDetails) {
