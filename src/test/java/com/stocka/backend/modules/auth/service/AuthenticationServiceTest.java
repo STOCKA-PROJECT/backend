@@ -58,6 +58,7 @@ class AuthenticationServiceTest {
     @Mock private JwtService jwtService;
     @Mock private EmailVerificationService emailVerificationService;
     @Mock private RefreshTokenService refreshTokenService;
+    @Mock private com.stocka.backend.modules.security.audit.SecurityAuditService securityAuditService;
 
     @InjectMocks
     private AuthenticationService sut;

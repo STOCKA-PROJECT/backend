@@ -19,6 +19,8 @@ import com.stocka.backend.modules.auth.entity.RefreshToken.RevocationReason;
 import com.stocka.backend.modules.auth.repository.EmailVerificationTokenRepository;
 import com.stocka.backend.modules.auth.repository.PasswordResetTokenRepository;
 import com.stocka.backend.modules.auth.service.RefreshTokenService;
+import com.stocka.backend.modules.security.audit.SecurityAuditService;
+import com.stocka.backend.modules.security.audit.SecurityEventType;
 import com.stocka.backend.modules.common.dto.AvailabilityResponse;
 import com.stocka.backend.modules.common.dto.AvailabilityResponse.Reason;
 import com.stocka.backend.modules.common.error.ApiException;
@@ -58,6 +60,7 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final NotificationPreferenceService notificationPreferenceService;
     private final RefreshTokenService refreshTokenService;
+    private final SecurityAuditService securityAuditService;
 
     public UserService(
             UserRepository userRepository,
@@ -68,7 +71,8 @@ public class UserService {
             PasswordResetTokenRepository passwordResetTokenRepository,
             PasswordEncoder passwordEncoder,
             NotificationPreferenceService notificationPreferenceService,
-            RefreshTokenService refreshTokenService) {
+            RefreshTokenService refreshTokenService,
+            SecurityAuditService securityAuditService) {
         this.userRepository = userRepository;
         this.usernameHistoryRepository = usernameHistoryRepository;
         this.memberRepository = memberRepository;
@@ -78,6 +82,7 @@ public class UserService {
         this.passwordEncoder = passwordEncoder;
         this.notificationPreferenceService = notificationPreferenceService;
         this.refreshTokenService = refreshTokenService;
+        this.securityAuditService = securityAuditService;
     }
 
     public List<User> allUsers() {
@@ -248,6 +253,7 @@ public class UserService {
         // Revoke every long-lived refresh token: the old password must stop minting
         // access tokens through /auth/refresh.
         refreshTokenService.revokeAllForUser(actor, RevocationReason.PASSWORD_CHANGED);
+        securityAuditService.recordSuccess(SecurityEventType.PASSWORD_CHANGED, actor);
     }
 
     private void validateUsername(String username, Integer currentUserId) {

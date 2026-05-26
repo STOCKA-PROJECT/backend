@@ -57,6 +57,8 @@ class PasswordResetServiceTest {
     private EmailService emailService;
     @Mock
     private RefreshTokenService refreshTokenService;
+    @Mock
+    private com.stocka.backend.modules.security.audit.SecurityAuditService securityAuditService;
 
     private PasswordResetService sut;
 
@@ -70,6 +72,7 @@ class PasswordResetServiceTest {
                 passwordEncoder,
                 emailService,
                 refreshTokenService,
+                securityAuditService,
                 30L,
                 "http://localhost:3002");
         existingUser = new User()
@@ -195,7 +198,7 @@ class PasswordResetServiceTest {
         void should_stripTrailingSlash_from_frontendBaseUrl() {
             sut = new PasswordResetService(
                     userRepository, tokenRepository, passwordEncoder, emailService,
-                    refreshTokenService, 30L, "http://localhost:3002/");
+                    refreshTokenService, securityAuditService, 30L, "http://localhost:3002/");
             when(userRepository.findByEmail(existingUser.getEmail())).thenReturn(Optional.of(existingUser));
             ArgumentCaptor<String> urlCaptor = ArgumentCaptor.forClass(String.class);
 
@@ -212,7 +215,7 @@ class PasswordResetServiceTest {
         void should_useConfiguredTtl_for_expiresAt() {
             sut = new PasswordResetService(
                     userRepository, tokenRepository, passwordEncoder, emailService,
-                    refreshTokenService, 5L, "http://localhost:3002");
+                    refreshTokenService, securityAuditService, 5L, "http://localhost:3002");
             when(userRepository.findByEmail(existingUser.getEmail())).thenReturn(Optional.of(existingUser));
             ArgumentCaptor<PasswordResetToken> captor = ArgumentCaptor.forClass(PasswordResetToken.class);
 

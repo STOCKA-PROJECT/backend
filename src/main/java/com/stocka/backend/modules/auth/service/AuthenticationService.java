@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -18,6 +19,8 @@ import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.roles.entity.Role;
 import com.stocka.backend.modules.roles.entity.RoleEnum;
 import com.stocka.backend.modules.roles.repository.RoleRepository;
+import com.stocka.backend.modules.security.audit.SecurityAuditService;
+import com.stocka.backend.modules.security.audit.SecurityEventType;
 import com.stocka.backend.modules.security.entity.InvalidatedToken;
 import com.stocka.backend.modules.security.repository.InvalidatedTokenRepository;
 import com.stocka.backend.modules.security.service.JwtService;
@@ -38,6 +41,7 @@ public class AuthenticationService {
     private final JwtService jwtService;
     private final EmailVerificationService emailVerificationService;
     private final RefreshTokenService refreshTokenService;
+    private final SecurityAuditService securityAuditService;
 
     public AuthenticationService(
             UserRepository userRepository,
@@ -48,7 +52,8 @@ public class AuthenticationService {
             InvalidatedTokenRepository invalidatedTokenRepository,
             JwtService jwtService,
             EmailVerificationService emailVerificationService,
-            RefreshTokenService refreshTokenService
+            RefreshTokenService refreshTokenService,
+            SecurityAuditService securityAuditService
     ) {
         this.userRepository = userRepository;
         this.userService = userService;
@@ -59,6 +64,7 @@ public class AuthenticationService {
         this.jwtService = jwtService;
         this.emailVerificationService = emailVerificationService;
         this.refreshTokenService = refreshTokenService;
+        this.securityAuditService = securityAuditService;
     }
 
     public User signup(RegisterUserDto input) {
@@ -133,6 +139,10 @@ public class AuthenticationService {
                 .setExpiresAt(jwtService.extractExpirationAsLocalDateTime(accessToken));
         invalidatedTokenRepository.save(invalidatedToken);
         refreshTokenService.revokeByRawToken(rawRefreshToken);
+
+        String email = jwtService.extractUsername(accessToken);
+        User user = email != null ? userRepository.findByEmail(email).orElse(null) : null;
+        securityAuditService.recordSuccess(SecurityEventType.LOGOUT, user);
     }
 
     /**
@@ -147,13 +157,24 @@ public class AuthenticationService {
     }
 
     public User authenticate(LoginUserDto input) {
-        Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(input.getEmail(), input.getPassword())
-        );
-        User user = (User) authentication.getPrincipal();
+        User user;
+        try {
+            Authentication authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(input.getEmail(), input.getPassword())
+            );
+            user = (User) authentication.getPrincipal();
+        } catch (AuthenticationException ex) {
+            User known = userRepository.findByEmail(input.getEmail()).orElse(null);
+            securityAuditService.recordFailure(SecurityEventType.LOGIN_FAILED, known, input.getEmail());
+            throw ex;
+        }
         if (!user.isEmailVerified()) {
+            securityAuditService.recordFailure(
+                    SecurityEventType.LOGIN_FAILED, user, input.getEmail(),
+                    "{\"reason\":\"email_not_verified\"}");
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.AUTH_EMAIL_NOT_VERIFIED);
         }
+        securityAuditService.recordSuccess(SecurityEventType.LOGIN_SUCCESS, user);
         return user;
     }
 }

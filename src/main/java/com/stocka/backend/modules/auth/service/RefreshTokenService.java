@@ -21,6 +21,8 @@ import com.stocka.backend.modules.auth.entity.RefreshToken.RevocationReason;
 import com.stocka.backend.modules.auth.repository.RefreshTokenRepository;
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
+import com.stocka.backend.modules.security.audit.SecurityAuditService;
+import com.stocka.backend.modules.security.audit.SecurityEventType;
 import com.stocka.backend.modules.security.config.RefreshTokenProperties;
 import com.stocka.backend.modules.users.entity.User;
 
@@ -44,11 +46,16 @@ public class RefreshTokenService {
 
     private final RefreshTokenRepository repository;
     private final RefreshTokenProperties properties;
+    private final SecurityAuditService securityAuditService;
     private final SecureRandom secureRandom = new SecureRandom();
 
-    public RefreshTokenService(RefreshTokenRepository repository, RefreshTokenProperties properties) {
+    public RefreshTokenService(
+            RefreshTokenRepository repository,
+            RefreshTokenProperties properties,
+            SecurityAuditService securityAuditService) {
         this.repository = repository;
         this.properties = properties;
+        this.securityAuditService = securityAuditService;
     }
 
     /**
@@ -116,6 +123,9 @@ public class RefreshTokenService {
             int wiped = repository.revokeFamily(stored.getFamilyId(), RevocationReason.REUSE_DETECTED, now);
             log.warn("refresh_token_reuse_detected user_id={} family_id={} wiped={}",
                     stored.getUser().getId(), stored.getFamilyId(), wiped);
+            securityAuditService.recordFailure(
+                    SecurityEventType.REFRESH_REUSE_DETECTED, stored.getUser(), stored.getUser().getEmail(),
+                    "{\"familyId\":\"" + stored.getFamilyId() + "\",\"wiped\":" + wiped + "}");
             throw new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_REFRESH_TOKEN_REUSED);
         }
 

@@ -45,6 +45,7 @@ public final class IntegrationTestSupport {
         jdbc.execute("DELETE FROM organization_members");
         jdbc.execute("DELETE FROM organization_slug_history");
         jdbc.execute("DELETE FROM organizations");
+        jdbc.execute("DELETE FROM security_audit_entries");
         jdbc.execute("DELETE FROM invalidated_tokens");
         jdbc.execute("DELETE FROM refresh_tokens");
         jdbc.execute("DELETE FROM password_reset_tokens");
