@@ -30,7 +30,7 @@ import com.stocka.backend.modules.security.service.AppUserDetailsService;
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
-@EnableConfigurationProperties(CorsProperties.class)
+@EnableConfigurationProperties({CorsProperties.class, RefreshTokenProperties.class})
 public class SecurityConfiguration {
     private final AppUserDetailsService userDetailsService;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;

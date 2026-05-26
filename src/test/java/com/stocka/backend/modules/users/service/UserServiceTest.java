@@ -57,6 +57,7 @@ class UserServiceTest {
     @Mock private PasswordResetTokenRepository passwordResetTokenRepository;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private NotificationPreferenceService notificationPreferenceService;
+    @Mock private com.stocka.backend.modules.auth.service.RefreshTokenService refreshTokenService;
 
     @InjectMocks
     private UserService sut;

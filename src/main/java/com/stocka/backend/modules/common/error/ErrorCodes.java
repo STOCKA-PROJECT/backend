@@ -26,6 +26,11 @@ public final class ErrorCodes {
     public static final String AUTH_CURRENT_PASSWORD_INVALID = "auth.current_password_invalid";
     public static final String AUTH_PASSWORD_TOO_SHORT = "auth.password_too_short";
     public static final String AUTH_NEW_PASSWORD_SAME_AS_CURRENT = "auth.new_password_same_as_current";
+    public static final String AUTH_REFRESH_TOKEN_MISSING = "auth.refresh_token_missing";
+    public static final String AUTH_REFRESH_TOKEN_INVALID = "auth.refresh_token_invalid";
+    public static final String AUTH_REFRESH_TOKEN_EXPIRED = "auth.refresh_token_expired";
+    public static final String AUTH_REFRESH_TOKEN_REUSED = "auth.refresh_token_reused";
+    public static final String AUTH_TOKEN_EXPIRED = "auth.token_expired";
 
     // ---- users ----------------------------------------------------------
     public static final String USERS_EMAIL_TAKEN = "users.email_taken";

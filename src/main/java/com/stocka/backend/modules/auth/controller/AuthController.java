@@ -1,6 +1,8 @@
 package com.stocka.backend.modules.auth.controller;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,11 +23,15 @@ import com.stocka.backend.modules.auth.dto.VerifyEmailRequestDto;
 import com.stocka.backend.modules.auth.service.AuthenticationService;
 import com.stocka.backend.modules.auth.service.EmailVerificationService;
 import com.stocka.backend.modules.auth.service.PasswordResetService;
+import com.stocka.backend.modules.auth.service.RefreshTokenCookieFactory;
+import com.stocka.backend.modules.auth.service.RefreshTokenService;
+import com.stocka.backend.modules.auth.service.RefreshTokenService.IssuedRefreshToken;
 import com.stocka.backend.modules.common.dto.AvailabilityResponse;
 import com.stocka.backend.modules.security.service.JwtService;
 import com.stocka.backend.modules.users.dto.UserResponseDto;
 import com.stocka.backend.modules.users.entity.User;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 
 @RestController
@@ -35,26 +41,41 @@ public class AuthController {
     private final PasswordResetService passwordResetService;
     private final EmailVerificationService emailVerificationService;
     private final JwtService jwtService;
+    private final RefreshTokenService refreshTokenService;
+    private final RefreshTokenCookieFactory refreshCookieFactory;
 
     public AuthController(
             AuthenticationService authenticationService,
             PasswordResetService passwordResetService,
             EmailVerificationService emailVerificationService,
-            JwtService jwtService
+            JwtService jwtService,
+            RefreshTokenService refreshTokenService,
+            RefreshTokenCookieFactory refreshCookieFactory
     ) {
         this.authenticationService = authenticationService;
         this.passwordResetService = passwordResetService;
         this.emailVerificationService = emailVerificationService;
         this.jwtService = jwtService;
+        this.refreshTokenService = refreshTokenService;
+        this.refreshCookieFactory = refreshCookieFactory;
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<Void> logout(@RequestHeader("Authorization") String authHeader) {
+    public ResponseEntity<Void> logout(
+            @RequestHeader("Authorization") String authHeader,
+            HttpServletRequest request
+    ) {
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Token no proporcionado");
         }
-        authenticationService.logout(authHeader.substring(7));
-        return ResponseEntity.noContent().build();
+        String accessToken = authHeader.substring(7);
+        String rawRefresh = refreshCookieFactory.readFromRequest(request).orElse(null);
+        authenticationService.logout(accessToken, rawRefresh);
+
+        ResponseCookie clearing = refreshCookieFactory.buildClearing();
+        return ResponseEntity.noContent()
+                .header(HttpHeaders.SET_COOKIE, clearing.toString())
+                .build();
     }
 
     @PostMapping("/signup")
@@ -78,13 +99,48 @@ public class AuthController {
     public ResponseEntity<LoginResponseDto> login(@Valid @RequestBody LoginUserDto loginUserDto) {
         User authenticatedUser = authenticationService.authenticate(loginUserDto);
         String jwtToken = jwtService.generateToken(authenticatedUser);
+        IssuedRefreshToken refresh = refreshTokenService.issueForLogin(
+                authenticatedUser, loginUserDto.isRememberMe());
 
-        LoginResponseDto loginResponse = new LoginResponseDto()
-                .setToken(jwtToken)
+        LoginResponseDto body = new LoginResponseDto()
+                .setAccessToken(jwtToken)
                 .setExpiresIn(jwtService.getExpirationTime())
                 .setUser(UserResponseDto.from(authenticatedUser));
+        ResponseCookie cookie = refreshCookieFactory.build(refresh.rawToken(), loginUserDto.isRememberMe());
 
-        return ResponseEntity.ok(loginResponse);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, cookie.toString())
+                .body(body);
+    }
+
+    /**
+     * Rotates the refresh token in the {@code stocka_refresh} cookie and mints
+     * a fresh access token. The frontend hits this endpoint when an access
+     * token comes back with 401 + {@code auth.token_expired}.
+     *
+     * @param request HTTP request — used only to read the cookie
+     * @return new access token in the JSON body + rotated refresh in a new cookie
+     */
+    @PostMapping("/refresh")
+    public ResponseEntity<LoginResponseDto> refresh(HttpServletRequest request) {
+        String rawToken = refreshCookieFactory.readFromRequest(request)
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(
+                        HttpStatus.UNAUTHORIZED, "missing_refresh_cookie"));
+        IssuedRefreshToken rotated = refreshTokenService.rotate(
+                rawToken, request.getHeader(HttpHeaders.USER_AGENT));
+
+        User user = rotated.entity().getUser();
+        String accessToken = jwtService.generateToken(user);
+        LoginResponseDto body = new LoginResponseDto()
+                .setAccessToken(accessToken)
+                .setExpiresIn(jwtService.getExpirationTime())
+                .setUser(UserResponseDto.from(user));
+        ResponseCookie cookie = refreshCookieFactory.build(
+                rotated.rawToken(), rotated.entity().isRememberMe());
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, cookie.toString())
+                .body(body);
     }
 
     @PostMapping("/forgot-password")

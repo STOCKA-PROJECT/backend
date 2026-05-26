@@ -14,15 +14,38 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
+/**
+ * Issues and parses signed access tokens (HS256). Access tokens are short-lived
+ * (15 minutes by default) and carry two claims on top of the standard set:
+ * <ul>
+ *   <li>{@code tokenType=access} — distinguishes access tokens from future
+ *       short-lived intermediate tokens (e.g. the 2FA challenge token).</li>
+ *   <li>{@code tokenVersion} — bumping the configured value invalidates every
+ *       previously-issued token, enabling a global forced-logout if needed.</li>
+ * </ul>
+ */
 @Service
 public class JwtService {
+
+    /** Claim name carrying the token type ({@code access}, {@code mfa_challenge}, …). */
+    public static final String CLAIM_TOKEN_TYPE = "tokenType";
+
+    /** Claim name carrying the global token version. */
+    public static final String CLAIM_TOKEN_VERSION = "tokenVersion";
+
+    /** Value of {@link #CLAIM_TOKEN_TYPE} for ordinary access tokens. */
+    public static final String TYPE_ACCESS = "access";
+
     private static final int MIN_HEX_LENGTH = 64;
 
     @Value("${security.jwt.secret-key}")
     private String secretKey;
 
-    @Value("${security.jwt.expiration-time:86400000}")
+    @Value("${security.jwt.expiration-time:900000}")
     private long jwtExpiration;
+
+    @Value("${security.jwt.token-version:1}")
+    private int currentTokenVersion;
 
     @PostConstruct
     void validateConfiguration() {
@@ -46,13 +69,41 @@ public class JwtService {
         return extractClaim(token, Claims::getSubject);
     }
 
+    /**
+     * Returns the {@code tokenType} claim or {@code null} when absent. Tokens
+     * minted before this claim was introduced therefore read as {@code null}
+     * and are rejected by the JWT filter.
+     *
+     * @param token signed JWT
+     * @return the token type claim, or {@code null}
+     */
+    public String extractTokenType(String token) {
+        return extractClaim(token, c -> c.get(CLAIM_TOKEN_TYPE, String.class));
+    }
+
+    /**
+     * Returns the {@code tokenVersion} claim or {@code null} when absent.
+     * Tokens whose claim does not match {@link #getCurrentTokenVersion()} are
+     * rejected — bumping {@code security.jwt.token-version} therefore logs out
+     * everyone.
+     *
+     * @param token signed JWT
+     * @return the token version claim, or {@code null}
+     */
+    public Integer extractTokenVersion(String token) {
+        return extractClaim(token, c -> c.get(CLAIM_TOKEN_VERSION, Integer.class));
+    }
+
     public String generateToken(UserDetails userDetails) {
         return generateToken(new HashMap<>(), userDetails);
     }
 
     public String generateToken(Map<String, Object> extraClaims, UserDetails userDetails) {
+        Map<String, Object> claims = new HashMap<>(extraClaims);
+        claims.putIfAbsent(CLAIM_TOKEN_TYPE, TYPE_ACCESS);
+        claims.putIfAbsent(CLAIM_TOKEN_VERSION, currentTokenVersion);
         return Jwts.builder()
-                .claims(extraClaims)
+                .claims(claims)
                 .subject(userDetails.getUsername())
                 .issuedAt(new Date(System.currentTimeMillis()))
                 .expiration(new Date(System.currentTimeMillis() + jwtExpiration))
@@ -60,13 +111,34 @@ public class JwtService {
                 .compact();
     }
 
+    /**
+     * Validates signature, expiration, subject, token type and token version.
+     *
+     * @param token       signed JWT
+     * @param userDetails authenticated principal
+     * @return {@code true} when the token can be trusted as an access token
+     */
     public boolean isTokenValid(String token, UserDetails userDetails) {
         String username = extractUsername(token);
-        return username.equals(userDetails.getUsername()) && !isTokenExpired(token);
+        if (username == null || !username.equals(userDetails.getUsername())) {
+            return false;
+        }
+        if (isTokenExpired(token)) {
+            return false;
+        }
+        if (!TYPE_ACCESS.equals(extractTokenType(token))) {
+            return false;
+        }
+        Integer version = extractTokenVersion(token);
+        return version != null && version == currentTokenVersion;
     }
 
     public long getExpirationTime() {
         return jwtExpiration;
+    }
+
+    public int getCurrentTokenVersion() {
+        return currentTokenVersion;
     }
 
     private boolean isTokenExpired(String token) {

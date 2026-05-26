@@ -19,6 +19,16 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+
+    /**
+     * Request attribute set when the request carried a Bearer token that failed
+     * validation (expired, wrong version, wrong type, …). Read by
+     * {@link com.stocka.backend.modules.security.error.JsonAuthenticationEntryPoint}
+     * to surface {@code auth.token_expired} instead of {@code auth.unauthenticated}
+     * so the frontend can trigger a refresh.
+     */
+    public static final String ATTR_TOKEN_EXPIRED = "stocka.auth.token_expired";
+
     private final JwtService jwtService;
     private final AppUserDetailsService userDetailsService;
     private final InvalidatedTokenRepository invalidatedTokenRepository;
@@ -50,6 +60,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String jwt = authHeader.substring(7);
 
             if (invalidatedTokenRepository.existsByTokenAndExpiresAtAfter(jwt, LocalDateTime.now())) {
+                request.setAttribute(ATTR_TOKEN_EXPIRED, Boolean.TRUE);
                 filterChain.doFilter(request, response);
                 return;
             }
@@ -68,9 +79,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             );
                     authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authToken);
+                } else {
+                    request.setAttribute(ATTR_TOKEN_EXPIRED, Boolean.TRUE);
                 }
             }
         } catch (RuntimeException ignored) {
+            // Any parsing/validation failure leaves the request unauthenticated. The
+            // authentication entry point then returns 401 with code auth.token_expired
+            // (or auth.unauthenticated for tokens that never were valid).
+            request.setAttribute(ATTR_TOKEN_EXPIRED, Boolean.TRUE);
             SecurityContextHolder.clearContext();
         }
 

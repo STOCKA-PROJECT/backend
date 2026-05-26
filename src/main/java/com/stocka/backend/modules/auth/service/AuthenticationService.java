@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 
 import com.stocka.backend.modules.auth.dto.LoginUserDto;
 import com.stocka.backend.modules.auth.dto.RegisterUserDto;
+import com.stocka.backend.modules.auth.entity.RefreshToken.RevocationReason;
 import com.stocka.backend.modules.common.dto.AvailabilityResponse;
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
@@ -36,6 +37,7 @@ public class AuthenticationService {
     private final InvalidatedTokenRepository invalidatedTokenRepository;
     private final JwtService jwtService;
     private final EmailVerificationService emailVerificationService;
+    private final RefreshTokenService refreshTokenService;
 
     public AuthenticationService(
             UserRepository userRepository,
@@ -45,7 +47,8 @@ public class AuthenticationService {
             AuthenticationManager authenticationManager,
             InvalidatedTokenRepository invalidatedTokenRepository,
             JwtService jwtService,
-            EmailVerificationService emailVerificationService
+            EmailVerificationService emailVerificationService,
+            RefreshTokenService refreshTokenService
     ) {
         this.userRepository = userRepository;
         this.userService = userService;
@@ -55,6 +58,7 @@ public class AuthenticationService {
         this.invalidatedTokenRepository = invalidatedTokenRepository;
         this.jwtService = jwtService;
         this.emailVerificationService = emailVerificationService;
+        this.refreshTokenService = refreshTokenService;
     }
 
     public User signup(RegisterUserDto input) {
@@ -114,12 +118,32 @@ public class AuthenticationService {
         return userService.checkUsernameAvailability(username);
     }
 
-    public void logout(String token) {
+    /**
+     * Invalidates an access token (adds it to {@code invalidated_tokens}) and
+     * revokes the matching refresh token, if any.
+     *
+     * @param accessToken JWT pulled from the {@code Authorization} header; required
+     * @param rawRefreshToken raw refresh token from the {@code stocka_refresh} cookie;
+     *                        may be {@code null} (e.g. when the cookie was already cleared)
+     */
+    public void logout(String accessToken, String rawRefreshToken) {
         invalidatedTokenRepository.deleteExpired(java.time.LocalDateTime.now());
         InvalidatedToken invalidatedToken = new InvalidatedToken()
-                .setToken(token)
-                .setExpiresAt(jwtService.extractExpirationAsLocalDateTime(token));
+                .setToken(accessToken)
+                .setExpiresAt(jwtService.extractExpirationAsLocalDateTime(accessToken));
         invalidatedTokenRepository.save(invalidatedToken);
+        refreshTokenService.revokeByRawToken(rawRefreshToken);
+    }
+
+    /**
+     * Revokes every active refresh token for the user. Called after a
+     * password change so a leaked password cannot keep minting access
+     * tokens through the refresh endpoint.
+     *
+     * @param user the user whose sessions should be revoked
+     */
+    public void revokeAllSessions(User user) {
+        refreshTokenService.revokeAllForUser(user, RevocationReason.PASSWORD_CHANGED);
     }
 
     public User authenticate(LoginUserDto input) {

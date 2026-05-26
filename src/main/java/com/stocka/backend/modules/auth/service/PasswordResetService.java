@@ -17,6 +17,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.stocka.backend.modules.auth.dto.ResetPasswordRequestDto;
 import com.stocka.backend.modules.auth.entity.PasswordResetToken;
+import com.stocka.backend.modules.auth.entity.RefreshToken.RevocationReason;
 import com.stocka.backend.modules.auth.repository.PasswordResetTokenRepository;
 import com.stocka.backend.modules.notifications.email.EmailService;
 import com.stocka.backend.modules.users.entity.User;
@@ -32,6 +33,7 @@ public class PasswordResetService {
     private final PasswordResetTokenRepository tokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
+    private final RefreshTokenService refreshTokenService;
     private final SecureRandom secureRandom = new SecureRandom();
     private final long ttlMinutes;
     private final String frontendBaseUrl;
@@ -41,12 +43,14 @@ public class PasswordResetService {
             PasswordResetTokenRepository tokenRepository,
             PasswordEncoder passwordEncoder,
             EmailService emailService,
+            RefreshTokenService refreshTokenService,
             @Value("${app.password-reset.token-ttl-minutes:30}") long ttlMinutes,
             @Value("${app.frontend.base-url}") String frontendBaseUrl) {
         this.userRepository = userRepository;
         this.tokenRepository = tokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailService = emailService;
+        this.refreshTokenService = refreshTokenService;
         this.ttlMinutes = ttlMinutes;
         this.frontendBaseUrl = frontendBaseUrl;
     }
@@ -106,6 +110,10 @@ public class PasswordResetService {
 
         token.setUsedAt(now);
         tokenRepository.save(token);
+
+        // Wipe every active session: the reset link is meant for a locked-out
+        // user, so any pre-existing refresh token must lose its mint privileges.
+        refreshTokenService.revokeAllForUser(user, RevocationReason.PASSWORD_CHANGED);
     }
 
     private String generateRawToken() {
