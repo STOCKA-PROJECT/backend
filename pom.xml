@@ -99,6 +99,14 @@
         </dependency>
 
         <!-- FLYWAY (DB migrations; enabled only in prod profile) -->
+        <!-- Spring Boot 4.0 moved FlywayAutoConfiguration out of
+             spring-boot-autoconfigure into this dedicated module. Without it,
+             flyway-core sits on the classpath but Spring Boot never invokes
+             flyway.migrate(), so migrations silently never run. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-flyway</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-core</artifactId>

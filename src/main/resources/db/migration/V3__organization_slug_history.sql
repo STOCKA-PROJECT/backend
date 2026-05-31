@@ -1,6 +1,6 @@
 -- Tracks previous slugs assigned to an organization so deep links generated before a
 -- rename (typically in email notifications) can be redirected to the current slug.
-CREATE TABLE organization_slug_history (
+CREATE TABLE IF NOT EXISTS organization_slug_history (
     id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
     organization_id INT NOT NULL,
     old_slug VARCHAR(40) NOT NULL,
@@ -10,4 +10,4 @@ CREATE TABLE organization_slug_history (
         ON DELETE CASCADE
 );
 
-CREATE INDEX idx_oslh_org ON organization_slug_history (organization_id);
+CREATE INDEX IF NOT EXISTS idx_oslh_org ON organization_slug_history (organization_id);
