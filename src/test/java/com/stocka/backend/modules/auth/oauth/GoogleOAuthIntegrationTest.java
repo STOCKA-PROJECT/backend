@@ -1,15 +1,8 @@
 package com.stocka.backend.modules.auth.oauth;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -17,9 +10,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
@@ -40,8 +39,10 @@ import com.stocka.backend.modules.organizations.IntegrationTestSupport;
 })
 class GoogleOAuthIntegrationTest {
 
-    @Autowired private WebApplicationContext context;
-    @Autowired private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private WebApplicationContext context;
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -74,11 +75,18 @@ class GoogleOAuthIntegrationTest {
     @DisplayName("callback rejects a request without the matching state cookie")
     void should_rejectCallback_when_stateMissing() throws Exception {
         mockMvc.perform(post("/auth/oauth/google/callback")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "code", "some-google-code",
-                                "state", "forged-state"))))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of(
+                        "code", "some-google-code",
+                        "state", "forged-state"))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("auth.oauth_state_invalid"));
+    }
+
+    @Test
+    @DisplayName("unlink without a token returns 401 (not 403) so the frontend can refresh")
+    void should_return401_when_unlinkWithoutToken() throws Exception {
+        mockMvc.perform(post("/auth/oauth/google/unlink"))
+                .andExpect(status().isUnauthorized());
     }
 }

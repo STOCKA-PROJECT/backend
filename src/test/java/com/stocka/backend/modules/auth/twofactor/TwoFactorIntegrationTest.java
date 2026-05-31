@@ -252,4 +252,51 @@ class TwoFactorIntegrationTest {
                 Integer.class, ADMIN_EMAIL);
         assertThat(enabled).isEqualTo(0);
     }
+
+    /**
+     * Regression for the 401-vs-403 mismatch: the 2FA management endpoints live
+     * under the {@code /auth/**} prefix, which is {@code permitAll()} at the URL
+     * layer. They must still reject anonymous callers with <strong>401</strong>
+     * (via the authentication entry point) rather than a 403 from the
+     * method-level {@code @PreAuthorize} — the frontend only triggers a silent
+     * token refresh on 401, so a 403 would leave an expired session stuck.
+     */
+    @org.junit.jupiter.api.Nested
+    @DisplayName("Unauthenticated access → 401 (not 403)")
+    class UnauthenticatedAccess {
+
+        @Test
+        @DisplayName("POST /auth/2fa/setup without a token returns 401")
+        void should_return401_when_setupWithoutToken() throws Exception {
+            mockMvc.perform(post("/auth/2fa/setup"))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        @DisplayName("POST /auth/2fa/confirm without a token returns 401")
+        void should_return401_when_confirmWithoutToken() throws Exception {
+            mockMvc.perform(post("/auth/2fa/confirm")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of(
+                                    "setupToken", "x", "code", "000000"))))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        @DisplayName("POST /auth/2fa/disable without a token returns 401")
+        void should_return401_when_disableWithoutToken() throws Exception {
+            mockMvc.perform(post("/auth/2fa/disable")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of(
+                                    "currentPassword", "x", "code", "000000"))))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        @DisplayName("POST /auth/2fa/recovery-codes/regenerate without a token returns 401")
+        void should_return401_when_regenerateWithoutToken() throws Exception {
+            mockMvc.perform(post("/auth/2fa/recovery-codes/regenerate"))
+                    .andExpect(status().isUnauthorized());
+        }
+    }
 }

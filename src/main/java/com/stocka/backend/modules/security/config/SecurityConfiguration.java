@@ -33,7 +33,7 @@ import com.stocka.backend.modules.security.service.AppUserDetailsService;
 @EnableConfigurationProperties({
         CorsProperties.class,
         RefreshTokenProperties.class,
-        com.stocka.backend.modules.auth.oauth.GoogleOAuthProperties.class})
+        com.stocka.backend.modules.auth.oauth.GoogleOAuthProperties.class })
 public class SecurityConfiguration {
     private final AppUserDetailsService userDetailsService;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -48,8 +48,7 @@ public class SecurityConfiguration {
             RateLimitFilter rateLimitFilter,
             JsonAuthenticationEntryPoint authenticationEntryPoint,
             JsonAccessDeniedHandler accessDeniedHandler,
-            CorsProperties corsProperties
-    ) {
+            CorsProperties corsProperties) {
         this.userDetailsService = userDetailsService;
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.rateLimitFilter = rateLimitFilter;
@@ -72,16 +71,15 @@ public class SecurityConfiguration {
                         .contentSecurityPolicy(csp -> csp.policyDirectives(
                                 "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/auth/2fa/**", "/auth/oauth/google/unlink").authenticated()
                         .requestMatchers("/auth/**", "/health").permitAll()
                         .requestMatchers("/webhooks/resend").permitAll()
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
-                        .anyRequest().authenticated()
-                )
+                        .anyRequest().authenticated())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(authenticationEntryPoint)
-                        .accessDeniedHandler(accessDeniedHandler)
-                )
+                        .accessDeniedHandler(accessDeniedHandler))
                 .authenticationProvider(authenticationProvider())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(rateLimitFilter, JwtAuthenticationFilter.class);
