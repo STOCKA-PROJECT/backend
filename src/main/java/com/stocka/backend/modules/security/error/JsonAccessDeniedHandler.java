@@ -20,16 +20,20 @@ import tools.jackson.databind.ObjectMapper;
  * Handler de acceso denegado que devuelve un {@link ProblemDetail} JSON con
  * {@code code: auth.forbidden} para los 403 generados por Spring Security a
  * nivel de filtro (antes del {@code @RestControllerAdvice}).
+ *
+ * <p>Usa el {@link ObjectMapper} gestionado por Spring (con el mixin de
+ * {@link ProblemDetail} registrado) para que las {@code properties} se
+ * aplanen al nivel raíz del JSON.
  */
 @Component
 public class JsonAccessDeniedHandler implements AccessDeniedHandler {
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-
     private final ProblemDetailFactory factory;
+    private final ObjectMapper objectMapper;
 
-    public JsonAccessDeniedHandler(ProblemDetailFactory factory) {
+    public JsonAccessDeniedHandler(ProblemDetailFactory factory, ObjectMapper objectMapper) {
         this.factory = factory;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -44,6 +48,6 @@ public class JsonAccessDeniedHandler implements AccessDeniedHandler {
                 request.getRequestURI());
         response.setStatus(HttpStatus.FORBIDDEN.value());
         response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
-        OBJECT_MAPPER.writeValue(response.getWriter(), body);
+        objectMapper.writeValue(response.getWriter(), body);
     }
 }

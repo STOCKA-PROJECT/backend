@@ -6,17 +6,21 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import com.stocka.backend.modules.auth.dto.LoginUserDto;
 import com.stocka.backend.modules.auth.dto.RegisterUserDto;
+import com.stocka.backend.modules.auth.entity.RefreshToken.RevocationReason;
 import com.stocka.backend.modules.common.dto.AvailabilityResponse;
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.roles.entity.Role;
 import com.stocka.backend.modules.roles.entity.RoleEnum;
 import com.stocka.backend.modules.roles.repository.RoleRepository;
+import com.stocka.backend.modules.security.audit.SecurityAuditService;
+import com.stocka.backend.modules.security.audit.SecurityEventType;
 import com.stocka.backend.modules.security.entity.InvalidatedToken;
 import com.stocka.backend.modules.security.repository.InvalidatedTokenRepository;
 import com.stocka.backend.modules.security.service.JwtService;
@@ -36,6 +40,8 @@ public class AuthenticationService {
     private final InvalidatedTokenRepository invalidatedTokenRepository;
     private final JwtService jwtService;
     private final EmailVerificationService emailVerificationService;
+    private final RefreshTokenService refreshTokenService;
+    private final SecurityAuditService securityAuditService;
 
     public AuthenticationService(
             UserRepository userRepository,
@@ -45,7 +51,9 @@ public class AuthenticationService {
             AuthenticationManager authenticationManager,
             InvalidatedTokenRepository invalidatedTokenRepository,
             JwtService jwtService,
-            EmailVerificationService emailVerificationService
+            EmailVerificationService emailVerificationService,
+            RefreshTokenService refreshTokenService,
+            SecurityAuditService securityAuditService
     ) {
         this.userRepository = userRepository;
         this.userService = userService;
@@ -55,6 +63,8 @@ public class AuthenticationService {
         this.invalidatedTokenRepository = invalidatedTokenRepository;
         this.jwtService = jwtService;
         this.emailVerificationService = emailVerificationService;
+        this.refreshTokenService = refreshTokenService;
+        this.securityAuditService = securityAuditService;
     }
 
     public User signup(RegisterUserDto input) {
@@ -114,20 +124,60 @@ public class AuthenticationService {
         return userService.checkUsernameAvailability(username);
     }
 
-    public void logout(String token) {
+    /**
+     * Invalidates an access token (adds it to {@code invalidated_tokens}) and
+     * revokes the matching refresh token, if any.
+     *
+     * @param accessToken JWT pulled from the {@code Authorization} header; required
+     * @param rawRefreshToken raw refresh token from the {@code stocka_refresh} cookie;
+     *                        may be {@code null} (e.g. when the cookie was already cleared)
+     */
+    public void logout(String accessToken, String rawRefreshToken) {
         invalidatedTokenRepository.deleteExpired(java.time.LocalDateTime.now());
         InvalidatedToken invalidatedToken = new InvalidatedToken()
-                .setToken(token)
-                .setExpiresAt(jwtService.extractExpirationAsLocalDateTime(token));
+                .setToken(accessToken)
+                .setExpiresAt(jwtService.extractExpirationAsLocalDateTime(accessToken));
         invalidatedTokenRepository.save(invalidatedToken);
+        refreshTokenService.revokeByRawToken(rawRefreshToken);
+
+        String email = jwtService.extractUsername(accessToken);
+        User user = email != null ? userRepository.findByEmail(email).orElse(null) : null;
+        securityAuditService.recordSuccess(SecurityEventType.LOGOUT, user);
     }
 
+    /**
+     * Revokes every active refresh token for the user. Called after a
+     * password change so a leaked password cannot keep minting access
+     * tokens through the refresh endpoint.
+     *
+     * @param user the user whose sessions should be revoked
+     */
+    public void revokeAllSessions(User user) {
+        refreshTokenService.revokeAllForUser(user, RevocationReason.PASSWORD_CHANGED);
+    }
+
+    /**
+     * Verifies password + email-verified. Does <em>not</em> record
+     * {@code LOGIN_SUCCESS} — the controller does so after the optional 2FA
+     * step succeeds (otherwise we'd be recording successful logins on
+     * accounts where the second factor was never presented).
+     */
     public User authenticate(LoginUserDto input) {
-        Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(input.getEmail(), input.getPassword())
-        );
-        User user = (User) authentication.getPrincipal();
+        User user;
+        try {
+            Authentication authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(input.getEmail(), input.getPassword())
+            );
+            user = (User) authentication.getPrincipal();
+        } catch (AuthenticationException ex) {
+            User known = userRepository.findByEmail(input.getEmail()).orElse(null);
+            securityAuditService.recordFailure(SecurityEventType.LOGIN_FAILED, known, input.getEmail());
+            throw ex;
+        }
         if (!user.isEmailVerified()) {
+            securityAuditService.recordFailure(
+                    SecurityEventType.LOGIN_FAILED, user, input.getEmail(),
+                    "{\"reason\":\"email_not_verified\"}");
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.AUTH_EMAIL_NOT_VERIFIED);
         }
         return user;

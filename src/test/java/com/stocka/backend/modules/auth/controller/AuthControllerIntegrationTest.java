@@ -60,7 +60,7 @@ class AuthControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         Map<?, ?> response = objectMapper.readValue(result.getResponse().getContentAsString(), Map.class);
-        return (String) response.get("token");
+        return (String) response.get("accessToken");
     }
 
     // -------------------------------------------------------------------------
@@ -280,7 +280,7 @@ class AuthControllerIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(body))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.token").isNotEmpty())
+                    .andExpect(jsonPath("$.accessToken").isNotEmpty())
                     .andExpect(jsonPath("$.expiresIn").isNumber())
                     .andExpect(jsonPath("$.user.email").value(ADMIN_EMAIL))
                     .andExpect(jsonPath("$.user.role").value("ADMIN"))

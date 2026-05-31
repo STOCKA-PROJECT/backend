@@ -11,6 +11,15 @@ public class LoginUserDto {
     @NotBlank
     private String password;
 
+    /**
+     * Whether the resulting session should outlive the browser. Maps to the
+     * {@code remember-ttl-days} configuration (30 days by default) instead of
+     * the shorter {@code session-ttl-days} (7 days). Wiring for the checkbox
+     * lands in Feature 5; the field is exposed already so the API contract is
+     * stable.
+     */
+    private boolean rememberMe;
+
     public String getEmail() {
         return email;
     }
@@ -26,6 +35,15 @@ public class LoginUserDto {
 
     public LoginUserDto setPassword(String password) {
         this.password = password;
+        return this;
+    }
+
+    public boolean isRememberMe() {
+        return rememberMe;
+    }
+
+    public LoginUserDto setRememberMe(boolean rememberMe) {
+        this.rememberMe = rememberMe;
         return this;
     }
 }

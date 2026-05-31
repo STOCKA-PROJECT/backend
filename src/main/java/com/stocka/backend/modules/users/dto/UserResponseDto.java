@@ -18,6 +18,7 @@ public class UserResponseDto {
     private Language language;
     private RoleEnum role;
     private boolean emailVerified;
+    private boolean twoFactorEnabled;
 
     /**
      * Builds a response DTO from a {@link User} entity.
@@ -35,6 +36,7 @@ public class UserResponseDto {
         dto.language = user.getLanguage();
         dto.role = user.getRole() != null ? user.getRole().getName() : null;
         dto.emailVerified = user.isEmailVerified();
+        dto.twoFactorEnabled = user.isTwoFactorEnabled();
         return dto;
     }
 
@@ -68,5 +70,9 @@ public class UserResponseDto {
 
     public boolean isEmailVerified() {
         return emailVerified;
+    }
+
+    public boolean isTwoFactorEnabled() {
+        return twoFactorEnabled;
     }
 }

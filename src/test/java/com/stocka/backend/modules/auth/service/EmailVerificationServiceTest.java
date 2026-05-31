@@ -52,6 +52,8 @@ class EmailVerificationServiceTest {
     private EmailVerificationTokenRepository tokenRepository;
     @Mock
     private EmailService emailService;
+    @Mock
+    private com.stocka.backend.modules.security.audit.SecurityAuditService securityAuditService;
 
     private EmailVerificationService sut;
 
@@ -63,6 +65,7 @@ class EmailVerificationServiceTest {
                 userRepository,
                 tokenRepository,
                 emailService,
+                securityAuditService,
                 1440L,
                 "http://localhost:3002");
         existingUser = new User()
@@ -128,7 +131,7 @@ class EmailVerificationServiceTest {
         void should_useConfiguredTtl_for_expiresAt() {
             sut = new EmailVerificationService(
                     userRepository, tokenRepository, emailService,
-                    10L, "http://localhost:3002");
+                    securityAuditService, 10L, "http://localhost:3002");
             ArgumentCaptor<EmailVerificationToken> captor = ArgumentCaptor.forClass(EmailVerificationToken.class);
 
             LocalDateTime before = LocalDateTime.now();
@@ -176,7 +179,7 @@ class EmailVerificationServiceTest {
         void should_stripTrailingSlash_from_frontendBaseUrl() {
             sut = new EmailVerificationService(
                     userRepository, tokenRepository, emailService,
-                    1440L, "http://localhost:3002/");
+                    securityAuditService, 1440L, "http://localhost:3002/");
             ArgumentCaptor<String> urlCaptor = ArgumentCaptor.forClass(String.class);
 
             sut.sendVerificationEmail(existingUser);

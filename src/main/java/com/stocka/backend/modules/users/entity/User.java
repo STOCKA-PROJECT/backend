@@ -68,6 +68,18 @@ public class User implements UserDetails {
     @Column(name = "language", nullable = false, length = 4, columnDefinition = "VARCHAR(4) NOT NULL DEFAULT 'ES'")
     private Language language = Language.ES;
 
+    @Column(name = "two_factor_enabled", nullable = false)
+    private boolean twoFactorEnabled = false;
+
+    /** AES-GCM encrypted TOTP secret. {@code null} until 2FA is confirmed. */
+    @JsonIgnore
+    @Column(name = "two_factor_secret", length = 255)
+    private String twoFactorSecret;
+
+    @JsonIgnore
+    @Column(name = "two_factor_enabled_at")
+    private LocalDateTime twoFactorEnabledAt;
+
     public Integer getId() {
         return id;
     }
@@ -166,6 +178,33 @@ public class User implements UserDetails {
 
     public User setLanguage(Language language) {
         this.language = language;
+        return this;
+    }
+
+    public boolean isTwoFactorEnabled() {
+        return twoFactorEnabled;
+    }
+
+    public User setTwoFactorEnabled(boolean twoFactorEnabled) {
+        this.twoFactorEnabled = twoFactorEnabled;
+        return this;
+    }
+
+    public String getTwoFactorSecret() {
+        return twoFactorSecret;
+    }
+
+    public User setTwoFactorSecret(String twoFactorSecret) {
+        this.twoFactorSecret = twoFactorSecret;
+        return this;
+    }
+
+    public LocalDateTime getTwoFactorEnabledAt() {
+        return twoFactorEnabledAt;
+    }
+
+    public User setTwoFactorEnabledAt(LocalDateTime twoFactorEnabledAt) {
+        this.twoFactorEnabledAt = twoFactorEnabledAt;
         return this;
     }
 

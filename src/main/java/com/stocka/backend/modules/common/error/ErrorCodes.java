@@ -26,12 +26,31 @@ public final class ErrorCodes {
     public static final String AUTH_CURRENT_PASSWORD_INVALID = "auth.current_password_invalid";
     public static final String AUTH_PASSWORD_TOO_SHORT = "auth.password_too_short";
     public static final String AUTH_NEW_PASSWORD_SAME_AS_CURRENT = "auth.new_password_same_as_current";
+    public static final String AUTH_REFRESH_TOKEN_MISSING = "auth.refresh_token_missing";
+    public static final String AUTH_REFRESH_TOKEN_INVALID = "auth.refresh_token_invalid";
+    public static final String AUTH_REFRESH_TOKEN_EXPIRED = "auth.refresh_token_expired";
+    public static final String AUTH_REFRESH_TOKEN_REUSED = "auth.refresh_token_reused";
+    public static final String AUTH_TOKEN_EXPIRED = "auth.token_expired";
+    public static final String AUTH_2FA_INVALID_CODE = "auth.2fa_invalid_code";
+    public static final String AUTH_2FA_SETUP_TOKEN_INVALID = "auth.2fa_setup_token_invalid";
+    public static final String AUTH_2FA_MFA_TOKEN_EXPIRED = "auth.2fa_mfa_token_expired";
+    public static final String AUTH_2FA_ALREADY_ENABLED = "auth.2fa_already_enabled";
+    public static final String AUTH_2FA_NOT_ENABLED = "auth.2fa_not_enabled";
+    public static final String AUTH_2FA_REQUIRED = "auth.2fa_required";
+    public static final String OAUTH_NOT_CONFIGURED = "auth.oauth_not_configured";
+    public static final String OAUTH_STATE_INVALID = "auth.oauth_state_invalid";
+    public static final String OAUTH_PROVIDER_ERROR = "auth.oauth_provider_error";
+    public static final String OAUTH_LINK_NOT_FOUND = "auth.oauth_link_not_found";
 
     // ---- users ----------------------------------------------------------
     public static final String USERS_EMAIL_TAKEN = "users.email_taken";
     public static final String USERS_USERNAME_TAKEN = "users.username_taken";
     public static final String USERS_USERNAME_INVALID = "users.username_invalid";
     public static final String USERS_USERNAME_RESERVED = "users.username_reserved";
+
+    // ---- sessions / devices ---------------------------------------------
+    public static final String SESSIONS_NOT_FOUND = "sessions.not_found";
+    public static final String SESSIONS_NAME_INVALID = "sessions.name_invalid";
 
     // ---- pieces / piece types / locations -------------------------------
     public static final String PIECES_NOT_FOUND = "pieces.not_found";
