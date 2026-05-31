@@ -18,6 +18,8 @@ import com.stocka.backend.modules.auth.repository.EmailVerificationTokenReposito
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.notifications.email.EmailService;
+import com.stocka.backend.modules.security.audit.SecurityAuditService;
+import com.stocka.backend.modules.security.audit.SecurityEventType;
 import com.stocka.backend.modules.users.entity.User;
 import com.stocka.backend.modules.users.repository.UserRepository;
 
@@ -41,6 +43,7 @@ public class EmailVerificationService {
     private final UserRepository userRepository;
     private final EmailVerificationTokenRepository tokenRepository;
     private final EmailService emailService;
+    private final SecurityAuditService securityAuditService;
     private final SecureRandom secureRandom = new SecureRandom();
     private final long ttlMinutes;
     private final String frontendBaseUrl;
@@ -49,11 +52,13 @@ public class EmailVerificationService {
             UserRepository userRepository,
             EmailVerificationTokenRepository tokenRepository,
             EmailService emailService,
+            SecurityAuditService securityAuditService,
             @Value("${app.email-verification.token-ttl-minutes:1440}") long ttlMinutes,
             @Value("${app.frontend.base-url}") String frontendBaseUrl) {
         this.userRepository = userRepository;
         this.tokenRepository = tokenRepository;
         this.emailService = emailService;
+        this.securityAuditService = securityAuditService;
         this.ttlMinutes = ttlMinutes;
         this.frontendBaseUrl = frontendBaseUrl;
     }
@@ -106,13 +111,18 @@ public class EmailVerificationService {
         }
 
         User user = token.getUser();
-        if (!user.isEmailVerified()) {
+        boolean newlyVerified = !user.isEmailVerified();
+        if (newlyVerified) {
             user.setEmailVerified(true);
             userRepository.save(user);
         }
 
         token.setUsedAt(now);
         tokenRepository.save(token);
+
+        if (newlyVerified) {
+            securityAuditService.recordSuccess(SecurityEventType.EMAIL_VERIFIED, user);
+        }
     }
 
     /**

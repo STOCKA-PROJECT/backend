@@ -17,8 +17,11 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.stocka.backend.modules.auth.dto.ResetPasswordRequestDto;
 import com.stocka.backend.modules.auth.entity.PasswordResetToken;
+import com.stocka.backend.modules.auth.entity.RefreshToken.RevocationReason;
 import com.stocka.backend.modules.auth.repository.PasswordResetTokenRepository;
 import com.stocka.backend.modules.notifications.email.EmailService;
+import com.stocka.backend.modules.security.audit.SecurityAuditService;
+import com.stocka.backend.modules.security.audit.SecurityEventType;
 import com.stocka.backend.modules.users.entity.User;
 import com.stocka.backend.modules.users.repository.UserRepository;
 
@@ -32,6 +35,8 @@ public class PasswordResetService {
     private final PasswordResetTokenRepository tokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
+    private final RefreshTokenService refreshTokenService;
+    private final SecurityAuditService securityAuditService;
     private final SecureRandom secureRandom = new SecureRandom();
     private final long ttlMinutes;
     private final String frontendBaseUrl;
@@ -41,12 +46,16 @@ public class PasswordResetService {
             PasswordResetTokenRepository tokenRepository,
             PasswordEncoder passwordEncoder,
             EmailService emailService,
+            RefreshTokenService refreshTokenService,
+            SecurityAuditService securityAuditService,
             @Value("${app.password-reset.token-ttl-minutes:30}") long ttlMinutes,
             @Value("${app.frontend.base-url}") String frontendBaseUrl) {
         this.userRepository = userRepository;
         this.tokenRepository = tokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailService = emailService;
+        this.refreshTokenService = refreshTokenService;
+        this.securityAuditService = securityAuditService;
         this.ttlMinutes = ttlMinutes;
         this.frontendBaseUrl = frontendBaseUrl;
     }
@@ -76,6 +85,8 @@ public class PasswordResetService {
 
         String resetUrl = buildResetUrl(rawToken);
         emailService.sendPasswordResetEmail(user.getEmail(), user.getName(), resetUrl, user.getLanguage());
+
+        securityAuditService.recordSuccess(SecurityEventType.PASSWORD_RESET_REQUESTED, user);
     }
 
     public void resetPassword(ResetPasswordRequestDto dto) {
@@ -106,6 +117,12 @@ public class PasswordResetService {
 
         token.setUsedAt(now);
         tokenRepository.save(token);
+
+        // Wipe every active session: the reset link is meant for a locked-out
+        // user, so any pre-existing refresh token must lose its mint privileges.
+        refreshTokenService.revokeAllForUser(user, RevocationReason.PASSWORD_CHANGED);
+
+        securityAuditService.recordSuccess(SecurityEventType.PASSWORD_RESET_COMPLETED, user);
     }
 
     private String generateRawToken() {

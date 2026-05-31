@@ -57,6 +57,8 @@ class AuthenticationServiceTest {
     @Mock private InvalidatedTokenRepository invalidatedTokenRepository;
     @Mock private JwtService jwtService;
     @Mock private EmailVerificationService emailVerificationService;
+    @Mock private RefreshTokenService refreshTokenService;
+    @Mock private com.stocka.backend.modules.security.audit.SecurityAuditService securityAuditService;
 
     @InjectMocks
     private AuthenticationService sut;
@@ -341,7 +343,7 @@ class AuthenticationServiceTest {
             when(jwtService.extractExpirationAsLocalDateTime(token)).thenReturn(expiry);
             ArgumentCaptor<InvalidatedToken> captor = ArgumentCaptor.forClass(InvalidatedToken.class);
 
-            sut.logout(token);
+            sut.logout(token, null);
 
             verify(invalidatedTokenRepository).save(captor.capture());
             assertEquals(token, captor.getValue().getToken());
@@ -356,7 +358,7 @@ class AuthenticationServiceTest {
                     .thenReturn(LocalDateTime.now().plusHours(1));
             InOrder inOrder = inOrder(invalidatedTokenRepository);
 
-            sut.logout(token);
+            sut.logout(token, null);
 
             inOrder.verify(invalidatedTokenRepository).deleteExpired(any(LocalDateTime.class));
             inOrder.verify(invalidatedTokenRepository).save(any(InvalidatedToken.class));
