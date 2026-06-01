@@ -39,6 +39,7 @@ import com.stocka.backend.modules.pieces.repository.PieceAttachmentRepository;
 import com.stocka.backend.modules.pieces.repository.PieceAttributeValueRepository;
 import com.stocka.backend.modules.pieces.repository.PieceOrganizationAttributeValueRepository;
 import com.stocka.backend.modules.pieces.repository.PieceRepository;
+import com.stocka.backend.modules.piecetypes.repository.PieceTypeActionRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeAttributeRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeRepository;
 import com.stocka.backend.modules.users.entity.User;
@@ -64,6 +65,7 @@ public class OrganizationService {
     private final LocationRepository locationRepository;
     private final PieceTypeRepository pieceTypeRepository;
     private final PieceTypeAttributeRepository pieceTypeAttributeRepository;
+    private final PieceTypeActionRepository pieceTypeActionRepository;
     private final OrganizationPieceAttributeRepository organizationPieceAttributeRepository;
     private final NotificationPreferenceRepository notificationPreferenceRepository;
 
@@ -81,6 +83,7 @@ public class OrganizationService {
             LocationRepository locationRepository,
             PieceTypeRepository pieceTypeRepository,
             PieceTypeAttributeRepository pieceTypeAttributeRepository,
+            PieceTypeActionRepository pieceTypeActionRepository,
             OrganizationPieceAttributeRepository organizationPieceAttributeRepository,
             NotificationPreferenceRepository notificationPreferenceRepository
     ) {
@@ -97,6 +100,7 @@ public class OrganizationService {
         this.locationRepository = locationRepository;
         this.pieceTypeRepository = pieceTypeRepository;
         this.pieceTypeAttributeRepository = pieceTypeAttributeRepository;
+        this.pieceTypeActionRepository = pieceTypeActionRepository;
         this.organizationPieceAttributeRepository = organizationPieceAttributeRepository;
         this.notificationPreferenceRepository = notificationPreferenceRepository;
     }
@@ -204,6 +208,7 @@ public class OrganizationService {
         pieceOrganizationAttributeValueRepository.deleteByOrganization(org);
         pieceAttachmentRepository.softDeleteByOrganization(org);
         pieceTypeAttributeRepository.softDeleteByOrganization(org);
+        pieceTypeActionRepository.softDeleteByOrganization(org);
         pieceTypeRepository.softDeleteByOrganization(org);
         organizationPieceAttributeRepository.softDeleteByOrganization(org);
         pieceRepository.softDeleteByOrganization(org);
