@@ -33,6 +33,7 @@ import com.stocka.backend.modules.piecetypes.dto.UpdatePieceTypeDto;
 import com.stocka.backend.modules.piecetypes.entity.AttributeType;
 import com.stocka.backend.modules.piecetypes.entity.PieceType;
 import com.stocka.backend.modules.piecetypes.entity.PieceTypeAttribute;
+import com.stocka.backend.modules.piecetypes.repository.PieceTypeActionRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeAttributeRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeRepository;
 
@@ -42,6 +43,7 @@ class PieceTypeServiceTest {
 
     @Mock PieceTypeRepository pieceTypeRepository;
     @Mock PieceTypeAttributeRepository attributeRepository;
+    @Mock PieceTypeActionRepository actionRepository;
     @Mock OrganizationService organizationService;
     @Mock ValidatorsJsonCodec validatorsCodec;
     @Mock PieceTypeUsage usage;
@@ -55,7 +57,7 @@ class PieceTypeServiceTest {
     void setUp() {
         org.setId(1);
         sut = new PieceTypeService(
-                pieceTypeRepository, attributeRepository, organizationService,
+                pieceTypeRepository, attributeRepository, actionRepository, organizationService,
                 validatorsCodec, Optional.of(usage), events);
         // Lenient because the static-helper tests don't go through the service layer.
         lenient().when(organizationService.findById(1)).thenReturn(org);

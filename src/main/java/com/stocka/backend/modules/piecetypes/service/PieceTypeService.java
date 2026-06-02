@@ -30,6 +30,7 @@ import com.stocka.backend.modules.piecetypes.dto.UpdatePieceTypeDto;
 import com.stocka.backend.modules.piecetypes.entity.AttributeType;
 import com.stocka.backend.modules.piecetypes.entity.PieceType;
 import com.stocka.backend.modules.piecetypes.entity.PieceTypeAttribute;
+import com.stocka.backend.modules.piecetypes.repository.PieceTypeActionRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeAttributeRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeRepository;
 import com.stocka.backend.modules.users.entity.User;
@@ -48,6 +49,7 @@ public class PieceTypeService {
 
     private final PieceTypeRepository pieceTypeRepository;
     private final PieceTypeAttributeRepository attributeRepository;
+    private final PieceTypeActionRepository actionRepository;
     private final OrganizationService organizationService;
     private final ValidatorsJsonCodec validatorsCodec;
     private final Optional<PieceTypeUsage> usage;
@@ -56,6 +58,7 @@ public class PieceTypeService {
     public PieceTypeService(
             PieceTypeRepository pieceTypeRepository,
             PieceTypeAttributeRepository attributeRepository,
+            PieceTypeActionRepository actionRepository,
             OrganizationService organizationService,
             ValidatorsJsonCodec validatorsCodec,
             Optional<PieceTypeUsage> usage,
@@ -63,6 +66,7 @@ public class PieceTypeService {
     ) {
         this.pieceTypeRepository = pieceTypeRepository;
         this.attributeRepository = attributeRepository;
+        this.actionRepository = actionRepository;
         this.organizationService = organizationService;
         this.validatorsCodec = validatorsCodec;
         this.usage = usage;
@@ -150,6 +154,8 @@ public class PieceTypeService {
         type.setName(buildSoftDeletedName(type.getName(), type.getId(), MAX_TYPE_NAME_LENGTH));
         type.setDeletedAt(LocalDateTime.now());
         pieceTypeRepository.save(type);
+        // Cascade: free the type's actions alongside its attributes so they do not dangle.
+        actionRepository.softDeleteByPieceType(type);
         events.publishEvent(new ResourceLifecycleEvent(
                 type.getOrganization().getId(),
                 ResourceKind.PIECE_TYPE,

@@ -56,6 +56,7 @@ import com.stocka.backend.modules.pieces.repository.PieceAttachmentRepository;
 import com.stocka.backend.modules.pieces.repository.PieceAttributeValueRepository;
 import com.stocka.backend.modules.pieces.repository.PieceOrganizationAttributeValueRepository;
 import com.stocka.backend.modules.pieces.repository.PieceRepository;
+import com.stocka.backend.modules.piecetypes.repository.PieceTypeActionRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeAttributeRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeRepository;
 import com.stocka.backend.modules.users.entity.User;
@@ -77,6 +78,7 @@ class OrganizationServiceTest {
     @Mock private LocationRepository locationRepository;
     @Mock private PieceTypeRepository pieceTypeRepository;
     @Mock private PieceTypeAttributeRepository pieceTypeAttributeRepository;
+    @Mock private PieceTypeActionRepository pieceTypeActionRepository;
     @Mock private OrganizationPieceAttributeRepository organizationPieceAttributeRepository;
     @Mock private NotificationPreferenceRepository notificationPreferenceRepository;
 

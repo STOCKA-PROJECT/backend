@@ -312,4 +312,140 @@ class OrganizationSecurityTest {
             assertFalse(sut.canManageOrgContent(SLUG, userPrincipal));
         }
     }
+
+    private void mockAdminOwnedMembership(OrganizationRoleEnum role) {
+        when(organizationRepository.findBySlug(SLUG)).thenReturn(Optional.of(org));
+        when(memberRepository.existsAdminOwner(org, RoleEnum.ADMIN)).thenReturn(true);
+        when(memberRepository.findByUserAndOrganization(userPrincipal, org))
+                .thenReturn(Optional.of(new OrganizationMember().setRole(role)));
+    }
+
+    @Nested
+    @DisplayName("canReadPieceTypeActions")
+    class CanReadPieceTypeActions {
+
+        @Test
+        @DisplayName("should return true for global ADMIN without touching the org")
+        void should_returnTrue_for_globalAdmin() {
+            assertTrue(sut.canReadPieceTypeActions(SLUG, adminPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return true for any member of an admin-owned org")
+        void should_returnTrue_for_memberOfAdminOwnedOrg() {
+            for (OrganizationRoleEnum role : OrganizationRoleEnum.values()) {
+                mockAdminOwnedMembership(role);
+                assertTrue(sut.canReadPieceTypeActions(SLUG, userPrincipal),
+                        "expected true for role " + role);
+            }
+        }
+
+        @Test
+        @DisplayName("should return false when the org owner is not a global admin")
+        void should_returnFalse_when_ownerNotAdmin() {
+            when(organizationRepository.findBySlug(SLUG)).thenReturn(Optional.of(org));
+            when(memberRepository.existsAdminOwner(org, RoleEnum.ADMIN)).thenReturn(false);
+            assertFalse(sut.canReadPieceTypeActions(SLUG, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return false for a non-member of an admin-owned org")
+        void should_returnFalse_for_nonMember() {
+            when(organizationRepository.findBySlug(SLUG)).thenReturn(Optional.of(org));
+            when(memberRepository.existsAdminOwner(org, RoleEnum.ADMIN)).thenReturn(true);
+            when(memberRepository.findByUserAndOrganization(userPrincipal, org)).thenReturn(Optional.empty());
+            assertFalse(sut.canReadPieceTypeActions(SLUG, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return false when the org does not exist")
+        void should_returnFalse_when_orgMissing() {
+            when(organizationRepository.findBySlug(SLUG)).thenReturn(Optional.empty());
+            assertFalse(sut.canReadPieceTypeActions(SLUG, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return false when principal is not a user")
+        void should_returnFalse_when_principalNull() {
+            assertFalse(sut.canReadPieceTypeActions(SLUG, null));
+        }
+    }
+
+    @Nested
+    @DisplayName("canManagePieceTypeActions")
+    class CanManagePieceTypeActions {
+
+        @Test
+        @DisplayName("should return true for global ADMIN")
+        void should_returnTrue_for_globalAdmin() {
+            assertTrue(sut.canManagePieceTypeActions(SLUG, adminPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return true for OWNER of an admin-owned org")
+        void should_returnTrue_for_owner() {
+            mockAdminOwnedMembership(OrganizationRoleEnum.OWNER);
+            assertTrue(sut.canManagePieceTypeActions(SLUG, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return true for MANAGER of an admin-owned org")
+        void should_returnTrue_for_manager() {
+            mockAdminOwnedMembership(OrganizationRoleEnum.MANAGER);
+            assertTrue(sut.canManagePieceTypeActions(SLUG, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return false for USER of an admin-owned org")
+        void should_returnFalse_for_user() {
+            mockAdminOwnedMembership(OrganizationRoleEnum.USER);
+            assertFalse(sut.canManagePieceTypeActions(SLUG, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return false for SPECTATOR of an admin-owned org")
+        void should_returnFalse_for_spectator() {
+            mockAdminOwnedMembership(OrganizationRoleEnum.SPECTATOR);
+            assertFalse(sut.canManagePieceTypeActions(SLUG, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return false for MANAGER when the org owner is not a global admin")
+        void should_returnFalse_when_ownerNotAdmin() {
+            when(organizationRepository.findBySlug(SLUG)).thenReturn(Optional.of(org));
+            when(memberRepository.existsAdminOwner(org, RoleEnum.ADMIN)).thenReturn(false);
+            assertFalse(sut.canManagePieceTypeActions(SLUG, userPrincipal));
+        }
+    }
+
+    @Nested
+    @DisplayName("pieceTypeActionsEnabled")
+    class PieceTypeActionsEnabled {
+
+        @Test
+        @DisplayName("should return true for a global ADMIN regardless of the org")
+        void should_returnTrue_for_globalAdmin() {
+            assertTrue(sut.pieceTypeActionsEnabled(org, adminPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return true when the org owner is a global admin")
+        void should_returnTrue_when_ownerAdmin() {
+            when(memberRepository.existsAdminOwner(org, RoleEnum.ADMIN)).thenReturn(true);
+            assertTrue(sut.pieceTypeActionsEnabled(org, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return false when the org owner is not a global admin")
+        void should_returnFalse_when_ownerNotAdmin() {
+            when(memberRepository.existsAdminOwner(org, RoleEnum.ADMIN)).thenReturn(false);
+            assertFalse(sut.pieceTypeActionsEnabled(org, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return false when the org is null and the user is not admin")
+        void should_returnFalse_when_orgNull() {
+            assertFalse(sut.pieceTypeActionsEnabled(null, userPrincipal));
+        }
+    }
 }
