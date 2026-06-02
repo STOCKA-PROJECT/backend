@@ -52,7 +52,7 @@ public class OrganizationController {
         User actor = currentUser();
         Organization org = organizationService.create(dto, actor);
         return ResponseEntity.ok(OrganizationResponseDto.from(org, OrganizationRoleEnum.OWNER,
-                orgSecurity.pieceTypeActionsEnabled(org, actor)));
+                orgSecurity.pieceTypeActionsEnabled(org, actor), orgSecurity.portsEnabled(org, actor)));
     }
 
     /**
@@ -74,7 +74,7 @@ public class OrganizationController {
         List<OrganizationResponseDto> orgs = organizationService.findUserOrganizations(actor).stream()
                 .map(o -> OrganizationResponseDto.from(o,
                         organizationService.getCurrentUserRole(o, actor).orElse(null),
-                        orgSecurity.pieceTypeActionsEnabled(o, actor)))
+                        orgSecurity.pieceTypeActionsEnabled(o, actor), orgSecurity.portsEnabled(o, actor)))
                 .toList();
         return ResponseEntity.ok(orgs);
     }
@@ -98,7 +98,8 @@ public class OrganizationController {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok(new OrganizationLookupResponseDto(
-                OrganizationResponseDto.from(org, role, orgSecurity.pieceTypeActionsEnabled(org, actor)),
+                OrganizationResponseDto.from(org, role, orgSecurity.pieceTypeActionsEnabled(org, actor),
+                        orgSecurity.portsEnabled(org, actor)),
                 resolved.historical(),
                 resolved.currentSlug()
         ));
@@ -111,7 +112,7 @@ public class OrganizationController {
         Organization org = orgResolver.requireCurrent(orgSlug);
         return ResponseEntity.ok(OrganizationResponseDto.from(org,
                 organizationService.getCurrentUserRole(org, actor).orElse(null),
-                orgSecurity.pieceTypeActionsEnabled(org, actor)));
+                orgSecurity.pieceTypeActionsEnabled(org, actor), orgSecurity.portsEnabled(org, actor)));
     }
 
     @PatchMapping("/{orgSlug}")
@@ -125,7 +126,7 @@ public class OrganizationController {
         Organization org = organizationService.update(current.getId(), dto, actor);
         return ResponseEntity.ok(OrganizationResponseDto.from(org,
                 organizationService.getCurrentUserRole(org, actor).orElse(null),
-                orgSecurity.pieceTypeActionsEnabled(org, actor)));
+                orgSecurity.pieceTypeActionsEnabled(org, actor), orgSecurity.portsEnabled(org, actor)));
     }
 
     @DeleteMapping("/{orgSlug}")

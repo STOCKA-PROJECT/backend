@@ -59,6 +59,7 @@ import com.stocka.backend.modules.pieces.repository.PieceRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeActionRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeAttributeRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeRepository;
+import com.stocka.backend.modules.ports.repository.PortRepository;
 import com.stocka.backend.modules.users.entity.User;
 
 @ExtendWith(MockitoExtension.class)
@@ -81,6 +82,7 @@ class OrganizationServiceTest {
     @Mock private PieceTypeActionRepository pieceTypeActionRepository;
     @Mock private OrganizationPieceAttributeRepository organizationPieceAttributeRepository;
     @Mock private NotificationPreferenceRepository notificationPreferenceRepository;
+    @Mock private PortRepository portRepository;
 
     @InjectMocks private OrganizationService sut;
 
@@ -402,6 +404,7 @@ class OrganizationServiceTest {
             verify(pieceRepository).softDeleteByOrganization(org);
             verify(locationRepository).softDeleteByOrganization(org);
             verify(notificationPreferenceRepository).softDeleteByOrganization(org);
+            verify(portRepository).softDeleteByOrganization(org);
             assertNotNull(org.getDeletedAt());
             verify(organizationRepository, atLeastOnce()).save(org);
             verify(slugHistoryRepository).deleteByOrganization(org);

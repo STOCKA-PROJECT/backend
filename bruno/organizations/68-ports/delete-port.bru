@@ -1,0 +1,15 @@
+meta {
+  name: Delete Port (soft-delete, frees name and pin)
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{baseUrl}}/organizations/{{orgId}}/ports/{{portId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}

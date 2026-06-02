@@ -67,6 +67,14 @@ public final class ErrorCodes {
     public static final String ORGANIZATIONS_INVITATION_ALREADY_PROCESSED = "organizations.invitation_already_processed";
     public static final String ORGANIZATIONS_QUOTA_EXCEEDED = "organizations.quota_exceeded";
 
+    // ---- ports ----------------------------------------------------------
+    public static final String PORTS_NOT_FOUND = "ports.not_found";
+    public static final String PORTS_NAME_REQUIRED = "ports.name_required";
+    public static final String PORTS_NAME_CONFLICT = "ports.name_conflict";
+    public static final String PORTS_PIECE_TYPE_REQUIRED = "ports.piece_type_required";
+    public static final String PORTS_PIN_INVALID = "ports.pin_invalid";
+    public static final String PORTS_PIN_CONFLICT = "ports.pin_conflict";
+
     // ---- storage / upload -----------------------------------------------
     public static final String STORAGE_R2_UNAVAILABLE = "storage.r2_unavailable";
     public static final String UPLOAD_TOO_LARGE = "upload.too_large";

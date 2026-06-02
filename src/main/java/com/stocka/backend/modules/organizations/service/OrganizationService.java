@@ -42,6 +42,7 @@ import com.stocka.backend.modules.pieces.repository.PieceRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeActionRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeAttributeRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeRepository;
+import com.stocka.backend.modules.ports.repository.PortRepository;
 import com.stocka.backend.modules.users.entity.User;
 
 @Service
@@ -68,6 +69,7 @@ public class OrganizationService {
     private final PieceTypeActionRepository pieceTypeActionRepository;
     private final OrganizationPieceAttributeRepository organizationPieceAttributeRepository;
     private final NotificationPreferenceRepository notificationPreferenceRepository;
+    private final PortRepository portRepository;
 
     public OrganizationService(
             OrganizationRepository organizationRepository,
@@ -85,7 +87,8 @@ public class OrganizationService {
             PieceTypeAttributeRepository pieceTypeAttributeRepository,
             PieceTypeActionRepository pieceTypeActionRepository,
             OrganizationPieceAttributeRepository organizationPieceAttributeRepository,
-            NotificationPreferenceRepository notificationPreferenceRepository
+            NotificationPreferenceRepository notificationPreferenceRepository,
+            PortRepository portRepository
     ) {
         this.organizationRepository = organizationRepository;
         this.memberRepository = memberRepository;
@@ -103,6 +106,7 @@ public class OrganizationService {
         this.pieceTypeActionRepository = pieceTypeActionRepository;
         this.organizationPieceAttributeRepository = organizationPieceAttributeRepository;
         this.notificationPreferenceRepository = notificationPreferenceRepository;
+        this.portRepository = portRepository;
     }
 
     @Transactional
@@ -214,6 +218,7 @@ public class OrganizationService {
         pieceRepository.softDeleteByOrganization(org);
         locationRepository.softDeleteByOrganization(org);
         notificationPreferenceRepository.softDeleteByOrganization(org);
+        portRepository.softDeleteByOrganization(org);
 
         List<OrganizationMember> members = memberRepository.findByOrganization(org);
         for (OrganizationMember m : members) {
