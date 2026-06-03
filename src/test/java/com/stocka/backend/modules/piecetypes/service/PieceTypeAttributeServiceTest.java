@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import com.stocka.backend.modules.sync.support.SyncStamper;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -47,11 +48,13 @@ class PieceTypeAttributeServiceTest {
 
     private final PieceType type = new PieceType();
 
+    @Mock SyncStamper syncStamper;
+
     @BeforeEach
     void setUp() {
         type.setId(5);
         sut = new PieceTypeAttributeService(
-                pieceTypeService, attributeRepository, valueRepository, validatorsCodec, Optional.of(usage));
+                pieceTypeService, attributeRepository, valueRepository, validatorsCodec, Optional.of(usage), syncStamper);
         when(pieceTypeService.findInOrg(eq(7), eq(5))).thenReturn(type);
     }
 

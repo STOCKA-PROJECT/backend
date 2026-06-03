@@ -17,6 +17,7 @@ import com.stocka.backend.modules.piecetypes.entity.PieceType;
 import com.stocka.backend.modules.piecetypes.entity.PieceTypeAttribute;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeAttributeRepository;
 import com.stocka.backend.modules.pieces.repository.PieceAttributeValueRepository;
+import com.stocka.backend.modules.sync.support.SyncStamper;
 
 /**
  * Mutations on individual attributes of a piece type. Covers updates (technical name, display
@@ -35,19 +36,22 @@ public class PieceTypeAttributeService {
     private final PieceAttributeValueRepository valueRepository;
     private final ValidatorsJsonCodec validatorsCodec;
     private final Optional<PieceTypeUsage> usage;
+    private final SyncStamper syncStamper;
 
     public PieceTypeAttributeService(
             PieceTypeService pieceTypeService,
             PieceTypeAttributeRepository attributeRepository,
             PieceAttributeValueRepository valueRepository,
             ValidatorsJsonCodec validatorsCodec,
-            Optional<PieceTypeUsage> usage
+            Optional<PieceTypeUsage> usage,
+            SyncStamper syncStamper
     ) {
         this.pieceTypeService = pieceTypeService;
         this.attributeRepository = attributeRepository;
         this.valueRepository = valueRepository;
         this.validatorsCodec = validatorsCodec;
         this.usage = usage;
+        this.syncStamper = syncStamper;
     }
 
     public PieceTypeAttribute findInOrg(Integer orgId, Integer typeId, Integer attributeId) {
@@ -124,12 +128,14 @@ public class PieceTypeAttributeService {
         attr.setName(PieceTypeService.buildSoftDeletedName(
                 attr.getName(), attr.getId(), PieceTypeService.MAX_ATTR_NAME_LENGTH));
         attr.setDeletedAt(LocalDateTime.now());
+        syncStamper.stamp(attr);
         attributeRepository.save(attr);
         usage.ifPresent(u -> u.recalcStatusForType(attr.getPieceType()));
     }
 
     private PieceTypeAttribute saveAndFlush(PieceTypeAttribute attr) {
         try {
+            syncStamper.stamp(attr);
             return attributeRepository.saveAndFlush(attr);
         } catch (DataIntegrityViolationException ex) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PIECE_TYPES_ATTRIBUTE_NAME_CONFLICT, null, ex);

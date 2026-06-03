@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import com.stocka.backend.modules.sync.support.SyncStamper;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -45,10 +46,12 @@ class OrganizationPieceAttributeServiceTest {
     private OrganizationPieceAttributeService sut;
     private final Organization org = new Organization().setId(7);
 
+    @Mock SyncStamper syncStamper;
+
     @BeforeEach
     void setUp() {
         sut = new OrganizationPieceAttributeService(
-                attributeRepository, organizationService, validatorsCodec, valueRepository, Optional.of(usage));
+                attributeRepository, organizationService, validatorsCodec, valueRepository, Optional.of(usage), syncStamper);
         when(organizationService.findById(7)).thenReturn(org);
     }
 

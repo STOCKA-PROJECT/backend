@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import com.stocka.backend.modules.sync.support.SyncStamper;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -53,12 +54,14 @@ class PieceTypeServiceTest {
 
     private final Organization org = new Organization();
 
+    @Mock SyncStamper syncStamper;
+
     @BeforeEach
     void setUp() {
         org.setId(1);
         sut = new PieceTypeService(
                 pieceTypeRepository, attributeRepository, actionRepository, organizationService,
-                validatorsCodec, Optional.of(usage), events);
+                validatorsCodec, Optional.of(usage), events, syncStamper);
         // Lenient because the static-helper tests don't go through the service layer.
         lenient().when(organizationService.findById(1)).thenReturn(org);
     }

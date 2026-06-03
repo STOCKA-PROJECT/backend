@@ -13,6 +13,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.stocka.backend.modules.locations.entity.Location;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.piecetypes.entity.PieceType;
+import com.stocka.backend.modules.sync.support.SyncableBaseEntity;
 import com.stocka.backend.modules.users.entity.User;
 
 import jakarta.persistence.Column;
@@ -46,7 +47,7 @@ import jakarta.persistence.UniqueConstraint;
         }
 )
 @SQLRestriction("deleted_at IS NULL")
-public class Piece {
+public class Piece extends SyncableBaseEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
     private Integer id;
@@ -146,4 +147,9 @@ public class Piece {
 
     public LocalDateTime getDeletedAt() { return deletedAt; }
     public Piece setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; return this; }
+
+    @Override
+    public Integer getSyncOrganizationId() {
+        return organization == null ? null : organization.getId();
+    }
 }

@@ -9,6 +9,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.stocka.backend.modules.organizations.entity.Organization;
+import com.stocka.backend.modules.sync.support.SyncableBaseEntity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -33,7 +34,7 @@ import jakarta.persistence.UniqueConstraint;
         )
 )
 @SQLRestriction("deleted_at IS NULL")
-public class PieceType {
+public class PieceType extends SyncableBaseEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
     private Integer id;
@@ -99,5 +100,10 @@ public class PieceType {
     public PieceType setDeletedAt(LocalDateTime deletedAt) {
         this.deletedAt = deletedAt;
         return this;
+    }
+
+    @Override
+    public Integer getSyncOrganizationId() {
+        return organization == null ? null : organization.getId();
     }
 }

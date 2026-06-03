@@ -9,7 +9,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.stocka.backend.modules.organizations.entity.Organization;
-import com.stocka.backend.modules.sync.support.SyncableEntity;
+import com.stocka.backend.modules.sync.support.SyncableBaseEntity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -19,7 +19,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
-import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 
 /**
@@ -32,23 +31,14 @@ import jakarta.persistence.Table;
         name = "locations",
         indexes = {
                 @Index(name = "idx_location_org_parent", columnList = "organization_id, parent_id"),
-                @Index(name = "idx_location_org_rev", columnList = "organization_id, rev"),
-                @Index(name = "uk_location_sync_id", columnList = "sync_id", unique = true)
+                @Index(name = "idx_location_org_rev", columnList = "organization_id, rev")
         }
 )
 @SQLRestriction("deleted_at IS NULL")
-public class Location implements SyncableEntity {
+public class Location extends SyncableBaseEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
     private Integer id;
-
-    /** Client-stable synchronization id (UUID); identity used by offline clients. */
-    @Column(name = "sync_id", length = 36, unique = true)
-    private String syncId;
-
-    /** Per-organization change-sequence value stamped on every write; the offline pull cursor. */
-    @Column(name = "rev")
-    private Long rev;
 
     @ManyToOne
     @JoinColumn(name = "organization_id", referencedColumnName = "id", nullable = false)
@@ -136,34 +126,6 @@ public class Location implements SyncableEntity {
     public Location setDeletedAt(LocalDateTime deletedAt) {
         this.deletedAt = deletedAt;
         return this;
-    }
-
-    /** Defensively assigns a {@code syncId} on insert when none was provided. */
-    @PrePersist
-    private void assignSyncIdIfMissing() {
-        if (syncId == null) {
-            syncId = java.util.UUID.randomUUID().toString();
-        }
-    }
-
-    @Override
-    public String getSyncId() {
-        return syncId;
-    }
-
-    @Override
-    public void setSyncId(String syncId) {
-        this.syncId = syncId;
-    }
-
-    @Override
-    public Long getRev() {
-        return rev;
-    }
-
-    @Override
-    public void setRev(Long rev) {
-        this.rev = rev;
     }
 
     @Override

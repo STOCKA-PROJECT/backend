@@ -18,6 +18,7 @@ import com.stocka.backend.modules.pieces.repository.PieceOrganizationAttributeVa
 import com.stocka.backend.modules.piecetypes.entity.AttributeType;
 import com.stocka.backend.modules.piecetypes.service.PieceTypeService;
 import com.stocka.backend.modules.piecetypes.service.ValidatorsJsonCodec;
+import com.stocka.backend.modules.sync.support.SyncStamper;
 
 /**
  * CRUD for {@link OrganizationPieceAttribute}. Mirrors the behavior of
@@ -40,19 +41,22 @@ public class OrganizationPieceAttributeService {
     private final ValidatorsJsonCodec validatorsCodec;
     private final PieceOrganizationAttributeValueRepository valueRepository;
     private final Optional<OrganizationPieceAttributeUsage> usage;
+    private final SyncStamper syncStamper;
 
     public OrganizationPieceAttributeService(
             OrganizationPieceAttributeRepository attributeRepository,
             OrganizationService organizationService,
             ValidatorsJsonCodec validatorsCodec,
             PieceOrganizationAttributeValueRepository valueRepository,
-            Optional<OrganizationPieceAttributeUsage> usage
+            Optional<OrganizationPieceAttributeUsage> usage,
+            SyncStamper syncStamper
     ) {
         this.attributeRepository = attributeRepository;
         this.organizationService = organizationService;
         this.validatorsCodec = validatorsCodec;
         this.valueRepository = valueRepository;
         this.usage = usage;
+        this.syncStamper = syncStamper;
     }
 
     public List<OrganizationPieceAttribute> listAll(Integer orgId) {
@@ -95,6 +99,7 @@ public class OrganizationPieceAttributeService {
                 .setRequired(required)
                 .setPosition(position)
                 .setValidatorsJson(validatorsCodec.serialize(dto.getValidators()));
+        syncStamper.stamp(attr);
         OrganizationPieceAttribute saved = attributeRepository.save(attr);
         if (required) {
             usage.ifPresent(u -> u.recalcStatusForOrganization(org));
@@ -154,6 +159,7 @@ public class OrganizationPieceAttributeService {
             attr.setValidatorsJson(validatorsCodec.serialize(dto.getValidators()));
             affectsStatus = true;
         }
+        syncStamper.stamp(attr);
         OrganizationPieceAttribute saved = attributeRepository.save(attr);
         if (affectsStatus) {
             usage.ifPresent(u -> u.recalcStatusForOrganization(saved.getOrganization()));
@@ -166,6 +172,7 @@ public class OrganizationPieceAttributeService {
         OrganizationPieceAttribute attr = findInOrg(orgId, attributeId);
         usage.ifPresent(u -> u.removeValuesForAttribute(attr));
         attr.setDeletedAt(LocalDateTime.now());
+        syncStamper.stamp(attr);
         attributeRepository.save(attr);
         usage.ifPresent(u -> u.recalcStatusForOrganization(attr.getOrganization()));
     }

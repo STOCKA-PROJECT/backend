@@ -33,6 +33,7 @@ import com.stocka.backend.modules.pieces.entity.Piece;
 import com.stocka.backend.modules.pieces.entity.PieceAttachment;
 import com.stocka.backend.modules.pieces.entity.PieceAttachmentKind;
 import com.stocka.backend.modules.pieces.repository.PieceAttachmentRepository;
+import com.stocka.backend.modules.sync.support.SyncStamper;
 import com.stocka.backend.modules.pieces.repository.PieceRepository;
 import com.stocka.backend.modules.storage.PresignedDownload;
 import com.stocka.backend.modules.storage.R2Properties;
@@ -79,6 +80,7 @@ public class PieceAttachmentService {
     private final R2Properties r2Properties;
     private final PieceAttachmentProperties limits;
     private final OrganizationQuotaProperties quotas;
+    private final SyncStamper syncStamper;
 
     public PieceAttachmentService(
             PieceAttachmentRepository attachmentRepository,
@@ -88,7 +90,8 @@ public class PieceAttachmentService {
             R2Service r2Service,
             R2Properties r2Properties,
             PieceAttachmentProperties limits,
-            OrganizationQuotaProperties quotas
+            OrganizationQuotaProperties quotas,
+            SyncStamper syncStamper
     ) {
         this.attachmentRepository = attachmentRepository;
         this.pieceRepository = pieceRepository;
@@ -98,6 +101,7 @@ public class PieceAttachmentService {
         this.r2Properties = r2Properties;
         this.limits = limits;
         this.quotas = quotas;
+        this.syncStamper = syncStamper;
     }
 
     @Transactional
@@ -146,10 +150,12 @@ public class PieceAttachmentService {
                 .setMimeType(detectedMime)
                 .setSizeBytes(stored.sizeBytes())
                 .setUploadedBy(currentUser());
+        syncStamper.stamp(attachment);
         PieceAttachment saved = attachmentRepository.save(attachment);
         historyService.recordAttachmentAdded(piece, currentUser(), safeName);
         if (kind == PieceAttachmentKind.IMAGE && piece.getCoverAttachment() == null) {
             piece.setCoverAttachment(saved);
+            syncStamper.stamp(piece);
             pieceRepository.save(piece);
         }
         return saved;
@@ -180,10 +186,12 @@ public class PieceAttachmentService {
         PieceAttachment attachment = findInPiece(orgId, pieceId, attachmentId);
         Piece piece = attachment.getPiece();
         attachment.setDeletedAt(LocalDateTime.now());
+        syncStamper.stamp(attachment);
         attachmentRepository.save(attachment);
         if (piece.getCoverAttachment() != null
                 && piece.getCoverAttachment().getId().equals(attachment.getId())) {
             piece.setCoverAttachment(null);
+            syncStamper.stamp(piece);
             pieceRepository.save(piece);
         }
         try {

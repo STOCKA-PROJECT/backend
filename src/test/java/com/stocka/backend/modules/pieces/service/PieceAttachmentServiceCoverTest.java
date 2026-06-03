@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import com.stocka.backend.modules.sync.support.SyncStamper;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 
@@ -54,6 +55,8 @@ class PieceAttachmentServiceCoverTest {
     private PieceAttachmentService sut;
     private Piece piece;
 
+    @Mock SyncStamper syncStamper;
+
     @BeforeEach
     void setUp() {
         PieceAttachmentProperties limits = new PieceAttachmentProperties();
@@ -61,7 +64,7 @@ class PieceAttachmentServiceCoverTest {
         OrganizationQuotaProperties quotas = new OrganizationQuotaProperties();
         sut = new PieceAttachmentService(
                 attachmentRepository, pieceRepository, pieceService,
-                historyService, r2Service, r2Properties, limits, quotas);
+                historyService, r2Service, r2Properties, limits, quotas, syncStamper);
         piece = new Piece().setId(42).setOrganization(new Organization().setId(7));
     }
 

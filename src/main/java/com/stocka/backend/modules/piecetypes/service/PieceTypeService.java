@@ -19,6 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.notifications.events.ResourceKind;
+import com.stocka.backend.modules.sync.support.SyncStamper;
 import com.stocka.backend.modules.notifications.events.ResourceLifecycleEvent;
 import com.stocka.backend.modules.notifications.preferences.entity.LifecycleAction;
 import com.stocka.backend.modules.organizations.entity.Organization;
@@ -54,6 +55,7 @@ public class PieceTypeService {
     private final ValidatorsJsonCodec validatorsCodec;
     private final Optional<PieceTypeUsage> usage;
     private final ApplicationEventPublisher events;
+    private final SyncStamper syncStamper;
 
     public PieceTypeService(
             PieceTypeRepository pieceTypeRepository,
@@ -62,12 +64,14 @@ public class PieceTypeService {
             OrganizationService organizationService,
             ValidatorsJsonCodec validatorsCodec,
             Optional<PieceTypeUsage> usage,
-            ApplicationEventPublisher events
+            ApplicationEventPublisher events,
+            SyncStamper syncStamper
     ) {
         this.pieceTypeRepository = pieceTypeRepository;
         this.attributeRepository = attributeRepository;
         this.actionRepository = actionRepository;
         this.organizationService = organizationService;
+        this.syncStamper = syncStamper;
         this.validatorsCodec = validatorsCodec;
         this.usage = usage;
         this.events = events;
@@ -153,6 +157,7 @@ public class PieceTypeService {
         // without breaking same-org enforcement on active rows.
         type.setName(buildSoftDeletedName(type.getName(), type.getId(), MAX_TYPE_NAME_LENGTH));
         type.setDeletedAt(LocalDateTime.now());
+        syncStamper.stamp(type);
         pieceTypeRepository.save(type);
         // Cascade: free the type's actions alongside its attributes so they do not dangle.
         actionRepository.softDeleteByPieceType(type);
@@ -227,6 +232,7 @@ public class PieceTypeService {
 
     private PieceType saveTypeAndFlush(PieceType type) {
         try {
+            syncStamper.stamp(type);
             return pieceTypeRepository.saveAndFlush(type);
         } catch (DataIntegrityViolationException ex) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PIECE_TYPES_NAME_CONFLICT, null, ex);
@@ -235,6 +241,7 @@ public class PieceTypeService {
 
     private PieceTypeAttribute saveAttributeAndFlush(PieceTypeAttribute attr) {
         try {
+            syncStamper.stamp(attr);
             return attributeRepository.saveAndFlush(attr);
         } catch (DataIntegrityViolationException ex) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PIECE_TYPES_ATTRIBUTE_NAME_CONFLICT, null, ex);

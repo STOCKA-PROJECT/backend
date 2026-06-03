@@ -50,6 +50,7 @@ import com.stocka.backend.modules.pieces.repository.PieceAttachmentRepository;
 import com.stocka.backend.modules.pieces.repository.PieceAttributeValueRepository;
 import com.stocka.backend.modules.pieces.repository.PieceOrganizationAttributeValueRepository;
 import com.stocka.backend.modules.pieces.repository.PieceRepository;
+import com.stocka.backend.modules.sync.support.SyncStamper;
 import com.stocka.backend.modules.pieces.service.attributevalidation.AttributeValueValidationRegistry;
 import com.stocka.backend.modules.piecetypes.entity.PieceType;
 import com.stocka.backend.modules.piecetypes.entity.PieceTypeAttribute;
@@ -90,6 +91,7 @@ public class PieceService {
     private final UserRepository userRepository;
     private final OrganizationQuotaProperties quotas;
     private final ApplicationEventPublisher events;
+    private final SyncStamper syncStamper;
 
     public PieceService(
             PieceRepository pieceRepository,
@@ -106,7 +108,8 @@ public class PieceService {
             LocationRepository locationRepository,
             UserRepository userRepository,
             OrganizationQuotaProperties quotas,
-            ApplicationEventPublisher events
+            ApplicationEventPublisher events,
+            SyncStamper syncStamper
     ) {
         this.pieceRepository = pieceRepository;
         this.valueRepository = valueRepository;
@@ -123,6 +126,7 @@ public class PieceService {
         this.userRepository = userRepository;
         this.quotas = quotas;
         this.events = events;
+        this.syncStamper = syncStamper;
     }
 
     @Transactional
@@ -146,6 +150,7 @@ public class PieceService {
                 .setLocation(location)
                 .setOwner(owner)
                 .setStatus(PieceStatus.PENDING);
+        syncStamper.stamp(piece);
         piece = pieceRepository.save(piece);
 
         Map<Integer, PieceTypeAttribute> typePool = collectTypeAttributePool(types);
@@ -183,6 +188,7 @@ public class PieceService {
         PieceStatus status = statusCalculator.compute(
                 typePool.values(), typeValues, orgPool.values(), orgValues);
         piece.setStatus(status);
+        syncStamper.stamp(piece);
         piece = pieceRepository.save(piece);
 
         User actor = currentUser();
@@ -407,6 +413,7 @@ public class PieceService {
             historyService.recordStatusChanged(piece, actor, oldStatus, newStatus);
             mutated = true;
         }
+        syncStamper.stamp(piece);
         Piece saved = pieceRepository.save(piece);
         if (mutated) {
             publishLifecycle(saved, LifecycleAction.EDITED, actor);
@@ -427,6 +434,7 @@ public class PieceService {
         valueRepository.deleteByPiece(piece);
         orgValueRepository.deleteByPiece(piece);
         piece.setDeletedAt(LocalDateTime.now());
+        syncStamper.stamp(piece);
         pieceRepository.save(piece);
         historyService.recordDeleted(piece, actor);
         publishLifecycle(piece, LifecycleAction.DELETED, actor);
@@ -489,6 +497,7 @@ public class PieceService {
             if (newStatus != p.getStatus()) {
                 PieceStatus oldStatus = p.getStatus();
                 p.setStatus(newStatus);
+                syncStamper.stamp(p);
                 pieceRepository.save(p);
                 historyService.recordStatusChanged(p, actor, oldStatus, newStatus);
             }
@@ -537,6 +546,7 @@ public class PieceService {
         }
         String oldNames = formatTypeNames(piece.getPieceTypes());
         piece.setPieceTypes(newTypes);
+        syncStamper.stamp(piece);
         pieceRepository.save(piece);
 
         // Drop values whose attribute is no longer covered by any of the new types.
