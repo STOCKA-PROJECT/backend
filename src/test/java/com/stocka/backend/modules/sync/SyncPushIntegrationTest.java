@@ -16,11 +16,13 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.repository.OrganizationRepository;
 import com.stocka.backend.modules.sync.dto.LocationSyncDto;
 import com.stocka.backend.modules.sync.dto.OrgAttributeSyncDto;
+import com.stocka.backend.modules.sync.dto.PieceSyncDto;
 import com.stocka.backend.modules.sync.dto.PieceTypeAttributeSyncDto;
 import com.stocka.backend.modules.sync.dto.PieceTypeSyncDto;
 import com.stocka.backend.modules.sync.dto.SyncMutationRequest;
@@ -219,6 +221,70 @@ class SyncPushIntegrationTest {
         Result del = pushOne(new SyncMutationRequest.Item(
                 "pa3", "pieceTypeAttributes", "delete", attrId, null, null));
         assertThat(del.status()).isEqualTo(SyncMutationsResponse.STATUS_APPLIED);
+    }
+
+    @Test
+    @DisplayName("piece push: aggregate with attribute values, serial-conflict, missing ref, delete")
+    void should_push_pieces_with_attribute_values() {
+        // Catalog: a type and one type-level attribute under it.
+        String typeSyncId = UUID.randomUUID().toString();
+        pushTypeUpsert("t-p", typeSyncId, null, "Resistor");
+        String attrSyncId = UUID.randomUUID().toString();
+        ObjectNode attrDoc = om.createObjectNode();
+        attrDoc.put("pieceTypeSyncId", typeSyncId);
+        attrDoc.put("name", "ohms");
+        attrDoc.put("displayName", "Ohms");
+        attrDoc.put("type", "INTEGER");
+        attrDoc.put("required", false);
+        attrDoc.put("position", 0);
+        pushOne(new SyncMutationRequest.Item("a-p", "pieceTypeAttributes", "upsert", attrSyncId, null, attrDoc));
+
+        // Create a piece referencing the type and carrying a type attribute value.
+        String pieceSyncId = UUID.randomUUID().toString();
+        ObjectNode doc = om.createObjectNode();
+        doc.put("name", "R1");
+        doc.put("serialNumber", "SN-1");
+        ArrayNode types = doc.putArray("pieceTypeSyncIds");
+        types.add(typeSyncId);
+        ArrayNode typeValues = doc.putArray("typeAttributeValues");
+        ObjectNode value = typeValues.addObject();
+        value.put("attributeSyncId", attrSyncId);
+        value.put("value", "100");
+
+        Result create = pushOne(new SyncMutationRequest.Item("p1", "pieces", "upsert", pieceSyncId, null, doc));
+        assertThat(create.status()).isEqualTo(SyncMutationsResponse.STATUS_APPLIED);
+        PieceSyncDto dto = (PieceSyncDto) create.serverDoc();
+        assertThat(dto.syncId()).isEqualTo(pieceSyncId);
+        assertThat(dto.serialNumber()).isEqualTo("SN-1");
+        assertThat(dto.pieceTypeSyncIds()).containsExactly(typeSyncId);
+        // The embedded attribute value survives the round trip (no data loss on reconcile).
+        assertThat(dto.typeAttributeValues()).hasSize(1);
+        assertThat(dto.typeAttributeValues().get(0).attributeSyncId()).isEqualTo(attrSyncId);
+        assertThat(dto.typeAttributeValues().get(0).value()).isEqualTo("100");
+
+        // Duplicate serial number conflicts.
+        ObjectNode dup = om.createObjectNode();
+        dup.put("name", "R2");
+        dup.put("serialNumber", "SN-1");
+        dup.putArray("pieceTypeSyncIds").add(typeSyncId);
+        Result clash = pushOne(new SyncMutationRequest.Item(
+                "p2", "pieces", "upsert", UUID.randomUUID().toString(), null, dup));
+        assertThat(clash.status()).isEqualTo(SyncMutationsResponse.STATUS_REJECTED);
+        assertThat(clash.errorCode()).isEqualTo("serial_conflict");
+
+        // Unknown type reference is a dependency failure.
+        ObjectNode orphan = om.createObjectNode();
+        orphan.put("name", "R3");
+        orphan.putArray("pieceTypeSyncIds").add(UUID.randomUUID().toString());
+        Result dep = pushOne(new SyncMutationRequest.Item(
+                "p3", "pieces", "upsert", UUID.randomUUID().toString(), null, orphan));
+        assertThat(dep.status()).isEqualTo(SyncMutationsResponse.STATUS_REJECTED);
+        assertThat(dep.errorCode()).isEqualTo("dependency_failed");
+
+        // Delete yields a tombstone.
+        Result del = pushOne(new SyncMutationRequest.Item("p4", "pieces", "delete", pieceSyncId, null, null));
+        assertThat(del.status()).isEqualTo(SyncMutationsResponse.STATUS_APPLIED);
+        assertThat(((PieceSyncDto) del.serverDoc()).deletedAt()).isNotNull();
     }
 
     private Result pushTypeUpsert(String mutationId, String syncId, Long baseRev, String name) {

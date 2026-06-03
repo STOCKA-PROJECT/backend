@@ -127,6 +127,24 @@ public class SyncService {
         return page.isEmpty() ? since : revOf.applyAsLong(page.get(page.size() - 1));
     }
 
+    /**
+     * Builds the canonical piece aggregate document for a single piece by sync id, including
+     * tombstones. Used by the push handler to return the {@code serverDoc} after applying a piece
+     * mutation.
+     *
+     * @param syncId piece sync id
+     * @return the aggregate document, or {@code null} when no such piece exists
+     */
+    @Transactional(readOnly = true)
+    public PieceSyncDto pieceDocBySyncId(String syncId) {
+        PieceSyncRow row = syncReadRepository.findPieceBySyncId(syncId);
+        if (row == null) {
+            return null;
+        }
+        List<PieceSyncDto> docs = assemblePieces(List.of(row));
+        return docs.isEmpty() ? null : docs.get(0);
+    }
+
     private List<PieceSyncDto> assemblePieces(List<PieceSyncRow> rows) {
         if (rows.isEmpty()) {
             return List.of();

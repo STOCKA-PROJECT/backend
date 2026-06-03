@@ -131,6 +131,20 @@ public class PieceService {
 
     @Transactional
     public Piece create(Integer orgId, CreatePieceDto dto) {
+        return create(orgId, dto, null);
+    }
+
+    /**
+     * Creates a piece, optionally preserving a client-provided {@code syncId} (offline sync push)
+     * so the client's stable identity is kept instead of a server-generated one.
+     *
+     * @param orgId        organization id
+     * @param dto          piece input
+     * @param clientSyncId client-stable sync id to assign, or {@code null} to let one be generated
+     * @return the created piece
+     */
+    @Transactional
+    public Piece create(Integer orgId, CreatePieceDto dto, String clientSyncId) {
         Organization org = organizationService.findById(orgId);
         ensureUnderPiecesPerOrgQuota(org);
         Set<PieceType> types = resolveTypes(orgId, dto.getPieceTypeIds());
@@ -150,6 +164,9 @@ public class PieceService {
                 .setLocation(location)
                 .setOwner(owner)
                 .setStatus(PieceStatus.PENDING);
+        if (clientSyncId != null) {
+            piece.setSyncId(clientSyncId);
+        }
         syncStamper.stamp(piece);
         piece = pieceRepository.save(piece);
 

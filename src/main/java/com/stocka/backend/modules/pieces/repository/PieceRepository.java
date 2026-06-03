@@ -42,6 +42,14 @@ public interface PieceRepository extends JpaRepository<Piece, Integer>, JpaSpeci
     Optional<Piece> findByIdAndOrganization(Integer id, Organization organization);
 
     /**
+     * Finds a live (non-deleted) piece by its synchronization id.
+     *
+     * @param syncId client-stable sync id
+     * @return the piece, or empty when missing or soft-deleted
+     */
+    Optional<Piece> findBySyncId(String syncId);
+
+    /**
      * All non-soft-deleted pieces of an organization. Used to recompute status in bulk after the
      * organization's attribute schema changes.
      */

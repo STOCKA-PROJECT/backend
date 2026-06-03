@@ -124,6 +124,47 @@ public interface SyncReadRepository extends Repository<Location, Integer> {
     PieceTypeAttributeSyncRow findPieceTypeAttributeBySyncId(@Param("syncId") String syncId);
 
     /**
+     * Loads the lightweight state of a piece by sync id <strong>including soft-deleted rows</strong>
+     * (id, rev, tombstone) for the push handler.
+     *
+     * @param syncId client-stable sync id
+     * @return the state row, or {@code null} when no such piece exists
+     */
+    @Query(value = """
+            SELECT id AS id, rev AS rev, deleted_at AS deletedAt
+            FROM pieces WHERE sync_id = :syncId
+            """, nativeQuery = true)
+    PieceStateRow findPieceStateBySyncId(@Param("syncId") String syncId);
+
+    /**
+     * Loads a single piece scalar row by sync id <strong>including soft-deleted rows</strong>, used
+     * (with the aggregate child queries) to build the canonical {@code serverDoc} after a push.
+     *
+     * @param syncId client-stable sync id
+     * @return the piece row, or {@code null} when no such piece exists
+     */
+    @Query(value = """
+            SELECT p.id              AS id,
+                   p.sync_id         AS syncId,
+                   p.rev             AS rev,
+                   p.name            AS name,
+                   p.serial_number   AS serialNumber,
+                   p.description     AS description,
+                   p.status          AS status,
+                   p.owner_user_id   AS ownerUserId,
+                   loc.sync_id       AS locationSyncId,
+                   ca.sync_id        AS coverAttachmentSyncId,
+                   p.created_at      AS createdAt,
+                   p.updated_at      AS updatedAt,
+                   p.deleted_at      AS deletedAt
+            FROM pieces p
+            LEFT JOIN locations loc ON loc.id = p.location_id
+            LEFT JOIN piece_attachments ca ON ca.id = p.cover_attachment_id
+            WHERE p.sync_id = :syncId
+            """, nativeQuery = true)
+    PieceSyncRow findPieceBySyncId(@Param("syncId") String syncId);
+
+    /**
      * Returns the pieces of an organization whose {@code rev} is greater than the checkpoint,
      * ordered by {@code rev}, including tombstones. Location and cover attachment are exposed by
      * their {@code sync_id} via left joins; the owner is exposed by user id (users are a read-only
@@ -472,6 +513,19 @@ public interface SyncReadRepository extends Repository<Location, Integer> {
         String getR2Key();
 
         LocalDateTime getCreatedAt();
+
+        LocalDateTime getDeletedAt();
+    }
+
+    /**
+     * Lightweight state of a piece (id, rev, tombstone) used by the push handler.
+     *
+     * @since 0.2.0
+     */
+    interface PieceStateRow {
+        Integer getId();
+
+        long getRev();
 
         LocalDateTime getDeletedAt();
     }

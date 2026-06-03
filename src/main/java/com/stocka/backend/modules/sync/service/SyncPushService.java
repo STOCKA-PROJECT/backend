@@ -7,13 +7,27 @@ import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.stocka.backend.modules.pieces.dto.AttributeScope;
+import com.stocka.backend.modules.pieces.dto.AttributeValueInputDto;
+import com.stocka.backend.modules.pieces.dto.CreatePieceDto;
+import com.stocka.backend.modules.pieces.dto.UpdatePieceDto;
+import com.stocka.backend.modules.pieces.entity.Piece;
+import com.stocka.backend.modules.pieces.service.PieceService;
+import com.stocka.backend.modules.sync.dto.PieceSyncDto;
+import com.stocka.backend.modules.sync.repository.SyncReadRepository.PieceStateRow;
 import com.stocka.backend.modules.locations.entity.Location;
 import com.stocka.backend.modules.locations.repository.LocationRepository;
 import com.stocka.backend.modules.locations.service.LocationCycleValidator;
@@ -64,6 +78,7 @@ public class SyncPushService {
     static final String COLLECTION_PIECE_TYPES = "pieceTypes";
     static final String COLLECTION_PIECE_TYPE_ATTRIBUTES = "pieceTypeAttributes";
     static final String COLLECTION_ORG_ATTRIBUTES = "orgAttributes";
+    static final String COLLECTION_PIECES = "pieces";
     static final String OP_UPSERT = "upsert";
     static final String OP_DELETE = "delete";
 
@@ -73,6 +88,7 @@ public class SyncPushService {
     static final String ERR_VALIDATION_FAILED = "validation_failed";
     static final String ERR_CYCLE = "cycle";
     static final String ERR_NAME_CONFLICT = "name_conflict";
+    static final String ERR_SERIAL_CONFLICT = "serial_conflict";
     static final String ERR_UNSUPPORTED_COLLECTION = "unsupported_collection";
     static final String ERR_UNSUPPORTED_OP = "unsupported_op";
 
@@ -90,6 +106,10 @@ public class SyncPushService {
     private final LocationCycleValidator cycleValidator;
     private final SyncStamper syncStamper;
     private final OrganizationSecurity orgSecurity;
+    private final PieceService pieceService;
+    private final SyncService syncService;
+    private final TransactionTemplate requiresNewTx;
+    private static final Logger log = LoggerFactory.getLogger(SyncPushService.class);
 
     public SyncPushService(
             SyncMutationRepository mutationRepository,
@@ -101,7 +121,10 @@ public class SyncPushService {
             OrganizationService organizationService,
             LocationCycleValidator cycleValidator,
             SyncStamper syncStamper,
-            OrganizationSecurity orgSecurity
+            OrganizationSecurity orgSecurity,
+            PieceService pieceService,
+            SyncService syncService,
+            PlatformTransactionManager transactionManager
     ) {
         this.mutationRepository = mutationRepository;
         this.syncReadRepository = syncReadRepository;
@@ -113,6 +136,10 @@ public class SyncPushService {
         this.cycleValidator = cycleValidator;
         this.syncStamper = syncStamper;
         this.orgSecurity = orgSecurity;
+        this.pieceService = pieceService;
+        this.syncService = syncService;
+        this.requiresNewTx = new TransactionTemplate(transactionManager);
+        this.requiresNewTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     /**
@@ -138,7 +165,7 @@ public class SyncPushService {
         // Idempotency: a previously processed mutation id never re-applies (R24).
         if (mutationRepository.existsById(item.mutationId())) {
             return new Result(item.mutationId(), SyncMutationsResponse.STATUS_DUPLICATE,
-                    item.syncId(), currentLocationDoc(item.syncId()), null);
+                    item.syncId(), currentDoc(item), null);
         }
 
         Result result = switch (item.collection() == null ? "" : item.collection()) {
@@ -146,6 +173,7 @@ public class SyncPushService {
             case COLLECTION_PIECE_TYPES -> handlePieceType(orgId, orgSlug, item);
             case COLLECTION_PIECE_TYPE_ATTRIBUTES -> handlePieceTypeAttribute(orgSlug, item);
             case COLLECTION_ORG_ATTRIBUTES -> handleOrgAttribute(orgId, orgSlug, item);
+            case COLLECTION_PIECES -> handlePiece(orgId, orgSlug, item);
             default -> rejected(item, ERR_UNSUPPORTED_COLLECTION);
         };
 
@@ -502,6 +530,217 @@ public class SyncPushService {
         return new Result(item.mutationId(), status, item.syncId(), toDto(saved), null);
     }
 
+    private Result handlePiece(Integer orgId, String orgSlug, SyncMutationRequest.Item item) {
+        User user = currentUser();
+        if (user == null || !orgSecurity.canWritePieces(orgSlug, user)) {
+            return rejected(item, ERR_PERMISSION_DENIED);
+        }
+        PieceStateRow state = syncReadRepository.findPieceStateBySyncId(item.syncId());
+        if (OP_DELETE.equals(item.op())) {
+            return handlePieceDelete(orgId, item, state);
+        }
+        if (OP_UPSERT.equals(item.op())) {
+            return handlePieceUpsert(orgId, item, state);
+        }
+        return rejected(item, ERR_UNSUPPORTED_OP);
+    }
+
+    private Result handlePieceDelete(Integer orgId, SyncMutationRequest.Item item, PieceStateRow state) {
+        if (state == null || state.getDeletedAt() != null) {
+            return applied(item, state == null ? null : syncService.pieceDocBySyncId(item.syncId()));
+        }
+        Integer pieceId = state.getId();
+        try {
+            requiresNewTx.executeWithoutResult(s -> pieceService.softDelete(orgId, pieceId));
+        } catch (ResponseStatusException ex) {
+            return mapPieceException(item, ex);
+        }
+        return applied(item, syncService.pieceDocBySyncId(item.syncId()));
+    }
+
+    private Result handlePieceUpsert(Integer orgId, SyncMutationRequest.Item item, PieceStateRow state) {
+        // Sticky delete: never resurrect a server-side tombstone (R7).
+        if (state != null && state.getDeletedAt() != null) {
+            return new Result(item.mutationId(), SyncMutationsResponse.STATUS_REJECTED,
+                    item.syncId(), syncService.pieceDocBySyncId(item.syncId()), ERR_DELETED_UPSTREAM);
+        }
+        PieceRefs refs = resolvePieceRefs(item.doc());
+        if (refs.errorCode() != null) {
+            return rejected(item, refs.errorCode());
+        }
+        try {
+            if (state == null) {
+                CreatePieceDto dto = buildCreatePieceDto(item.doc(), refs);
+                // Reuse PieceService inside an isolated transaction so a validation failure rolls
+                // back only this piece (and its partial attribute values), not the whole batch.
+                requiresNewTx.executeWithoutResult(s -> pieceService.create(orgId, dto, item.syncId()));
+                return applied(item, syncService.pieceDocBySyncId(item.syncId()));
+            }
+            UpdatePieceDto dto = buildUpdatePieceDto(item.doc(), refs);
+            Integer pieceId = state.getId();
+            requiresNewTx.executeWithoutResult(s -> pieceService.update(orgId, pieceId, dto));
+            boolean stale = item.baseRev() != null && item.baseRev() < state.getRev();
+            String status = stale
+                    ? SyncMutationsResponse.STATUS_CONFLICT
+                    : SyncMutationsResponse.STATUS_APPLIED;
+            return new Result(item.mutationId(), status, item.syncId(),
+                    syncService.pieceDocBySyncId(item.syncId()), null);
+        } catch (ResponseStatusException ex) {
+            return mapPieceException(item, ex);
+        }
+    }
+
+    private Result mapPieceException(SyncMutationRequest.Item item, ResponseStatusException ex) {
+        HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
+        log.debug("sync_piece_rejected mutationId={} status={}", item.mutationId(), status);
+        if (status == HttpStatus.CONFLICT) {
+            return rejected(item, ERR_SERIAL_CONFLICT);
+        }
+        if (status == HttpStatus.NOT_FOUND) {
+            return rejected(item, ERR_DEPENDENCY_FAILED);
+        }
+        return rejected(item, ERR_VALIDATION_FAILED);
+    }
+
+    /** Resolved numeric references for a piece mutation (or an error code when a ref is missing). */
+    private record PieceRefs(
+            String errorCode,
+            List<Integer> typeIds,
+            Integer locationId,
+            boolean hasLocationKey,
+            Integer ownerUserId,
+            boolean hasOwnerKey,
+            List<AttributeValueInputDto> attributeValues
+    ) {
+        static PieceRefs error(String code) {
+            return new PieceRefs(code, null, null, false, null, false, null);
+        }
+    }
+
+    private PieceRefs resolvePieceRefs(JsonNode doc) {
+        List<Integer> typeIds = new ArrayList<>();
+        JsonNode typeArr = doc == null ? null : doc.get("pieceTypeSyncIds");
+        if (typeArr != null && typeArr.isArray()) {
+            for (JsonNode node : typeArr) {
+                String sid = node.asText(null);
+                if (sid == null) {
+                    continue;
+                }
+                Optional<PieceType> type = pieceTypeRepository.findBySyncId(sid);
+                if (type.isEmpty()) {
+                    return PieceRefs.error(ERR_DEPENDENCY_FAILED);
+                }
+                typeIds.add(type.get().getId());
+            }
+        }
+
+        boolean hasLocationKey = doc != null && doc.has("locationSyncId");
+        Integer locationId = null;
+        if (doc != null && doc.hasNonNull("locationSyncId")) {
+            Optional<Location> location = locationRepository.findBySyncId(doc.get("locationSyncId").asText());
+            if (location.isEmpty()) {
+                return PieceRefs.error(ERR_DEPENDENCY_FAILED);
+            }
+            locationId = location.get().getId();
+        }
+
+        boolean hasOwnerKey = doc != null && doc.has("ownerUserId");
+        Integer ownerUserId = doc != null && doc.hasNonNull("ownerUserId") ? doc.get("ownerUserId").asInt() : null;
+
+        List<AttributeValueInputDto> values = new ArrayList<>();
+        String typeValuesErr = collectAttributeValues(doc, "typeAttributeValues", AttributeScope.TYPE, values);
+        if (typeValuesErr != null) {
+            return PieceRefs.error(typeValuesErr);
+        }
+        String orgValuesErr = collectAttributeValues(doc, "orgAttributeValues", AttributeScope.ORG, values);
+        if (orgValuesErr != null) {
+            return PieceRefs.error(orgValuesErr);
+        }
+        return new PieceRefs(null, typeIds, locationId, hasLocationKey, ownerUserId, hasOwnerKey, values);
+    }
+
+    private String collectAttributeValues(JsonNode doc, String field, AttributeScope scope,
+                                          List<AttributeValueInputDto> out) {
+        JsonNode arr = doc == null ? null : doc.get(field);
+        if (arr == null || !arr.isArray()) {
+            return null;
+        }
+        for (JsonNode node : arr) {
+            String attrSyncId = node.hasNonNull("attributeSyncId") ? node.get("attributeSyncId").asText() : null;
+            if (attrSyncId == null) {
+                continue;
+            }
+            String value = node.hasNonNull("value") ? node.get("value").asText() : null;
+            Integer attrId;
+            if (scope == AttributeScope.ORG) {
+                Optional<OrganizationPieceAttribute> attr = orgAttributeRepository.findBySyncId(attrSyncId);
+                if (attr.isEmpty()) {
+                    return ERR_DEPENDENCY_FAILED;
+                }
+                attrId = attr.get().getId();
+            } else {
+                Optional<PieceTypeAttribute> attr = pieceTypeAttributeRepository.findBySyncId(attrSyncId);
+                if (attr.isEmpty()) {
+                    return ERR_DEPENDENCY_FAILED;
+                }
+                attrId = attr.get().getId();
+            }
+            out.add(new AttributeValueInputDto(attrId, scope, value));
+        }
+        return null;
+    }
+
+    private CreatePieceDto buildCreatePieceDto(JsonNode doc, PieceRefs refs) {
+        return new CreatePieceDto()
+                .setName(readText(doc, "name"))
+                .setSerialNumber(readText(doc, "serialNumber"))
+                .setDescription(readText(doc, "description"))
+                .setPieceTypeIds(refs.typeIds())
+                .setLocationId(refs.locationId())
+                .setOwnerUserId(refs.ownerUserId())
+                .setAttributeValues(refs.attributeValues());
+    }
+
+    private UpdatePieceDto buildUpdatePieceDto(JsonNode doc, PieceRefs refs) {
+        UpdatePieceDto dto = new UpdatePieceDto()
+                .setName(readText(doc, "name"))
+                .setSerialNumber(readText(doc, "serialNumber"))
+                .setDescription(readText(doc, "description"))
+                .setPieceTypeIds(refs.typeIds())
+                .setAttributeValues(refs.attributeValues());
+        if (refs.locationId() != null) {
+            dto.setLocationId(refs.locationId());
+        } else if (refs.hasLocationKey()) {
+            dto.setClearLocation(true);
+        }
+        if (refs.ownerUserId() != null) {
+            dto.setOwnerUserId(refs.ownerUserId());
+        } else if (refs.hasOwnerKey()) {
+            dto.setClearOwner(true);
+        }
+        return dto;
+    }
+
+    private Object currentDoc(SyncMutationRequest.Item item) {
+        return switch (item.collection() == null ? "" : item.collection()) {
+            case COLLECTION_LOCATIONS -> currentLocationDoc(item.syncId());
+            case COLLECTION_PIECE_TYPES -> {
+                PieceTypeSyncRow row = syncReadRepository.findPieceTypeBySyncId(item.syncId());
+                yield row == null ? null : toDto(row);
+            }
+            case COLLECTION_ORG_ATTRIBUTES -> {
+                OrgAttributeSyncRow row = syncReadRepository.findOrgAttributeBySyncId(item.syncId());
+                yield row == null ? null : toDto(row);
+            }
+            case COLLECTION_PIECE_TYPE_ATTRIBUTES -> {
+                PieceTypeAttributeSyncRow row = syncReadRepository.findPieceTypeAttributeBySyncId(item.syncId());
+                yield row == null ? null : toDto(row);
+            }
+            case COLLECTION_PIECES -> syncService.pieceDocBySyncId(item.syncId());
+            default -> null;
+        };
+    }
+
     private LocationSyncDto currentLocationDoc(String syncId) {
         LocationSyncRow row = syncReadRepository.findLocationBySyncId(syncId);
         return row == null ? null : toDto(row);
@@ -528,6 +767,9 @@ public class SyncPushService {
             return dto.rev();
         }
         if (serverDoc instanceof PieceTypeAttributeSyncDto dto) {
+            return dto.rev();
+        }
+        if (serverDoc instanceof PieceSyncDto dto) {
             return dto.rev();
         }
         return null;

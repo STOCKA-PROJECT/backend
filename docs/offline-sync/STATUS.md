@@ -10,7 +10,7 @@
 |------|--------|
 | Identidad `syncId`/`rev` + secuencia de cambios (CSN) | ✅ Completo (6 entidades) |
 | Pull `/sync/v1/changes` | ✅ Completo (6 colecciones, tombstones R1) |
-| Push `/sync/v1/mutations` | 🟡 4/6 colecciones (todo el catálogo) |
+| Push `/sync/v1/mutations` | 🟡 5/6 colecciones (catálogo + pieces); falta attachments |
 | Cliente escritorio (Tauri + RxDB + motor de sync) | ✅ Motor completo y verificado |
 | Integración con UI (stores/componentes) | ⏳ Pendiente |
 | Auth keychain + CORS Tauri | ⏳ Pendiente |
@@ -28,17 +28,23 @@
 - **Push (B2)** — `SyncPushService`: idempotencia (`sync_mutation`, R24), LWW con reporte de
   `conflict`, **borrado pegajoso** (R7), permisos por mutación (R18), `name_conflict` con
   pre-check (R10), `dependency_failed` para refs ausentes (R5), liberación de slot en borrado.
-  Colecciones soportadas: **`locations`, `pieceTypes`, `orgAttributes`, `pieceTypeAttributes`**.
+  Colecciones soportadas: **`locations`, `pieceTypes`, `orgAttributes`, `pieceTypeAttributes`,
+  `pieces`**.
+- **`pieces` (push)** — implementado **reutilizando `PieceService`**: `create(orgId, dto, syncId)`
+  preserva el `syncId` de cliente; el handler resuelve las refs `syncId`→id (tipos, location,
+  owner, atributos) y construye `Create/UpdatePieceDto`, por lo que validación, valores de
+  atributos, cálculo de status e historial se reusan intactos. Cada mutación de piece corre en
+  una transacción `REQUIRES_NEW` aislada (un fallo no contamina el lote); excepciones de dominio
+  → `serial_conflict` / `dependency_failed` / `validation_failed`. El `serverDoc` devuelto incluye
+  los valores de atributos (no se pierden al reconciliar).
 
 ### Pendiente backend — y por qué
 
-- **`pieces` (push)**: requiere gestionar los **valores de atributos embebidos** + recálculo de
-  status. Un push parcial sería **incorrecto**: la reconciliación del cliente hace upsert del
-  `serverDoc`, así que devolver el agregado sin sus valores **los borraría** localmente. El
-  enfoque correcto es **reutilizar `PieceService`** (refactor para aceptar un `syncId` de cliente
-  y resolver refs `syncId`→id), preservando validación/historial/status. Es un sub-bloque propio.
 - **`attachments` (push)**: implica subida de binarios a R2 desde la cola offline (no solo
   metadatos); cola binaria separada + caché LRU.
+- **Supresión de emails en replay** (B3): el push de pieces reutiliza `PieceService`, que publica
+  eventos de ciclo de vida (emails). Falta un flag "origen sync" para suprimirlos al drenar el
+  outbox y evitar avalanchas de correo.
 - **Auth (C)**: aceptar el refresh token por header/body además de cookie; CORS para el origin
   de Tauri.
 
