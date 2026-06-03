@@ -1,16 +1,31 @@
 package com.stocka.backend.modules.sync.service;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.ToLongFunction;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.stocka.backend.modules.sync.dto.AttachmentSyncDto;
+import com.stocka.backend.modules.sync.dto.AttributeValueSyncDto;
 import com.stocka.backend.modules.sync.dto.LocationSyncDto;
+import com.stocka.backend.modules.sync.dto.OrgAttributeSyncDto;
+import com.stocka.backend.modules.sync.dto.PieceSyncDto;
+import com.stocka.backend.modules.sync.dto.PieceTypeAttributeSyncDto;
+import com.stocka.backend.modules.sync.dto.PieceTypeSyncDto;
 import com.stocka.backend.modules.sync.dto.SyncChangesResponse;
 import com.stocka.backend.modules.sync.repository.SyncReadRepository;
+import com.stocka.backend.modules.sync.repository.SyncReadRepository.AttachmentSyncRow;
+import com.stocka.backend.modules.sync.repository.SyncReadRepository.AttributeValueRow;
 import com.stocka.backend.modules.sync.repository.SyncReadRepository.LocationSyncRow;
+import com.stocka.backend.modules.sync.repository.SyncReadRepository.OrgAttributeSyncRow;
+import com.stocka.backend.modules.sync.repository.SyncReadRepository.PieceSyncRow;
+import com.stocka.backend.modules.sync.repository.SyncReadRepository.PieceTypeAttributeSyncRow;
+import com.stocka.backend.modules.sync.repository.SyncReadRepository.PieceTypeRefRow;
+import com.stocka.backend.modules.sync.repository.SyncReadRepository.PieceTypeSyncRow;
 
 /**
  * Orchestrates the offline sync pull feed: returns the documents of an organization that changed
@@ -28,7 +43,12 @@ public class SyncService {
     public static final int DEFAULT_LIMIT = 500;
     public static final int MAX_LIMIT = 1000;
 
+    static final String COLLECTION_PIECE_TYPES = "pieceTypes";
+    static final String COLLECTION_PIECE_TYPE_ATTRIBUTES = "pieceTypeAttributes";
     static final String COLLECTION_LOCATIONS = "locations";
+    static final String COLLECTION_ORG_ATTRIBUTES = "orgAttributes";
+    static final String COLLECTION_PIECES = "pieces";
+    static final String COLLECTION_ATTACHMENTS = "attachments";
 
     private final SyncReadRepository syncReadRepository;
 
@@ -47,24 +67,114 @@ public class SyncService {
     @Transactional(readOnly = true)
     public SyncChangesResponse pull(Integer orgId, Map<String, Long> checkpoint, int limit) {
         int pageSize = clampLimit(limit);
-        long locationsSince = checkpoint.getOrDefault(COLLECTION_LOCATIONS, 0L);
 
-        List<LocationSyncRow> rows = syncReadRepository.findChangedLocations(orgId, locationsSince, pageSize);
-        List<LocationSyncDto> locations = rows.stream().map(SyncService::toLocationDto).toList();
+        long pieceTypesSince = checkpoint.getOrDefault(COLLECTION_PIECE_TYPES, 0L);
+        List<PieceTypeSyncDto> pieceTypes =
+                syncReadRepository.findChangedPieceTypes(orgId, pieceTypesSince, pageSize)
+                        .stream().map(SyncService::toPieceTypeDto).toList();
+
+        long ptAttrsSince = checkpoint.getOrDefault(COLLECTION_PIECE_TYPE_ATTRIBUTES, 0L);
+        List<PieceTypeAttributeSyncDto> pieceTypeAttributes =
+                syncReadRepository.findChangedPieceTypeAttributes(orgId, ptAttrsSince, pageSize)
+                        .stream().map(SyncService::toPieceTypeAttributeDto).toList();
+
+        long locationsSince = checkpoint.getOrDefault(COLLECTION_LOCATIONS, 0L);
+        List<LocationSyncDto> locations =
+                syncReadRepository.findChangedLocations(orgId, locationsSince, pageSize)
+                        .stream().map(SyncService::toLocationDto).toList();
+
+        long orgAttrsSince = checkpoint.getOrDefault(COLLECTION_ORG_ATTRIBUTES, 0L);
+        List<OrgAttributeSyncDto> orgAttributes =
+                syncReadRepository.findChangedOrgAttributes(orgId, orgAttrsSince, pageSize)
+                        .stream().map(SyncService::toOrgAttributeDto).toList();
+
+        long piecesSince = checkpoint.getOrDefault(COLLECTION_PIECES, 0L);
+        List<PieceSyncDto> pieces =
+                assemblePieces(syncReadRepository.findChangedPieces(orgId, piecesSince, pageSize));
+
+        long attachmentsSince = checkpoint.getOrDefault(COLLECTION_ATTACHMENTS, 0L);
+        List<AttachmentSyncDto> attachments =
+                syncReadRepository.findChangedAttachments(orgId, attachmentsSince, pageSize)
+                        .stream().map(SyncService::toAttachmentDto).toList();
 
         Map<String, Long> newCheckpoint = new HashMap<>();
-        long locationsCheckpoint = locations.isEmpty()
-                ? locationsSince
-                : locations.get(locations.size() - 1).rev();
-        newCheckpoint.put(COLLECTION_LOCATIONS, locationsCheckpoint);
+        newCheckpoint.put(COLLECTION_PIECE_TYPES, advance(pieceTypes, pieceTypesSince, PieceTypeSyncDto::rev));
+        newCheckpoint.put(COLLECTION_PIECE_TYPE_ATTRIBUTES,
+                advance(pieceTypeAttributes, ptAttrsSince, PieceTypeAttributeSyncDto::rev));
+        newCheckpoint.put(COLLECTION_LOCATIONS, advance(locations, locationsSince, LocationSyncDto::rev));
+        newCheckpoint.put(COLLECTION_ORG_ATTRIBUTES,
+                advance(orgAttributes, orgAttrsSince, OrgAttributeSyncDto::rev));
+        newCheckpoint.put(COLLECTION_PIECES, advance(pieces, piecesSince, PieceSyncDto::rev));
+        newCheckpoint.put(COLLECTION_ATTACHMENTS,
+                advance(attachments, attachmentsSince, AttachmentSyncDto::rev));
 
-        boolean hasMore = locations.size() >= pageSize;
+        boolean hasMore = pieceTypes.size() >= pageSize
+                || pieceTypeAttributes.size() >= pageSize
+                || locations.size() >= pageSize
+                || orgAttributes.size() >= pageSize
+                || pieces.size() >= pageSize
+                || attachments.size() >= pageSize;
 
         return new SyncChangesResponse(
-                new SyncChangesResponse.Changes(locations),
+                new SyncChangesResponse.Changes(
+                        pieceTypes, pieceTypeAttributes, locations, orgAttributes, pieces, attachments),
                 newCheckpoint,
                 hasMore,
                 MIN_CLIENT_VERSION);
+    }
+
+    private static <T> long advance(List<T> page, long since, ToLongFunction<T> revOf) {
+        return page.isEmpty() ? since : revOf.applyAsLong(page.get(page.size() - 1));
+    }
+
+    private List<PieceSyncDto> assemblePieces(List<PieceSyncRow> rows) {
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+        List<Integer> ids = rows.stream().map(PieceSyncRow::getId).toList();
+        Map<Integer, List<String>> typeSyncIds = groupTypeRefs(syncReadRepository.findPieceTypeRefs(ids));
+        Map<Integer, List<AttributeValueSyncDto>> typeValues =
+                groupValues(syncReadRepository.findTypeAttributeValues(ids));
+        Map<Integer, List<AttributeValueSyncDto>> orgValues =
+                groupValues(syncReadRepository.findOrgAttributeValues(ids));
+
+        List<PieceSyncDto> out = new ArrayList<>(rows.size());
+        for (PieceSyncRow r : rows) {
+            out.add(new PieceSyncDto(
+                    r.getSyncId(),
+                    r.getRev(),
+                    r.getName(),
+                    r.getSerialNumber(),
+                    r.getDescription(),
+                    r.getStatus(),
+                    r.getOwnerUserId(),
+                    r.getLocationSyncId(),
+                    r.getCoverAttachmentSyncId(),
+                    typeSyncIds.getOrDefault(r.getId(), List.of()),
+                    typeValues.getOrDefault(r.getId(), List.of()),
+                    orgValues.getOrDefault(r.getId(), List.of()),
+                    r.getCreatedAt(),
+                    r.getUpdatedAt(),
+                    r.getDeletedAt()));
+        }
+        return out;
+    }
+
+    private static Map<Integer, List<String>> groupTypeRefs(List<PieceTypeRefRow> rows) {
+        Map<Integer, List<String>> map = new HashMap<>();
+        for (PieceTypeRefRow r : rows) {
+            map.computeIfAbsent(r.getPieceId(), k -> new ArrayList<>()).add(r.getTypeSyncId());
+        }
+        return map;
+    }
+
+    private static Map<Integer, List<AttributeValueSyncDto>> groupValues(List<AttributeValueRow> rows) {
+        Map<Integer, List<AttributeValueSyncDto>> map = new HashMap<>();
+        for (AttributeValueRow r : rows) {
+            map.computeIfAbsent(r.getPieceId(), k -> new ArrayList<>())
+                    .add(new AttributeValueSyncDto(r.getAttributeSyncId(), r.getAttrValue()));
+        }
+        return map;
     }
 
     /**
@@ -110,6 +220,61 @@ public class SyncService {
                 row.getParentSyncId(),
                 row.getCreatedAt(),
                 row.getUpdatedAt(),
+                row.getDeletedAt());
+    }
+
+    private static PieceTypeSyncDto toPieceTypeDto(PieceTypeSyncRow row) {
+        return new PieceTypeSyncDto(
+                row.getSyncId(),
+                row.getRev(),
+                row.getName(),
+                row.getCreatedAt(),
+                row.getUpdatedAt(),
+                row.getDeletedAt());
+    }
+
+    private static PieceTypeAttributeSyncDto toPieceTypeAttributeDto(PieceTypeAttributeSyncRow row) {
+        return new PieceTypeAttributeSyncDto(
+                row.getSyncId(),
+                row.getRev(),
+                row.getPieceTypeSyncId(),
+                row.getName(),
+                row.getDisplayName(),
+                row.getAttrType(),
+                row.getIsRequired(),
+                row.getAttrPosition(),
+                row.getValidatorsJson(),
+                row.getCreatedAt(),
+                row.getUpdatedAt(),
+                row.getDeletedAt());
+    }
+
+    private static OrgAttributeSyncDto toOrgAttributeDto(OrgAttributeSyncRow row) {
+        return new OrgAttributeSyncDto(
+                row.getSyncId(),
+                row.getRev(),
+                row.getName(),
+                row.getDisplayName(),
+                row.getAttrType(),
+                row.getIsRequired(),
+                row.getAttrPosition(),
+                row.getValidatorsJson(),
+                row.getCreatedAt(),
+                row.getUpdatedAt(),
+                row.getDeletedAt());
+    }
+
+    private static AttachmentSyncDto toAttachmentDto(AttachmentSyncRow row) {
+        return new AttachmentSyncDto(
+                row.getSyncId(),
+                row.getRev(),
+                row.getPieceSyncId(),
+                row.getKind(),
+                row.getOriginalFilename(),
+                row.getMimeType(),
+                row.getSizeBytes(),
+                row.getR2Key(),
+                row.getCreatedAt(),
                 row.getDeletedAt());
     }
 }

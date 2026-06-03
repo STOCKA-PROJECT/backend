@@ -26,10 +26,23 @@ public record SyncChangesResponse(
 ) {
 
     /**
-     * Per-collection change lists. Grows as more collections are wired into the pull feed.
+     * Per-collection change lists (each including tombstones), keyed by collection in the
+     * dependency order clients should apply them.
      *
-     * @param locations changed locations (including tombstones)
+     * @param pieceTypes          changed piece types
+     * @param pieceTypeAttributes changed type-level attribute definitions
+     * @param locations           changed locations
+     * @param orgAttributes       changed organization-level attribute definitions
+     * @param pieces              changed pieces (aggregates)
+     * @param attachments         changed attachment metadata
      */
-    public record Changes(List<LocationSyncDto> locations) {
+    public record Changes(
+            List<PieceTypeSyncDto> pieceTypes,
+            List<PieceTypeAttributeSyncDto> pieceTypeAttributes,
+            List<LocationSyncDto> locations,
+            List<OrgAttributeSyncDto> orgAttributes,
+            List<PieceSyncDto> pieces,
+            List<AttachmentSyncDto> attachments
+    ) {
     }
 }
