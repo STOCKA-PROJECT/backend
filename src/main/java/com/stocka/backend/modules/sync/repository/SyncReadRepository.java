@@ -74,6 +74,21 @@ public interface SyncReadRepository extends Repository<Location, Integer> {
     LocationSyncRow findLocationBySyncId(@Param("syncId") String syncId);
 
     /**
+     * Loads a single piece type by sync id <strong>including soft-deleted rows</strong> (used by the
+     * push handler for existence/rev/tombstone detection and to build the {@code serverDoc}).
+     *
+     * @param syncId client-stable sync id
+     * @return the row, or {@code null} when no such piece type exists
+     */
+    @Query(value = """
+            SELECT sync_id AS syncId, rev AS rev, name AS name,
+                   created_at AS createdAt, updated_at AS updatedAt, deleted_at AS deletedAt
+            FROM piece_types
+            WHERE sync_id = :syncId
+            """, nativeQuery = true)
+    PieceTypeSyncRow findPieceTypeBySyncId(@Param("syncId") String syncId);
+
+    /**
      * Returns the pieces of an organization whose {@code rev} is greater than the checkpoint,
      * ordered by {@code rev}, including tombstones. Location and cover attachment are exposed by
      * their {@code sync_id} via left joins; the owner is exposed by user id (users are a read-only

@@ -20,6 +20,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.repository.OrganizationRepository;
 import com.stocka.backend.modules.sync.dto.LocationSyncDto;
+import com.stocka.backend.modules.sync.dto.PieceTypeSyncDto;
 import com.stocka.backend.modules.sync.dto.SyncMutationRequest;
 import com.stocka.backend.modules.sync.dto.SyncMutationsResponse;
 import com.stocka.backend.modules.sync.dto.SyncMutationsResponse.Result;
@@ -118,6 +119,39 @@ class SyncPushIntegrationTest {
         Result r = pushOne(new SyncMutationRequest.Item("mp", "locations", "upsert", syncId, null, doc));
         assertThat(r.status()).isEqualTo(SyncMutationsResponse.STATUS_REJECTED);
         assertThat(r.errorCode()).isEqualTo("dependency_failed");
+    }
+
+    @Test
+    @DisplayName("piece type push: create, name-conflict, and delete that frees the name slot")
+    void should_push_piece_types_with_name_conflict_and_slot_release() {
+        String t1 = UUID.randomUUID().toString();
+
+        Result create = pushTypeUpsert("t1", t1, null, "Bolts");
+        assertThat(create.status()).isEqualTo(SyncMutationsResponse.STATUS_APPLIED);
+
+        // A different syncId with the same active name conflicts.
+        Result clash = pushTypeUpsert("t2", UUID.randomUUID().toString(), null, "Bolts");
+        assertThat(clash.status()).isEqualTo(SyncMutationsResponse.STATUS_REJECTED);
+        assertThat(clash.errorCode()).isEqualTo("name_conflict");
+
+        // Deleting mangles the name to free the (org, name) slot.
+        Result del = pushTypeDelete("t3", t1);
+        assertThat(del.status()).isEqualTo(SyncMutationsResponse.STATUS_APPLIED);
+        assertThat(((PieceTypeSyncDto) del.serverDoc()).deletedAt()).isNotNull();
+
+        // The freed name can now be reused by a brand-new type.
+        Result recreate = pushTypeUpsert("t4", UUID.randomUUID().toString(), null, "Bolts");
+        assertThat(recreate.status()).isEqualTo(SyncMutationsResponse.STATUS_APPLIED);
+    }
+
+    private Result pushTypeUpsert(String mutationId, String syncId, Long baseRev, String name) {
+        ObjectNode doc = om.createObjectNode();
+        doc.put("name", name);
+        return pushOne(new SyncMutationRequest.Item(mutationId, "pieceTypes", "upsert", syncId, baseRev, doc));
+    }
+
+    private Result pushTypeDelete(String mutationId, String syncId) {
+        return pushOne(new SyncMutationRequest.Item(mutationId, "pieceTypes", "delete", syncId, null, null));
     }
 
     private Result pushOne(SyncMutationRequest.Item item) {

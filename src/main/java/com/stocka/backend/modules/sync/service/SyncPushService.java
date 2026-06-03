@@ -20,7 +20,10 @@ import com.stocka.backend.modules.locations.service.LocationCycleValidator;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.security.OrganizationSecurity;
 import com.stocka.backend.modules.organizations.service.OrganizationService;
+import com.stocka.backend.modules.piecetypes.entity.PieceType;
+import com.stocka.backend.modules.piecetypes.repository.PieceTypeRepository;
 import com.stocka.backend.modules.sync.dto.LocationSyncDto;
+import com.stocka.backend.modules.sync.dto.PieceTypeSyncDto;
 import com.stocka.backend.modules.sync.dto.SyncMutationRequest;
 import com.stocka.backend.modules.sync.dto.SyncMutationsResponse;
 import com.stocka.backend.modules.sync.dto.SyncMutationsResponse.Result;
@@ -28,6 +31,7 @@ import com.stocka.backend.modules.sync.entity.SyncMutation;
 import com.stocka.backend.modules.sync.repository.SyncMutationRepository;
 import com.stocka.backend.modules.sync.repository.SyncReadRepository;
 import com.stocka.backend.modules.sync.repository.SyncReadRepository.LocationSyncRow;
+import com.stocka.backend.modules.sync.repository.SyncReadRepository.PieceTypeSyncRow;
 import com.stocka.backend.modules.sync.support.SyncStamper;
 import com.stocka.backend.modules.users.entity.User;
 
@@ -48,6 +52,7 @@ import com.stocka.backend.modules.users.entity.User;
 public class SyncPushService {
 
     static final String COLLECTION_LOCATIONS = "locations";
+    static final String COLLECTION_PIECE_TYPES = "pieceTypes";
     static final String OP_UPSERT = "upsert";
     static final String OP_DELETE = "delete";
 
@@ -56,12 +61,17 @@ public class SyncPushService {
     static final String ERR_DEPENDENCY_FAILED = "dependency_failed";
     static final String ERR_VALIDATION_FAILED = "validation_failed";
     static final String ERR_CYCLE = "cycle";
+    static final String ERR_NAME_CONFLICT = "name_conflict";
     static final String ERR_UNSUPPORTED_COLLECTION = "unsupported_collection";
     static final String ERR_UNSUPPORTED_OP = "unsupported_op";
+
+    private static final int MAX_TYPE_NAME_LENGTH = 120;
+    private static final String SOFT_DELETE_SUFFIX = "::deleted::";
 
     private final SyncMutationRepository mutationRepository;
     private final SyncReadRepository syncReadRepository;
     private final LocationRepository locationRepository;
+    private final PieceTypeRepository pieceTypeRepository;
     private final OrganizationService organizationService;
     private final LocationCycleValidator cycleValidator;
     private final SyncStamper syncStamper;
@@ -71,6 +81,7 @@ public class SyncPushService {
             SyncMutationRepository mutationRepository,
             SyncReadRepository syncReadRepository,
             LocationRepository locationRepository,
+            PieceTypeRepository pieceTypeRepository,
             OrganizationService organizationService,
             LocationCycleValidator cycleValidator,
             SyncStamper syncStamper,
@@ -79,6 +90,7 @@ public class SyncPushService {
         this.mutationRepository = mutationRepository;
         this.syncReadRepository = syncReadRepository;
         this.locationRepository = locationRepository;
+        this.pieceTypeRepository = pieceTypeRepository;
         this.organizationService = organizationService;
         this.cycleValidator = cycleValidator;
         this.syncStamper = syncStamper;
@@ -113,6 +125,7 @@ public class SyncPushService {
 
         Result result = switch (item.collection() == null ? "" : item.collection()) {
             case COLLECTION_LOCATIONS -> handleLocation(orgId, orgSlug, item);
+            case COLLECTION_PIECE_TYPES -> handlePieceType(orgId, orgSlug, item);
             default -> rejected(item, ERR_UNSUPPORTED_COLLECTION);
         };
 
@@ -212,6 +225,83 @@ public class SyncPushService {
         return new Result(item.mutationId(), status, item.syncId(), toDto(saved), null);
     }
 
+    private Result handlePieceType(Integer orgId, String orgSlug, SyncMutationRequest.Item item) {
+        User user = currentUser();
+        if (user == null || !orgSecurity.canManageOrgContent(orgSlug, user)) {
+            return rejected(item, ERR_PERMISSION_DENIED);
+        }
+        PieceTypeSyncRow state = syncReadRepository.findPieceTypeBySyncId(item.syncId());
+        if (OP_DELETE.equals(item.op())) {
+            return handlePieceTypeDelete(item, state);
+        }
+        if (OP_UPSERT.equals(item.op())) {
+            return handlePieceTypeUpsert(orgId, item, state);
+        }
+        return rejected(item, ERR_UNSUPPORTED_OP);
+    }
+
+    private Result handlePieceTypeDelete(SyncMutationRequest.Item item, PieceTypeSyncRow state) {
+        if (state == null || state.getDeletedAt() != null) {
+            return applied(item, state == null ? null : toDto(state));
+        }
+        PieceType type = pieceTypeRepository.findBySyncId(item.syncId()).orElseThrow();
+        // Free the (org, name) unique slot so a new active type can reuse the name (matches
+        // PieceTypeService's soft-delete name mangling).
+        type.setName(buildSoftDeletedTypeName(type.getName(), type.getId()));
+        type.setDeletedAt(LocalDateTime.now());
+        syncStamper.stamp(type);
+        return applied(item, toDto(pieceTypeRepository.save(type)));
+    }
+
+    private Result handlePieceTypeUpsert(Integer orgId, SyncMutationRequest.Item item, PieceTypeSyncRow state) {
+        if (state != null && state.getDeletedAt() != null) {
+            return new Result(item.mutationId(), SyncMutationsResponse.STATUS_REJECTED,
+                    item.syncId(), toDto(state), ERR_DELETED_UPSTREAM);
+        }
+        String name = readText(item.doc(), "name");
+        if (name == null || name.isBlank()) {
+            return rejected(item, ERR_VALIDATION_FAILED);
+        }
+        String trimmed = name.trim();
+
+        if (state == null) {
+            Organization org = organizationService.findById(orgId);
+            // Pre-check uniqueness instead of relying on a constraint violation, which would taint
+            // the batch transaction.
+            if (pieceTypeRepository.findByOrganizationAndName(org, trimmed).isPresent()) {
+                return rejected(item, ERR_NAME_CONFLICT);
+            }
+            PieceType type = new PieceType().setOrganization(org).setName(trimmed);
+            type.setSyncId(item.syncId());
+            syncStamper.stamp(type);
+            return applied(item, toDto(pieceTypeRepository.save(type)));
+        }
+
+        PieceType type = pieceTypeRepository.findBySyncId(item.syncId()).orElseThrow();
+        Optional<PieceType> clash = pieceTypeRepository.findByOrganizationAndName(type.getOrganization(), trimmed);
+        if (clash.isPresent() && !clash.get().getSyncId().equals(item.syncId())) {
+            return rejected(item, ERR_NAME_CONFLICT);
+        }
+        type.setName(trimmed);
+        syncStamper.stamp(type);
+        PieceType saved = pieceTypeRepository.save(type);
+        boolean stale = item.baseRev() != null && item.baseRev() < state.getRev();
+        String status = stale
+                ? SyncMutationsResponse.STATUS_CONFLICT
+                : SyncMutationsResponse.STATUS_APPLIED;
+        return new Result(item.mutationId(), status, item.syncId(), toDto(saved), null);
+    }
+
+    private static String buildSoftDeletedTypeName(String name, Integer id) {
+        String suffix = SOFT_DELETE_SUFFIX + (id == null ? "?" : id);
+        int maxBase = Math.max(0, MAX_TYPE_NAME_LENGTH - suffix.length());
+        String base = name == null ? "" : name;
+        if (base.length() > maxBase) {
+            base = base.substring(0, maxBase);
+        }
+        return base + suffix;
+    }
+
     private LocationSyncDto currentLocationDoc(String syncId) {
         LocationSyncRow row = syncReadRepository.findLocationBySyncId(syncId);
         return row == null ? null : toDto(row);
@@ -228,7 +318,13 @@ public class SyncPushService {
     }
 
     private static Long revOf(Object serverDoc) {
-        return serverDoc instanceof LocationSyncDto dto ? dto.rev() : null;
+        if (serverDoc instanceof LocationSyncDto dto) {
+            return dto.rev();
+        }
+        if (serverDoc instanceof PieceTypeSyncDto dto) {
+            return dto.rev();
+        }
+        return null;
     }
 
     private static LocationSyncDto toDto(Location l) {
@@ -247,6 +343,22 @@ public class SyncPushService {
         return new LocationSyncDto(
                 r.getSyncId(), r.getRev(), r.getName(), r.getDescription(),
                 r.getParentSyncId(), r.getCreatedAt(), r.getUpdatedAt(), r.getDeletedAt());
+    }
+
+    private static PieceTypeSyncDto toDto(PieceType t) {
+        return new PieceTypeSyncDto(
+                t.getSyncId(),
+                t.getRev() == null ? 0L : t.getRev(),
+                t.getName(),
+                toLocalDateTime(t.getCreatedAt()),
+                toLocalDateTime(t.getUpdatedAt()),
+                t.getDeletedAt());
+    }
+
+    private static PieceTypeSyncDto toDto(PieceTypeSyncRow r) {
+        return new PieceTypeSyncDto(
+                r.getSyncId(), r.getRev(), r.getName(),
+                r.getCreatedAt(), r.getUpdatedAt(), r.getDeletedAt());
     }
 
     private static LocalDateTime toLocalDateTime(Date date) {

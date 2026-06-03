@@ -18,6 +18,14 @@ public interface PieceTypeRepository extends JpaRepository<PieceType, Integer> {
     Optional<PieceType> findByOrganizationAndName(Organization organization, String name);
 
     /**
+     * Finds a live (non-deleted) piece type by its synchronization id.
+     *
+     * @param syncId client-stable sync id
+     * @return the type, or empty when missing or soft-deleted
+     */
+    Optional<PieceType> findBySyncId(String syncId);
+
+    /**
      * Bulk soft-delete every still-active piece type of {@code organization}. Used by the
      * organization cascade so types do not dangle when their parent org is removed.
      *
