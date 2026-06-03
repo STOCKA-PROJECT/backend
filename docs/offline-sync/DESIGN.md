@@ -202,6 +202,10 @@ Respuesta (lote ordenado por `rev` asc, por colección):
 
 - Los borrados llegan como documentos con `deletedAt != null` (tombstone). El cliente marca
   el doc local como borrado (no lo elimina físicamente hasta que el server confirma).
+  **Crítico (R1)**: las consultas de `/sync/changes` deben **incluir las filas borradas**
+  haciendo *bypass* del `@SQLRestriction("deleted_at IS NULL")`; con los repositorios normales
+  el server nunca entregaría los borrados y el cliente mantendría fantasmas. Ver
+  `DECISIONS-AND-RISKS.md` §R1.
 - **Orden de aplicación local** para respetar dependencias (FKs lógicas):
   `pieceTypes → pieceTypeAttributes → locations → orgAttributes → pieces → attachmentsMeta`.
 
@@ -270,9 +274,17 @@ Al aplicar una mutación `upsert` con `baseRev`:
 3. El historial (`PieceHistory`) registra el cambio igual que hoy, dejando traza auditable de
    la sobrescritura.
 
+**Regla delete-vs-update (R7, Crítico)**: el **borrado es pegajoso**. Un `upsert` con `baseRev`
+anterior al `deletedAt` del servidor **no resucita** el registro → `status=rejected`
+(`errorCode=deleted_upstream`); el cliente marca su copia como borrada. Solo un `upsert` cuyo
+`baseRev` sea posterior al borrado (el cliente **vio** el tombstone y recrea deliberadamente)
+puede des-borrar. Sin esta regla, un LWW ingenuo resucitaría datos borrados.
+
 > **Nota de producto**: LWW puede perder cambios concurrentes de campos distintos. Está
 > aceptado como base (F2). En §13 se deja la puerta al *merge por campo* apoyándose en
 > `PieceHistory` para una fase posterior, sin cambiar el contrato de transporte.
+> El catálogo completo de `errorCode` de `rejected` y las reglas de reconciliación viven en
+> `DECISIONS-AND-RISKS.md` (Parte 2 y Parte 3).
 
 ## 8. Adjuntos / Cloudflare R2 offline
 
