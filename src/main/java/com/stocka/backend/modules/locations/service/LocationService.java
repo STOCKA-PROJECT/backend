@@ -28,6 +28,7 @@ import com.stocka.backend.modules.notifications.events.ResourceLifecycleEvent;
 import com.stocka.backend.modules.notifications.preferences.entity.LifecycleAction;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.service.OrganizationService;
+import com.stocka.backend.modules.sync.support.SyncStamper;
 import com.stocka.backend.modules.users.entity.User;
 
 /**
@@ -43,19 +44,22 @@ public class LocationService {
     private final LocationCycleValidator cycleValidator;
     private final List<LocationContentChecker> contentCheckers;
     private final ApplicationEventPublisher events;
+    private final SyncStamper syncStamper;
 
     public LocationService(
             LocationRepository locationRepository,
             OrganizationService organizationService,
             LocationCycleValidator cycleValidator,
             List<LocationContentChecker> contentCheckers,
-            ApplicationEventPublisher events
+            ApplicationEventPublisher events,
+            SyncStamper syncStamper
     ) {
         this.locationRepository = locationRepository;
         this.organizationService = organizationService;
         this.cycleValidator = cycleValidator;
         this.contentCheckers = contentCheckers == null ? List.of() : contentCheckers;
         this.events = events;
+        this.syncStamper = syncStamper;
     }
 
     @Transactional
@@ -71,6 +75,7 @@ public class LocationService {
                 .setName(name)
                 .setDescription(emptyToNull(dto.getDescription()))
                 .setParent(parent);
+        syncStamper.stamp(location);
         Location saved = locationRepository.save(location);
         publishLifecycle(saved, LifecycleAction.CREATED);
         return saved;
@@ -149,6 +154,9 @@ public class LocationService {
             location.setParent(newParent);
         }
 
+        if (nameChanged || parentChanged || descriptionChanged) {
+            syncStamper.stamp(location);
+        }
         Location saved = locationRepository.save(location);
         if (nameChanged || parentChanged || descriptionChanged) {
             publishLifecycle(saved, LifecycleAction.EDITED);
@@ -181,6 +189,7 @@ public class LocationService {
         }
 
         location.setDeletedAt(LocalDateTime.now());
+        syncStamper.stamp(location);
         locationRepository.save(location);
         publishLifecycle(location, LifecycleAction.DELETED);
     }
