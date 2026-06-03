@@ -26,6 +26,14 @@ public interface LocationRepository extends CrudRepository<Location, Integer> {
     Optional<Location> findByOrganizationAndParentIsNullAndName(Organization organization, String name);
 
     /**
+     * Finds a live (non-deleted) location by its synchronization id.
+     *
+     * @param syncId client-stable sync id
+     * @return the location, or empty when missing or soft-deleted
+     */
+    Optional<Location> findBySyncId(String syncId);
+
+    /**
      * Bulk soft-delete every still-active location of {@code organization}. Used by the
      * organization cascade so locations do not dangle when their parent org is removed.
      *

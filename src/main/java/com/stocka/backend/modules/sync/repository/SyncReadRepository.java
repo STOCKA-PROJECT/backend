@@ -51,6 +51,29 @@ public interface SyncReadRepository extends Repository<Location, Integer> {
             @Param("limit") int limit);
 
     /**
+     * Loads a single location by sync id <strong>including soft-deleted rows</strong> (native query
+     * bypasses {@code @SQLRestriction}). Used by the push handler to detect existence, the current
+     * {@code rev} and tombstone state, and to build the canonical {@code serverDoc}.
+     *
+     * @param syncId client-stable sync id
+     * @return the row, or {@code null} when no such location exists
+     */
+    @Query(value = """
+            SELECT l.sync_id      AS syncId,
+                   l.rev          AS rev,
+                   l.name         AS name,
+                   l.description  AS description,
+                   p.sync_id      AS parentSyncId,
+                   l.created_at   AS createdAt,
+                   l.updated_at   AS updatedAt,
+                   l.deleted_at   AS deletedAt
+            FROM locations l
+            LEFT JOIN locations p ON p.id = l.parent_id
+            WHERE l.sync_id = :syncId
+            """, nativeQuery = true)
+    LocationSyncRow findLocationBySyncId(@Param("syncId") String syncId);
+
+    /**
      * Returns the pieces of an organization whose {@code rev} is greater than the checkpoint,
      * ordered by {@code rev}, including tombstones. Location and cover attachment are exposed by
      * their {@code sync_id} via left joins; the owner is exposed by user id (users are a read-only

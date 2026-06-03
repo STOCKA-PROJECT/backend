@@ -1,0 +1,275 @@
+package com.stocka.backend.modules.sync.service;
+
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Optional;
+
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.stocka.backend.modules.locations.entity.Location;
+import com.stocka.backend.modules.locations.repository.LocationRepository;
+import com.stocka.backend.modules.locations.service.LocationCycleValidator;
+import com.stocka.backend.modules.organizations.entity.Organization;
+import com.stocka.backend.modules.organizations.security.OrganizationSecurity;
+import com.stocka.backend.modules.organizations.service.OrganizationService;
+import com.stocka.backend.modules.sync.dto.LocationSyncDto;
+import com.stocka.backend.modules.sync.dto.SyncMutationRequest;
+import com.stocka.backend.modules.sync.dto.SyncMutationsResponse;
+import com.stocka.backend.modules.sync.dto.SyncMutationsResponse.Result;
+import com.stocka.backend.modules.sync.entity.SyncMutation;
+import com.stocka.backend.modules.sync.repository.SyncMutationRepository;
+import com.stocka.backend.modules.sync.repository.SyncReadRepository;
+import com.stocka.backend.modules.sync.repository.SyncReadRepository.LocationSyncRow;
+import com.stocka.backend.modules.sync.support.SyncStamper;
+import com.stocka.backend.modules.users.entity.User;
+
+/**
+ * Applies a batch of offline mutations pushed by the desktop client (the write side of sync).
+ *
+ * <p>Each mutation is idempotent by {@code mutationId} (a repeat returns {@code duplicate} without
+ * re-applying, R24). Conflicts use last-write-wins with the server as authority; a stale write
+ * (lower {@code baseRev}) still applies but is reported as {@code conflict}. Deletes are sticky:
+ * an {@code upsert} over a server-side tombstone is rejected as {@code deleted_upstream} (R7).
+ *
+ * <p>This first iteration implements the {@code locations} collection end to end; other
+ * collections are rejected as {@code unsupported_collection} until wired in.
+ *
+ * @since 0.2.0
+ */
+@Service
+public class SyncPushService {
+
+    static final String COLLECTION_LOCATIONS = "locations";
+    static final String OP_UPSERT = "upsert";
+    static final String OP_DELETE = "delete";
+
+    static final String ERR_PERMISSION_DENIED = "permission_denied";
+    static final String ERR_DELETED_UPSTREAM = "deleted_upstream";
+    static final String ERR_DEPENDENCY_FAILED = "dependency_failed";
+    static final String ERR_VALIDATION_FAILED = "validation_failed";
+    static final String ERR_CYCLE = "cycle";
+    static final String ERR_UNSUPPORTED_COLLECTION = "unsupported_collection";
+    static final String ERR_UNSUPPORTED_OP = "unsupported_op";
+
+    private final SyncMutationRepository mutationRepository;
+    private final SyncReadRepository syncReadRepository;
+    private final LocationRepository locationRepository;
+    private final OrganizationService organizationService;
+    private final LocationCycleValidator cycleValidator;
+    private final SyncStamper syncStamper;
+    private final OrganizationSecurity orgSecurity;
+
+    public SyncPushService(
+            SyncMutationRepository mutationRepository,
+            SyncReadRepository syncReadRepository,
+            LocationRepository locationRepository,
+            OrganizationService organizationService,
+            LocationCycleValidator cycleValidator,
+            SyncStamper syncStamper,
+            OrganizationSecurity orgSecurity
+    ) {
+        this.mutationRepository = mutationRepository;
+        this.syncReadRepository = syncReadRepository;
+        this.locationRepository = locationRepository;
+        this.organizationService = organizationService;
+        this.cycleValidator = cycleValidator;
+        this.syncStamper = syncStamper;
+        this.orgSecurity = orgSecurity;
+    }
+
+    /**
+     * Applies the batch and returns one result per mutation, in order.
+     *
+     * @param orgId   organization id
+     * @param orgSlug organization slug (for per-mutation authorization)
+     * @param request the mutation batch
+     * @return per-mutation outcomes
+     */
+    @Transactional
+    public SyncMutationsResponse push(Integer orgId, String orgSlug, SyncMutationRequest request) {
+        List<Result> results = new ArrayList<>();
+        if (request != null && request.mutations() != null) {
+            for (SyncMutationRequest.Item item : request.mutations()) {
+                results.add(processOne(orgId, orgSlug, item));
+            }
+        }
+        return new SyncMutationsResponse(results, SyncService.MIN_CLIENT_VERSION);
+    }
+
+    private Result processOne(Integer orgId, String orgSlug, SyncMutationRequest.Item item) {
+        // Idempotency: a previously processed mutation id never re-applies (R24).
+        if (mutationRepository.existsById(item.mutationId())) {
+            return new Result(item.mutationId(), SyncMutationsResponse.STATUS_DUPLICATE,
+                    item.syncId(), currentLocationDoc(item.syncId()), null);
+        }
+
+        Result result = switch (item.collection() == null ? "" : item.collection()) {
+            case COLLECTION_LOCATIONS -> handleLocation(orgId, orgSlug, item);
+            default -> rejected(item, ERR_UNSUPPORTED_COLLECTION);
+        };
+
+        // Record only state-changing outcomes so a fixed retry (rejected) can be re-evaluated.
+        if (SyncMutationsResponse.STATUS_APPLIED.equals(result.status())
+                || SyncMutationsResponse.STATUS_CONFLICT.equals(result.status())) {
+            mutationRepository.save(new SyncMutation()
+                    .setMutationId(item.mutationId())
+                    .setOrganizationId(orgId)
+                    .setAppliedRev(revOf(result.serverDoc())));
+        }
+        return result;
+    }
+
+    private Result handleLocation(Integer orgId, String orgSlug, SyncMutationRequest.Item item) {
+        User user = currentUser();
+        if (user == null || !orgSecurity.canManageOrgContent(orgSlug, user)) {
+            return rejected(item, ERR_PERMISSION_DENIED);
+        }
+
+        LocationSyncRow state = syncReadRepository.findLocationBySyncId(item.syncId());
+
+        if (OP_DELETE.equals(item.op())) {
+            return handleLocationDelete(item, state);
+        }
+        if (OP_UPSERT.equals(item.op())) {
+            return handleLocationUpsert(orgId, item, state);
+        }
+        return rejected(item, ERR_UNSUPPORTED_OP);
+    }
+
+    private Result handleLocationDelete(SyncMutationRequest.Item item, LocationSyncRow state) {
+        if (state == null || state.getDeletedAt() != null) {
+            // Already gone or already a tombstone: idempotent no-op.
+            return applied(item, state == null ? null : toDto(state));
+        }
+        Location location = locationRepository.findBySyncId(item.syncId()).orElseThrow();
+        location.setDeletedAt(LocalDateTime.now());
+        syncStamper.stamp(location);
+        Location saved = locationRepository.save(location);
+        return applied(item, toDto(saved));
+    }
+
+    private Result handleLocationUpsert(Integer orgId, SyncMutationRequest.Item item, LocationSyncRow state) {
+        // Sticky delete: never resurrect a server-side tombstone (R7).
+        if (state != null && state.getDeletedAt() != null) {
+            return new Result(item.mutationId(), SyncMutationsResponse.STATUS_REJECTED,
+                    item.syncId(), toDto(state), ERR_DELETED_UPSTREAM);
+        }
+
+        String name = readText(item.doc(), "name");
+        if (name == null || name.isBlank()) {
+            return rejected(item, ERR_VALIDATION_FAILED);
+        }
+        String description = readText(item.doc(), "description");
+        String parentSyncId = readText(item.doc(), "parentSyncId");
+
+        Location parent = null;
+        if (parentSyncId != null) {
+            Optional<Location> parentOpt = locationRepository.findBySyncId(parentSyncId);
+            if (parentOpt.isEmpty()) {
+                return rejected(item, ERR_DEPENDENCY_FAILED);
+            }
+            parent = parentOpt.get();
+        }
+
+        if (state == null) {
+            Organization org = organizationService.findById(orgId);
+            Location location = new Location()
+                    .setOrganization(org)
+                    .setName(name.trim())
+                    .setDescription(emptyToNull(description))
+                    .setParent(parent);
+            location.setSyncId(item.syncId());
+            syncStamper.stamp(location);
+            Location saved = locationRepository.save(location);
+            return applied(item, toDto(saved));
+        }
+
+        Location location = locationRepository.findBySyncId(item.syncId()).orElseThrow();
+        try {
+            cycleValidator.ensureNoCycle(location, parent);
+        } catch (ResponseStatusException cycle) {
+            return new Result(item.mutationId(), SyncMutationsResponse.STATUS_REJECTED,
+                    item.syncId(), toDto(state), ERR_CYCLE);
+        }
+        location.setName(name.trim());
+        location.setDescription(emptyToNull(description));
+        location.setParent(parent);
+        syncStamper.stamp(location);
+        Location saved = locationRepository.save(location);
+
+        boolean stale = item.baseRev() != null && item.baseRev() < state.getRev();
+        String status = stale
+                ? SyncMutationsResponse.STATUS_CONFLICT
+                : SyncMutationsResponse.STATUS_APPLIED;
+        return new Result(item.mutationId(), status, item.syncId(), toDto(saved), null);
+    }
+
+    private LocationSyncDto currentLocationDoc(String syncId) {
+        LocationSyncRow row = syncReadRepository.findLocationBySyncId(syncId);
+        return row == null ? null : toDto(row);
+    }
+
+    private static Result applied(SyncMutationRequest.Item item, Object serverDoc) {
+        return new Result(item.mutationId(), SyncMutationsResponse.STATUS_APPLIED,
+                item.syncId(), serverDoc, null);
+    }
+
+    private static Result rejected(SyncMutationRequest.Item item, String errorCode) {
+        return new Result(item.mutationId(), SyncMutationsResponse.STATUS_REJECTED,
+                item.syncId(), null, errorCode);
+    }
+
+    private static Long revOf(Object serverDoc) {
+        return serverDoc instanceof LocationSyncDto dto ? dto.rev() : null;
+    }
+
+    private static LocationSyncDto toDto(Location l) {
+        return new LocationSyncDto(
+                l.getSyncId(),
+                l.getRev() == null ? 0L : l.getRev(),
+                l.getName(),
+                l.getDescription(),
+                l.getParent() == null ? null : l.getParent().getSyncId(),
+                toLocalDateTime(l.getCreatedAt()),
+                toLocalDateTime(l.getUpdatedAt()),
+                l.getDeletedAt());
+    }
+
+    private static LocationSyncDto toDto(LocationSyncRow r) {
+        return new LocationSyncDto(
+                r.getSyncId(), r.getRev(), r.getName(), r.getDescription(),
+                r.getParentSyncId(), r.getCreatedAt(), r.getUpdatedAt(), r.getDeletedAt());
+    }
+
+    private static LocalDateTime toLocalDateTime(Date date) {
+        return date == null ? null : LocalDateTime.ofInstant(date.toInstant(), ZoneOffset.UTC);
+    }
+
+    private static String readText(JsonNode doc, String field) {
+        return doc != null && doc.hasNonNull(field) ? doc.get(field).asText() : null;
+    }
+
+    private static String emptyToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static User currentUser() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof User user)) {
+            return null;
+        }
+        return user;
+    }
+}
