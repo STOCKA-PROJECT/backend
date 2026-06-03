@@ -19,6 +19,14 @@ public interface PieceTypeAttributeRepository extends JpaRepository<PieceTypeAtt
     Optional<PieceTypeAttribute> findByPieceTypeAndName(PieceType pieceType, String name);
 
     /**
+     * Finds a live (non-deleted) type attribute by its synchronization id.
+     *
+     * @param syncId client-stable sync id
+     * @return the attribute, or empty when missing or soft-deleted
+     */
+    Optional<PieceTypeAttribute> findBySyncId(String syncId);
+
+    /**
      * Bulk soft-delete every still-active attribute of {@code pieceType}. Used by the
      * piece-type cascade so attributes do not dangle when their parent type is removed.
      *

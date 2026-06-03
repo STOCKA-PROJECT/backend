@@ -21,6 +21,7 @@ import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.repository.OrganizationRepository;
 import com.stocka.backend.modules.sync.dto.LocationSyncDto;
 import com.stocka.backend.modules.sync.dto.OrgAttributeSyncDto;
+import com.stocka.backend.modules.sync.dto.PieceTypeAttributeSyncDto;
 import com.stocka.backend.modules.sync.dto.PieceTypeSyncDto;
 import com.stocka.backend.modules.sync.dto.SyncMutationRequest;
 import com.stocka.backend.modules.sync.dto.SyncMutationsResponse;
@@ -182,6 +183,42 @@ class SyncPushIntegrationTest {
         Result del = pushOne(new SyncMutationRequest.Item("a4", "orgAttributes", "delete", a1, null, null));
         assertThat(del.status()).isEqualTo(SyncMutationsResponse.STATUS_APPLIED);
         assertThat(((OrgAttributeSyncDto) del.serverDoc()).deletedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("type-attribute push: create under a type, missing parent, and delete")
+    void should_push_piece_type_attributes() {
+        String typeSyncId = UUID.randomUUID().toString();
+        pushTypeUpsert("pt1", typeSyncId, null, "Resistor");
+
+        String attrId = UUID.randomUUID().toString();
+        ObjectNode doc = om.createObjectNode();
+        doc.put("pieceTypeSyncId", typeSyncId);
+        doc.put("name", "ohms");
+        doc.put("displayName", "Ohms");
+        doc.put("type", "INTEGER");
+        doc.put("required", true);
+        doc.put("position", 0);
+        Result create = pushOne(new SyncMutationRequest.Item(
+                "pa1", "pieceTypeAttributes", "upsert", attrId, null, doc));
+        assertThat(create.status()).isEqualTo(SyncMutationsResponse.STATUS_APPLIED);
+        PieceTypeAttributeSyncDto dto = (PieceTypeAttributeSyncDto) create.serverDoc();
+        assertThat(dto.pieceTypeSyncId()).isEqualTo(typeSyncId);
+        assertThat(dto.type()).isEqualTo("INTEGER");
+
+        // Unknown parent type is rejected as a dependency failure.
+        ObjectNode orphan = om.createObjectNode();
+        orphan.put("pieceTypeSyncId", UUID.randomUUID().toString());
+        orphan.put("name", "x");
+        orphan.put("type", "TEXT");
+        Result dep = pushOne(new SyncMutationRequest.Item(
+                "pa2", "pieceTypeAttributes", "upsert", UUID.randomUUID().toString(), null, orphan));
+        assertThat(dep.status()).isEqualTo(SyncMutationsResponse.STATUS_REJECTED);
+        assertThat(dep.errorCode()).isEqualTo("dependency_failed");
+
+        Result del = pushOne(new SyncMutationRequest.Item(
+                "pa3", "pieceTypeAttributes", "delete", attrId, null, null));
+        assertThat(del.status()).isEqualTo(SyncMutationsResponse.STATUS_APPLIED);
     }
 
     private Result pushTypeUpsert(String mutationId, String syncId, Long baseRev, String name) {

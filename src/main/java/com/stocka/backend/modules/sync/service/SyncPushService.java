@@ -24,9 +24,12 @@ import com.stocka.backend.modules.organizations.security.OrganizationSecurity;
 import com.stocka.backend.modules.organizations.service.OrganizationService;
 import com.stocka.backend.modules.piecetypes.entity.AttributeType;
 import com.stocka.backend.modules.piecetypes.entity.PieceType;
+import com.stocka.backend.modules.piecetypes.entity.PieceTypeAttribute;
+import com.stocka.backend.modules.piecetypes.repository.PieceTypeAttributeRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeRepository;
 import com.stocka.backend.modules.sync.dto.LocationSyncDto;
 import com.stocka.backend.modules.sync.dto.OrgAttributeSyncDto;
+import com.stocka.backend.modules.sync.dto.PieceTypeAttributeSyncDto;
 import com.stocka.backend.modules.sync.dto.PieceTypeSyncDto;
 import com.stocka.backend.modules.sync.dto.SyncMutationRequest;
 import com.stocka.backend.modules.sync.dto.SyncMutationsResponse;
@@ -36,6 +39,7 @@ import com.stocka.backend.modules.sync.repository.SyncMutationRepository;
 import com.stocka.backend.modules.sync.repository.SyncReadRepository;
 import com.stocka.backend.modules.sync.repository.SyncReadRepository.LocationSyncRow;
 import com.stocka.backend.modules.sync.repository.SyncReadRepository.OrgAttributeSyncRow;
+import com.stocka.backend.modules.sync.repository.SyncReadRepository.PieceTypeAttributeSyncRow;
 import com.stocka.backend.modules.sync.repository.SyncReadRepository.PieceTypeSyncRow;
 import com.stocka.backend.modules.sync.support.SyncStamper;
 import com.stocka.backend.modules.users.entity.User;
@@ -58,6 +62,7 @@ public class SyncPushService {
 
     static final String COLLECTION_LOCATIONS = "locations";
     static final String COLLECTION_PIECE_TYPES = "pieceTypes";
+    static final String COLLECTION_PIECE_TYPE_ATTRIBUTES = "pieceTypeAttributes";
     static final String COLLECTION_ORG_ATTRIBUTES = "orgAttributes";
     static final String OP_UPSERT = "upsert";
     static final String OP_DELETE = "delete";
@@ -79,6 +84,7 @@ public class SyncPushService {
     private final SyncReadRepository syncReadRepository;
     private final LocationRepository locationRepository;
     private final PieceTypeRepository pieceTypeRepository;
+    private final PieceTypeAttributeRepository pieceTypeAttributeRepository;
     private final OrganizationPieceAttributeRepository orgAttributeRepository;
     private final OrganizationService organizationService;
     private final LocationCycleValidator cycleValidator;
@@ -90,6 +96,7 @@ public class SyncPushService {
             SyncReadRepository syncReadRepository,
             LocationRepository locationRepository,
             PieceTypeRepository pieceTypeRepository,
+            PieceTypeAttributeRepository pieceTypeAttributeRepository,
             OrganizationPieceAttributeRepository orgAttributeRepository,
             OrganizationService organizationService,
             LocationCycleValidator cycleValidator,
@@ -100,6 +107,7 @@ public class SyncPushService {
         this.syncReadRepository = syncReadRepository;
         this.locationRepository = locationRepository;
         this.pieceTypeRepository = pieceTypeRepository;
+        this.pieceTypeAttributeRepository = pieceTypeAttributeRepository;
         this.orgAttributeRepository = orgAttributeRepository;
         this.organizationService = organizationService;
         this.cycleValidator = cycleValidator;
@@ -136,6 +144,7 @@ public class SyncPushService {
         Result result = switch (item.collection() == null ? "" : item.collection()) {
             case COLLECTION_LOCATIONS -> handleLocation(orgId, orgSlug, item);
             case COLLECTION_PIECE_TYPES -> handlePieceType(orgId, orgSlug, item);
+            case COLLECTION_PIECE_TYPE_ATTRIBUTES -> handlePieceTypeAttribute(orgSlug, item);
             case COLLECTION_ORG_ATTRIBUTES -> handleOrgAttribute(orgId, orgSlug, item);
             default -> rejected(item, ERR_UNSUPPORTED_COLLECTION);
         };
@@ -399,6 +408,100 @@ public class SyncPushService {
         return new Result(item.mutationId(), status, item.syncId(), toDto(saved), null);
     }
 
+    private Result handlePieceTypeAttribute(String orgSlug, SyncMutationRequest.Item item) {
+        User user = currentUser();
+        if (user == null || !orgSecurity.canManageOrgContent(orgSlug, user)) {
+            return rejected(item, ERR_PERMISSION_DENIED);
+        }
+        PieceTypeAttributeSyncRow state = syncReadRepository.findPieceTypeAttributeBySyncId(item.syncId());
+        if (OP_DELETE.equals(item.op())) {
+            return handlePieceTypeAttributeDelete(item, state);
+        }
+        if (OP_UPSERT.equals(item.op())) {
+            return handlePieceTypeAttributeUpsert(item, state);
+        }
+        return rejected(item, ERR_UNSUPPORTED_OP);
+    }
+
+    private Result handlePieceTypeAttributeDelete(SyncMutationRequest.Item item, PieceTypeAttributeSyncRow state) {
+        if (state == null || state.getDeletedAt() != null) {
+            return applied(item, state == null ? null : toDto(state));
+        }
+        PieceTypeAttribute attr = pieceTypeAttributeRepository.findBySyncId(item.syncId()).orElseThrow();
+        attr.setName(buildSoftDeletedName(attr.getName(), attr.getId(), MAX_ATTR_NAME_LENGTH));
+        attr.setDeletedAt(LocalDateTime.now());
+        syncStamper.stamp(attr);
+        return applied(item, toDto(pieceTypeAttributeRepository.save(attr)));
+    }
+
+    private Result handlePieceTypeAttributeUpsert(SyncMutationRequest.Item item, PieceTypeAttributeSyncRow state) {
+        if (state != null && state.getDeletedAt() != null) {
+            return new Result(item.mutationId(), SyncMutationsResponse.STATUS_REJECTED,
+                    item.syncId(), toDto(state), ERR_DELETED_UPSTREAM);
+        }
+        String name = readText(item.doc(), "name");
+        if (name == null || name.isBlank()) {
+            return rejected(item, ERR_VALIDATION_FAILED);
+        }
+        AttributeType type = parseAttributeType(readText(item.doc(), "type"));
+        if (state == null && type == null) {
+            return rejected(item, ERR_VALIDATION_FAILED);
+        }
+        String trimmed = name.trim();
+        String displayName = orDefault(readText(item.doc(), "displayName"), trimmed);
+        boolean required = readBool(item.doc(), "required", true);
+        int position = readInt(item.doc(), "position", 0);
+        String validatorsJson = readText(item.doc(), "validatorsJson");
+
+        if (state == null) {
+            String pieceTypeSyncId = readText(item.doc(), "pieceTypeSyncId");
+            if (pieceTypeSyncId == null) {
+                return rejected(item, ERR_DEPENDENCY_FAILED);
+            }
+            Optional<PieceType> typeOpt = pieceTypeRepository.findBySyncId(pieceTypeSyncId);
+            if (typeOpt.isEmpty()) {
+                return rejected(item, ERR_DEPENDENCY_FAILED);
+            }
+            PieceType pieceType = typeOpt.get();
+            if (pieceTypeAttributeRepository.findByPieceTypeAndName(pieceType, trimmed).isPresent()) {
+                return rejected(item, ERR_NAME_CONFLICT);
+            }
+            PieceTypeAttribute attr = new PieceTypeAttribute()
+                    .setPieceType(pieceType)
+                    .setName(trimmed)
+                    .setDisplayName(displayName)
+                    .setType(type)
+                    .setRequired(required)
+                    .setPosition(position)
+                    .setValidatorsJson(validatorsJson);
+            attr.setSyncId(item.syncId());
+            syncStamper.stamp(attr);
+            return applied(item, toDto(pieceTypeAttributeRepository.save(attr)));
+        }
+
+        PieceTypeAttribute attr = pieceTypeAttributeRepository.findBySyncId(item.syncId()).orElseThrow();
+        Optional<PieceTypeAttribute> clash =
+                pieceTypeAttributeRepository.findByPieceTypeAndName(attr.getPieceType(), trimmed);
+        if (clash.isPresent() && !clash.get().getSyncId().equals(item.syncId())) {
+            return rejected(item, ERR_NAME_CONFLICT);
+        }
+        attr.setName(trimmed)
+                .setDisplayName(displayName)
+                .setRequired(required)
+                .setPosition(position)
+                .setValidatorsJson(validatorsJson);
+        if (type != null) {
+            attr.setType(type);
+        }
+        syncStamper.stamp(attr);
+        PieceTypeAttribute saved = pieceTypeAttributeRepository.save(attr);
+        boolean stale = item.baseRev() != null && item.baseRev() < state.getRev();
+        String status = stale
+                ? SyncMutationsResponse.STATUS_CONFLICT
+                : SyncMutationsResponse.STATUS_APPLIED;
+        return new Result(item.mutationId(), status, item.syncId(), toDto(saved), null);
+    }
+
     private LocationSyncDto currentLocationDoc(String syncId) {
         LocationSyncRow row = syncReadRepository.findLocationBySyncId(syncId);
         return row == null ? null : toDto(row);
@@ -422,6 +525,9 @@ public class SyncPushService {
             return dto.rev();
         }
         if (serverDoc instanceof OrgAttributeSyncDto dto) {
+            return dto.rev();
+        }
+        if (serverDoc instanceof PieceTypeAttributeSyncDto dto) {
             return dto.rev();
         }
         return null;
@@ -480,6 +586,29 @@ public class SyncPushService {
         return new OrgAttributeSyncDto(
                 r.getSyncId(), r.getRev(), r.getName(), r.getDisplayName(), r.getAttrType(),
                 r.getIsRequired(), r.getAttrPosition(), r.getValidatorsJson(),
+                r.getCreatedAt(), r.getUpdatedAt(), r.getDeletedAt());
+    }
+
+    private static PieceTypeAttributeSyncDto toDto(PieceTypeAttribute a) {
+        return new PieceTypeAttributeSyncDto(
+                a.getSyncId(),
+                a.getRev() == null ? 0L : a.getRev(),
+                a.getPieceType() == null ? null : a.getPieceType().getSyncId(),
+                a.getName(),
+                a.getDisplayName(),
+                a.getType() == null ? null : a.getType().name(),
+                a.isRequired(),
+                a.getPosition(),
+                a.getValidatorsJson(),
+                toLocalDateTime(a.getCreatedAt()),
+                toLocalDateTime(a.getUpdatedAt()),
+                a.getDeletedAt());
+    }
+
+    private static PieceTypeAttributeSyncDto toDto(PieceTypeAttributeSyncRow r) {
+        return new PieceTypeAttributeSyncDto(
+                r.getSyncId(), r.getRev(), r.getPieceTypeSyncId(), r.getName(), r.getDisplayName(),
+                r.getAttrType(), r.getIsRequired(), r.getAttrPosition(), r.getValidatorsJson(),
                 r.getCreatedAt(), r.getUpdatedAt(), r.getDeletedAt());
     }
 
