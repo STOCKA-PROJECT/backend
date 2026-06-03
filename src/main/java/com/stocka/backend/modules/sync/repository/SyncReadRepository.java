@@ -89,6 +89,22 @@ public interface SyncReadRepository extends Repository<Location, Integer> {
     PieceTypeSyncRow findPieceTypeBySyncId(@Param("syncId") String syncId);
 
     /**
+     * Loads a single organization attribute by sync id <strong>including soft-deleted rows</strong>.
+     *
+     * @param syncId client-stable sync id
+     * @return the row, or {@code null} when no such attribute exists
+     */
+    @Query(value = """
+            SELECT sync_id AS syncId, rev AS rev, name AS name, display_name AS displayName,
+                   type AS attrType, is_required AS isRequired, position AS attrPosition,
+                   validators_json AS validatorsJson,
+                   created_at AS createdAt, updated_at AS updatedAt, deleted_at AS deletedAt
+            FROM organization_piece_attributes
+            WHERE sync_id = :syncId
+            """, nativeQuery = true)
+    OrgAttributeSyncRow findOrgAttributeBySyncId(@Param("syncId") String syncId);
+
+    /**
      * Returns the pieces of an organization whose {@code rev} is greater than the checkpoint,
      * ordered by {@code rev}, including tombstones. Location and cover attachment are exposed by
      * their {@code sync_id} via left joins; the owner is exposed by user id (users are a read-only

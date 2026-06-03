@@ -20,6 +20,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.repository.OrganizationRepository;
 import com.stocka.backend.modules.sync.dto.LocationSyncDto;
+import com.stocka.backend.modules.sync.dto.OrgAttributeSyncDto;
 import com.stocka.backend.modules.sync.dto.PieceTypeSyncDto;
 import com.stocka.backend.modules.sync.dto.SyncMutationRequest;
 import com.stocka.backend.modules.sync.dto.SyncMutationsResponse;
@@ -142,6 +143,45 @@ class SyncPushIntegrationTest {
         // The freed name can now be reused by a brand-new type.
         Result recreate = pushTypeUpsert("t4", UUID.randomUUID().toString(), null, "Bolts");
         assertThat(recreate.status()).isEqualTo(SyncMutationsResponse.STATUS_APPLIED);
+    }
+
+    @Test
+    @DisplayName("org attribute push: create with fields, type-required, name-conflict, delete")
+    void should_push_org_attributes() {
+        String a1 = UUID.randomUUID().toString();
+        ObjectNode doc = om.createObjectNode();
+        doc.put("name", "warranty");
+        doc.put("displayName", "Warranty");
+        doc.put("type", "TEXT");
+        doc.put("required", true);
+        doc.put("position", 0);
+        Result create = pushOne(new SyncMutationRequest.Item("a1", "orgAttributes", "upsert", a1, null, doc));
+        assertThat(create.status()).isEqualTo(SyncMutationsResponse.STATUS_APPLIED);
+        OrgAttributeSyncDto dto = (OrgAttributeSyncDto) create.serverDoc();
+        assertThat(dto.name()).isEqualTo("warranty");
+        assertThat(dto.type()).isEqualTo("TEXT");
+        assertThat(dto.required()).isTrue();
+
+        // Type is required on create.
+        ObjectNode noType = om.createObjectNode();
+        noType.put("name", "color");
+        Result invalid = pushOne(new SyncMutationRequest.Item(
+                "a2", "orgAttributes", "upsert", UUID.randomUUID().toString(), null, noType));
+        assertThat(invalid.status()).isEqualTo(SyncMutationsResponse.STATUS_REJECTED);
+        assertThat(invalid.errorCode()).isEqualTo("validation_failed");
+
+        // Duplicate active name conflicts.
+        ObjectNode dup = om.createObjectNode();
+        dup.put("name", "warranty");
+        dup.put("type", "TEXT");
+        Result clash = pushOne(new SyncMutationRequest.Item(
+                "a3", "orgAttributes", "upsert", UUID.randomUUID().toString(), null, dup));
+        assertThat(clash.status()).isEqualTo(SyncMutationsResponse.STATUS_REJECTED);
+        assertThat(clash.errorCode()).isEqualTo("name_conflict");
+
+        Result del = pushOne(new SyncMutationRequest.Item("a4", "orgAttributes", "delete", a1, null, null));
+        assertThat(del.status()).isEqualTo(SyncMutationsResponse.STATUS_APPLIED);
+        assertThat(((OrgAttributeSyncDto) del.serverDoc()).deletedAt()).isNotNull();
     }
 
     private Result pushTypeUpsert(String mutationId, String syncId, Long baseRev, String name) {

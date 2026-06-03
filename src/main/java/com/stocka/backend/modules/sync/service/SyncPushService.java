@@ -18,11 +18,15 @@ import com.stocka.backend.modules.locations.entity.Location;
 import com.stocka.backend.modules.locations.repository.LocationRepository;
 import com.stocka.backend.modules.locations.service.LocationCycleValidator;
 import com.stocka.backend.modules.organizations.entity.Organization;
+import com.stocka.backend.modules.organizations.entity.OrganizationPieceAttribute;
+import com.stocka.backend.modules.organizations.repository.OrganizationPieceAttributeRepository;
 import com.stocka.backend.modules.organizations.security.OrganizationSecurity;
 import com.stocka.backend.modules.organizations.service.OrganizationService;
+import com.stocka.backend.modules.piecetypes.entity.AttributeType;
 import com.stocka.backend.modules.piecetypes.entity.PieceType;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeRepository;
 import com.stocka.backend.modules.sync.dto.LocationSyncDto;
+import com.stocka.backend.modules.sync.dto.OrgAttributeSyncDto;
 import com.stocka.backend.modules.sync.dto.PieceTypeSyncDto;
 import com.stocka.backend.modules.sync.dto.SyncMutationRequest;
 import com.stocka.backend.modules.sync.dto.SyncMutationsResponse;
@@ -31,6 +35,7 @@ import com.stocka.backend.modules.sync.entity.SyncMutation;
 import com.stocka.backend.modules.sync.repository.SyncMutationRepository;
 import com.stocka.backend.modules.sync.repository.SyncReadRepository;
 import com.stocka.backend.modules.sync.repository.SyncReadRepository.LocationSyncRow;
+import com.stocka.backend.modules.sync.repository.SyncReadRepository.OrgAttributeSyncRow;
 import com.stocka.backend.modules.sync.repository.SyncReadRepository.PieceTypeSyncRow;
 import com.stocka.backend.modules.sync.support.SyncStamper;
 import com.stocka.backend.modules.users.entity.User;
@@ -53,6 +58,7 @@ public class SyncPushService {
 
     static final String COLLECTION_LOCATIONS = "locations";
     static final String COLLECTION_PIECE_TYPES = "pieceTypes";
+    static final String COLLECTION_ORG_ATTRIBUTES = "orgAttributes";
     static final String OP_UPSERT = "upsert";
     static final String OP_DELETE = "delete";
 
@@ -66,12 +72,14 @@ public class SyncPushService {
     static final String ERR_UNSUPPORTED_OP = "unsupported_op";
 
     private static final int MAX_TYPE_NAME_LENGTH = 120;
+    private static final int MAX_ATTR_NAME_LENGTH = 80;
     private static final String SOFT_DELETE_SUFFIX = "::deleted::";
 
     private final SyncMutationRepository mutationRepository;
     private final SyncReadRepository syncReadRepository;
     private final LocationRepository locationRepository;
     private final PieceTypeRepository pieceTypeRepository;
+    private final OrganizationPieceAttributeRepository orgAttributeRepository;
     private final OrganizationService organizationService;
     private final LocationCycleValidator cycleValidator;
     private final SyncStamper syncStamper;
@@ -82,6 +90,7 @@ public class SyncPushService {
             SyncReadRepository syncReadRepository,
             LocationRepository locationRepository,
             PieceTypeRepository pieceTypeRepository,
+            OrganizationPieceAttributeRepository orgAttributeRepository,
             OrganizationService organizationService,
             LocationCycleValidator cycleValidator,
             SyncStamper syncStamper,
@@ -91,6 +100,7 @@ public class SyncPushService {
         this.syncReadRepository = syncReadRepository;
         this.locationRepository = locationRepository;
         this.pieceTypeRepository = pieceTypeRepository;
+        this.orgAttributeRepository = orgAttributeRepository;
         this.organizationService = organizationService;
         this.cycleValidator = cycleValidator;
         this.syncStamper = syncStamper;
@@ -126,6 +136,7 @@ public class SyncPushService {
         Result result = switch (item.collection() == null ? "" : item.collection()) {
             case COLLECTION_LOCATIONS -> handleLocation(orgId, orgSlug, item);
             case COLLECTION_PIECE_TYPES -> handlePieceType(orgId, orgSlug, item);
+            case COLLECTION_ORG_ATTRIBUTES -> handleOrgAttribute(orgId, orgSlug, item);
             default -> rejected(item, ERR_UNSUPPORTED_COLLECTION);
         };
 
@@ -247,7 +258,7 @@ public class SyncPushService {
         PieceType type = pieceTypeRepository.findBySyncId(item.syncId()).orElseThrow();
         // Free the (org, name) unique slot so a new active type can reuse the name (matches
         // PieceTypeService's soft-delete name mangling).
-        type.setName(buildSoftDeletedTypeName(type.getName(), type.getId()));
+        type.setName(buildSoftDeletedName(type.getName(), type.getId(), MAX_TYPE_NAME_LENGTH));
         type.setDeletedAt(LocalDateTime.now());
         syncStamper.stamp(type);
         return applied(item, toDto(pieceTypeRepository.save(type)));
@@ -292,14 +303,100 @@ public class SyncPushService {
         return new Result(item.mutationId(), status, item.syncId(), toDto(saved), null);
     }
 
-    private static String buildSoftDeletedTypeName(String name, Integer id) {
+    private static String buildSoftDeletedName(String name, Integer id, int maxLength) {
         String suffix = SOFT_DELETE_SUFFIX + (id == null ? "?" : id);
-        int maxBase = Math.max(0, MAX_TYPE_NAME_LENGTH - suffix.length());
+        int maxBase = Math.max(0, maxLength - suffix.length());
         String base = name == null ? "" : name;
         if (base.length() > maxBase) {
             base = base.substring(0, maxBase);
         }
         return base + suffix;
+    }
+
+    private Result handleOrgAttribute(Integer orgId, String orgSlug, SyncMutationRequest.Item item) {
+        User user = currentUser();
+        if (user == null || !orgSecurity.canManageOrgContent(orgSlug, user)) {
+            return rejected(item, ERR_PERMISSION_DENIED);
+        }
+        OrgAttributeSyncRow state = syncReadRepository.findOrgAttributeBySyncId(item.syncId());
+        if (OP_DELETE.equals(item.op())) {
+            return handleOrgAttributeDelete(item, state);
+        }
+        if (OP_UPSERT.equals(item.op())) {
+            return handleOrgAttributeUpsert(orgId, item, state);
+        }
+        return rejected(item, ERR_UNSUPPORTED_OP);
+    }
+
+    private Result handleOrgAttributeDelete(SyncMutationRequest.Item item, OrgAttributeSyncRow state) {
+        if (state == null || state.getDeletedAt() != null) {
+            return applied(item, state == null ? null : toDto(state));
+        }
+        OrganizationPieceAttribute attr = orgAttributeRepository.findBySyncId(item.syncId()).orElseThrow();
+        attr.setName(buildSoftDeletedName(attr.getName(), attr.getId(), MAX_ATTR_NAME_LENGTH));
+        attr.setDeletedAt(LocalDateTime.now());
+        syncStamper.stamp(attr);
+        return applied(item, toDto(orgAttributeRepository.save(attr)));
+    }
+
+    private Result handleOrgAttributeUpsert(Integer orgId, SyncMutationRequest.Item item, OrgAttributeSyncRow state) {
+        if (state != null && state.getDeletedAt() != null) {
+            return new Result(item.mutationId(), SyncMutationsResponse.STATUS_REJECTED,
+                    item.syncId(), toDto(state), ERR_DELETED_UPSTREAM);
+        }
+        String name = readText(item.doc(), "name");
+        if (name == null || name.isBlank()) {
+            return rejected(item, ERR_VALIDATION_FAILED);
+        }
+        AttributeType type = parseAttributeType(readText(item.doc(), "type"));
+        if (state == null && type == null) {
+            return rejected(item, ERR_VALIDATION_FAILED);
+        }
+        String trimmed = name.trim();
+        String displayName = orDefault(readText(item.doc(), "displayName"), trimmed);
+        boolean required = readBool(item.doc(), "required", true);
+        int position = readInt(item.doc(), "position", 0);
+        String validatorsJson = readText(item.doc(), "validatorsJson");
+
+        if (state == null) {
+            Organization org = organizationService.findById(orgId);
+            if (orgAttributeRepository.findByOrganizationAndName(org, trimmed).isPresent()) {
+                return rejected(item, ERR_NAME_CONFLICT);
+            }
+            OrganizationPieceAttribute attr = new OrganizationPieceAttribute()
+                    .setOrganization(org)
+                    .setName(trimmed)
+                    .setDisplayName(displayName)
+                    .setType(type)
+                    .setRequired(required)
+                    .setPosition(position)
+                    .setValidatorsJson(validatorsJson);
+            attr.setSyncId(item.syncId());
+            syncStamper.stamp(attr);
+            return applied(item, toDto(orgAttributeRepository.save(attr)));
+        }
+
+        OrganizationPieceAttribute attr = orgAttributeRepository.findBySyncId(item.syncId()).orElseThrow();
+        Optional<OrganizationPieceAttribute> clash =
+                orgAttributeRepository.findByOrganizationAndName(attr.getOrganization(), trimmed);
+        if (clash.isPresent() && !clash.get().getSyncId().equals(item.syncId())) {
+            return rejected(item, ERR_NAME_CONFLICT);
+        }
+        attr.setName(trimmed)
+                .setDisplayName(displayName)
+                .setRequired(required)
+                .setPosition(position)
+                .setValidatorsJson(validatorsJson);
+        if (type != null) {
+            attr.setType(type);
+        }
+        syncStamper.stamp(attr);
+        OrganizationPieceAttribute saved = orgAttributeRepository.save(attr);
+        boolean stale = item.baseRev() != null && item.baseRev() < state.getRev();
+        String status = stale
+                ? SyncMutationsResponse.STATUS_CONFLICT
+                : SyncMutationsResponse.STATUS_APPLIED;
+        return new Result(item.mutationId(), status, item.syncId(), toDto(saved), null);
     }
 
     private LocationSyncDto currentLocationDoc(String syncId) {
@@ -322,6 +419,9 @@ public class SyncPushService {
             return dto.rev();
         }
         if (serverDoc instanceof PieceTypeSyncDto dto) {
+            return dto.rev();
+        }
+        if (serverDoc instanceof OrgAttributeSyncDto dto) {
             return dto.rev();
         }
         return null;
@@ -361,12 +461,57 @@ public class SyncPushService {
                 r.getCreatedAt(), r.getUpdatedAt(), r.getDeletedAt());
     }
 
+    private static OrgAttributeSyncDto toDto(OrganizationPieceAttribute a) {
+        return new OrgAttributeSyncDto(
+                a.getSyncId(),
+                a.getRev() == null ? 0L : a.getRev(),
+                a.getName(),
+                a.getDisplayName(),
+                a.getType() == null ? null : a.getType().name(),
+                a.isRequired(),
+                a.getPosition(),
+                a.getValidatorsJson(),
+                toLocalDateTime(a.getCreatedAt()),
+                toLocalDateTime(a.getUpdatedAt()),
+                a.getDeletedAt());
+    }
+
+    private static OrgAttributeSyncDto toDto(OrgAttributeSyncRow r) {
+        return new OrgAttributeSyncDto(
+                r.getSyncId(), r.getRev(), r.getName(), r.getDisplayName(), r.getAttrType(),
+                r.getIsRequired(), r.getAttrPosition(), r.getValidatorsJson(),
+                r.getCreatedAt(), r.getUpdatedAt(), r.getDeletedAt());
+    }
+
+    private static AttributeType parseAttributeType(String value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return AttributeType.valueOf(value);
+        } catch (IllegalArgumentException invalid) {
+            return null;
+        }
+    }
+
     private static LocalDateTime toLocalDateTime(Date date) {
         return date == null ? null : LocalDateTime.ofInstant(date.toInstant(), ZoneOffset.UTC);
     }
 
     private static String readText(JsonNode doc, String field) {
         return doc != null && doc.hasNonNull(field) ? doc.get(field).asText() : null;
+    }
+
+    private static boolean readBool(JsonNode doc, String field, boolean defaultValue) {
+        return doc != null && doc.hasNonNull(field) ? doc.get(field).asBoolean(defaultValue) : defaultValue;
+    }
+
+    private static int readInt(JsonNode doc, String field, int defaultValue) {
+        return doc != null && doc.hasNonNull(field) ? doc.get(field).asInt(defaultValue) : defaultValue;
+    }
+
+    private static String orDefault(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
     }
 
     private static String emptyToNull(String value) {

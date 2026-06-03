@@ -20,6 +20,14 @@ public interface OrganizationPieceAttributeRepository
     Optional<OrganizationPieceAttribute> findByOrganizationAndName(Organization organization, String name);
 
     /**
+     * Finds a live (non-deleted) organization attribute by its synchronization id.
+     *
+     * @param syncId client-stable sync id
+     * @return the attribute, or empty when missing or soft-deleted
+     */
+    Optional<OrganizationPieceAttribute> findBySyncId(String syncId);
+
+    /**
      * Bulk soft-delete every still-active organization-piece-attribute of
      * {@code organization}. Used by the organization cascade.
      *
