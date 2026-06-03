@@ -11,11 +11,12 @@
 | Identidad `syncId`/`rev` + secuencia de cambios (CSN) | ✅ Completo (6 entidades) |
 | Pull `/sync/v1/changes` | ✅ Completo (6 colecciones, tombstones R1) |
 | Push `/sync/v1/mutations` | 🟡 5/6 colecciones (catálogo + pieces); falta attachments |
-| Cliente escritorio (Tauri + RxDB + motor de sync) | ✅ Motor completo y verificado |
-| Integración con UI (stores/componentes) | ⏳ Pendiente |
-| Auth escritorio (refresh por header + token en body) + CORS Tauri | ✅ Backend hecho; falta el keychain en el cliente |
+| Cliente escritorio (Tauri + RxDB Dexie + motor de sync + repos de las 6 colecciones) | ✅ Completo y verificado (26 tests Vitest) |
+| Auth escritorio (refresh por header + token en body) + CORS Tauri + `DesktopSession` cliente | ✅ Backend + sesión cliente; falta solo el `TokenStore` de keychain |
+| Bootstrap Nuxt (`$stockaSync`) + `useSync` + Dexie + checkpoint persistente | ✅ Implementado; build de escritorio verificado |
+| Integración con stores/componentes existentes (`id`→`syncId`) | ⏳ Pendiente (requiere la app en ejecución) |
 | Adjuntos (binarios + caché) | ⏳ Pendiente |
-| Cifrado en reposo (F3) · firma (M-Dist) | ⏳ Pendiente |
+| `TokenStore` keychain · cifrado en reposo (F3) · firma (M-Dist) | ⏳ Pendiente |
 
 ## Backend (verificado con Java 25 + H2)
 
