@@ -13,7 +13,7 @@
 | Push `/sync/v1/mutations` | 🟡 5/6 colecciones (catálogo + pieces); falta attachments |
 | Cliente escritorio (Tauri + RxDB + motor de sync) | ✅ Motor completo y verificado |
 | Integración con UI (stores/componentes) | ⏳ Pendiente |
-| Auth keychain + CORS Tauri | ⏳ Pendiente |
+| Auth escritorio (refresh por header + token en body) + CORS Tauri | ✅ Backend hecho; falta el keychain en el cliente |
 | Adjuntos (binarios + caché) | ⏳ Pendiente |
 | Cifrado en reposo (F3) · firma (M-Dist) | ⏳ Pendiente |
 

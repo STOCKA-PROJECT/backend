@@ -1,5 +1,8 @@
 package com.stocka.backend.modules.security.config;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -104,17 +107,33 @@ public class SecurityConfiguration {
         return new BCryptPasswordEncoder();
     }
 
+    /** Tauri 2 desktop WebView origins (mac/Linux: tauri://localhost, Windows: http://tauri.localhost). */
+    private static final List<String> DESKTOP_ORIGINS = List.of("tauri://localhost", "http://tauri.localhost");
+    /** Headers the desktop client sends for Bearer/keychain auth (D4). */
+    private static final List<String> DESKTOP_HEADERS = List.of("X-Refresh-Token", "X-Stocka-Client");
+
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cfg = new CorsConfiguration();
-        cfg.setAllowedOrigins(corsProperties.getAllowedOrigins());
+        cfg.setAllowedOrigins(withAdditions(corsProperties.getAllowedOrigins(), DESKTOP_ORIGINS));
         cfg.setAllowedMethods(corsProperties.getAllowedMethods());
-        cfg.setAllowedHeaders(corsProperties.getAllowedHeaders());
+        cfg.setAllowedHeaders(withAdditions(corsProperties.getAllowedHeaders(), DESKTOP_HEADERS));
         cfg.setAllowCredentials(corsProperties.isAllowCredentials());
         cfg.setMaxAge(corsProperties.getMaxAgeSeconds());
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", cfg);
         return source;
+    }
+
+    /** Returns {@code base} plus any {@code additions} not already present (order preserved). */
+    private static List<String> withAdditions(List<String> base, List<String> additions) {
+        List<String> combined = new ArrayList<>(base == null ? List.of() : base);
+        for (String value : additions) {
+            if (!combined.contains(value)) {
+                combined.add(value);
+            }
+        }
+        return combined;
     }
 }

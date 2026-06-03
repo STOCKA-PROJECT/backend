@@ -7,8 +7,10 @@ import com.stocka.backend.modules.users.dto.UserResponseDto;
  * Response body for {@code POST /auth/login}, {@code POST /auth/login/2fa} and
  * {@code POST /auth/refresh}.
  *
- * <p>The refresh token never lives in this payload — it travels exclusively
- * via the {@code stocka_refresh} httpOnly cookie set on the same response.
+ * <p>For the web the refresh token travels exclusively via the {@code stocka_refresh} httpOnly
+ * cookie and {@code refreshToken} stays {@code null}. The desktop client (no cookie jar — see
+ * DECISIONS-AND-RISKS D4) opts in via the {@code X-Stocka-Client: desktop} header, and only then
+ * does the rotated raw {@code refreshToken} appear in this body for storage in the OS keychain.
  *
  * <p>When 2FA is required, the response is the polymorphic
  * {@code { requires2fa: true, mfaToken: "..." }} variant; {@code accessToken}
@@ -22,9 +24,19 @@ public class LoginResponseDto {
     private UserResponseDto user;
     private Boolean requires2fa;
     private String mfaToken;
+    private String refreshToken;
 
     public String getAccessToken() {
         return accessToken;
+    }
+
+    public String getRefreshToken() {
+        return refreshToken;
+    }
+
+    public LoginResponseDto setRefreshToken(String refreshToken) {
+        this.refreshToken = refreshToken;
+        return this;
     }
 
     public LoginResponseDto setAccessToken(String accessToken) {

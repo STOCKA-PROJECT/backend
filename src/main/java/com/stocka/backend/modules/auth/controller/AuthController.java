@@ -56,6 +56,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -209,11 +210,25 @@ public class AuthController {
                 .setAccessToken(jwtToken)
                 .setExpiresIn(jwtService.getExpirationTime())
                 .setUser(UserResponseDto.from(user));
+        if (isDesktopClient(request)) {
+            // Desktop has no cookie jar: hand it the raw refresh token for the OS keychain (D4).
+            body.setRefreshToken(refresh.rawToken());
+        }
         ResponseCookie cookie = refreshCookieFactory.build(refresh.rawToken(), rememberMe);
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cookie.toString())
                 .body(body);
+    }
+
+    /** Header set by the desktop client to opt into Bearer/keychain auth instead of cookies. */
+    private static final String DESKTOP_CLIENT_HEADER = "X-Stocka-Client";
+    private static final String DESKTOP_CLIENT_VALUE = "desktop";
+    /** Header carrying the refresh token from the desktop client (no cookie available). */
+    private static final String REFRESH_TOKEN_HEADER = "X-Refresh-Token";
+
+    private static boolean isDesktopClient(HttpServletRequest request) {
+        return DESKTOP_CLIENT_VALUE.equalsIgnoreCase(request.getHeader(DESKTOP_CLIENT_HEADER));
     }
 
     /**
@@ -349,6 +364,9 @@ public class AuthController {
     @PostMapping("/refresh")
     public ResponseEntity<LoginResponseDto> refresh(HttpServletRequest request) {
         String rawToken = refreshCookieFactory.readFromRequest(request)
+                // Desktop has no cookie: it sends the refresh token in a header instead (D4).
+                .or(() -> Optional.ofNullable(request.getHeader(REFRESH_TOKEN_HEADER))
+                        .filter(token -> !token.isBlank()))
                 .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(
                         HttpStatus.UNAUTHORIZED, "missing_refresh_cookie"));
         IssuedRefreshToken rotated = refreshTokenService.rotate(
@@ -365,6 +383,9 @@ public class AuthController {
                 .setAccessToken(accessToken)
                 .setExpiresIn(jwtService.getExpirationTime())
                 .setUser(UserResponseDto.from(user));
+        if (isDesktopClient(request)) {
+            body.setRefreshToken(rotated.rawToken());
+        }
         ResponseCookie cookie = refreshCookieFactory.build(
                 rotated.rawToken(), rotated.entity().isRememberMe());
 
