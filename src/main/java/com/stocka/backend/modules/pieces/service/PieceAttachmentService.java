@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
@@ -106,13 +107,70 @@ public class PieceAttachmentService {
 
     @Transactional
     public PieceAttachment upload(Integer orgId, Integer pieceId, PieceAttachmentKind kind, MultipartFile file) {
+        Piece piece = pieceService.findInOrg(orgId, pieceId);
+        return store(piece, kind, file, null);
+    }
+
+    /**
+     * Uploads a binary queued offline, resolving the parent piece by its {@code syncId} and
+     * preserving the client-assigned attachment {@code syncId} so the desktop client can reconcile
+     * its local metadata. Idempotent: a repeat with the same {@code attachmentSyncId} returns the
+     * existing attachment without storing the blob again (R24).
+     *
+     * @param orgId             organization id
+     * @param pieceSyncId       parent piece's client-stable identity
+     * @param attachmentSyncId  the attachment's client-assigned identity
+     * @param kind              attachment kind (IMAGE or DOCUMENT)
+     * @param file              the uploaded binary
+     * @return the stored (or already-existing) attachment
+     * @throws ResponseStatusException {@code 404} if the parent piece does not exist
+     */
+    @Transactional
+    public PieceAttachment uploadForSync(Integer orgId, String pieceSyncId, String attachmentSyncId,
+                                         PieceAttachmentKind kind, MultipartFile file) {
+        if (attachmentSyncId == null || attachmentSyncId.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_REQUIRED,
+                    Map.of("field", "attachmentSyncId"));
+        }
+        Optional<PieceAttachment> existing = attachmentRepository.findBySyncId(attachmentSyncId);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        Piece piece = pieceRepository.findBySyncId(pieceSyncId)
+                .filter(p -> p.getOrganization().getId().equals(orgId) && p.getDeletedAt() == null)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Pieza no encontrada"));
+        return store(piece, kind, file, attachmentSyncId);
+    }
+
+    /**
+     * Soft-deletes an attachment identified by its {@code syncId} (offline delete replay). Resolves
+     * the attachment within {@code orgId} and reuses the standard soft-delete (cover reset, R2 best-
+     * effort removal, history). Idempotent when the attachment is already gone.
+     *
+     * @param orgId            organization id
+     * @param attachmentSyncId the attachment's client-stable identity
+     */
+    @Transactional
+    public void softDeleteBySyncId(Integer orgId, String attachmentSyncId) {
+        Optional<PieceAttachment> found = attachmentRepository.findBySyncId(attachmentSyncId);
+        if (found.isEmpty()) {
+            return;
+        }
+        PieceAttachment attachment = found.get();
+        if (!attachment.getPiece().getOrganization().getId().equals(orgId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Adjunto no encontrado");
+        }
+        deleteResolved(attachment);
+    }
+
+    private PieceAttachment store(Piece piece, PieceAttachmentKind kind, MultipartFile file,
+                                  String syncIdOverride) {
         if (kind == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.UPLOAD_INVALID_KIND);
         }
         if (file == null || file.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_REQUIRED, Map.of("field", "file"));
         }
-        Piece piece = pieceService.findInOrg(orgId, pieceId);
 
         byte[] bytes;
         try {
@@ -150,6 +208,9 @@ public class PieceAttachmentService {
                 .setMimeType(detectedMime)
                 .setSizeBytes(stored.sizeBytes())
                 .setUploadedBy(currentUser());
+        if (syncIdOverride != null) {
+            attachment.setSyncId(syncIdOverride);
+        }
         syncStamper.stamp(attachment);
         PieceAttachment saved = attachmentRepository.save(attachment);
         historyService.recordAttachmentAdded(piece, currentUser(), safeName);
@@ -183,7 +244,10 @@ public class PieceAttachmentService {
 
     @Transactional
     public void softDelete(Integer orgId, Integer pieceId, Integer attachmentId) {
-        PieceAttachment attachment = findInPiece(orgId, pieceId, attachmentId);
+        deleteResolved(findInPiece(orgId, pieceId, attachmentId));
+    }
+
+    private void deleteResolved(PieceAttachment attachment) {
         Piece piece = attachment.getPiece();
         attachment.setDeletedAt(LocalDateTime.now());
         syncStamper.stamp(attachment);

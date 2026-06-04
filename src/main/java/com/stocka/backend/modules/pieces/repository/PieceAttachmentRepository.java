@@ -1,6 +1,7 @@
 package com.stocka.backend.modules.pieces.repository;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -16,6 +17,16 @@ import com.stocka.backend.modules.pieces.entity.PieceAttachmentKind;
 @Repository
 public interface PieceAttachmentRepository extends JpaRepository<PieceAttachment, Integer> {
     List<PieceAttachment> findByPiece(Piece piece);
+
+    /**
+     * Finds a non-soft-deleted attachment by its global {@code syncId}. Used by the offline sync
+     * push to make a queued binary upload idempotent (a repeat with the same client-assigned
+     * {@code syncId} returns the existing row instead of storing the blob twice).
+     *
+     * @param syncId the client-stable identity
+     * @return the matching live attachment, if any
+     */
+    Optional<PieceAttachment> findBySyncId(String syncId);
 
     List<PieceAttachment> findByPieceAndKind(Piece piece, PieceAttachmentKind kind);
 

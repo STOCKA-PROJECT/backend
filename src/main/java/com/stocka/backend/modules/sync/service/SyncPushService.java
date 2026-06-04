@@ -28,6 +28,7 @@ import com.stocka.backend.modules.pieces.entity.Piece;
 import com.stocka.backend.modules.pieces.service.PieceService;
 import com.stocka.backend.modules.sync.dto.PieceSyncDto;
 import com.stocka.backend.modules.sync.repository.SyncReadRepository.PieceStateRow;
+import com.stocka.backend.modules.notifications.dispatch.NotificationSuppressionContext;
 import com.stocka.backend.modules.locations.entity.Location;
 import com.stocka.backend.modules.locations.repository.LocationRepository;
 import com.stocka.backend.modules.locations.service.LocationCycleValidator;
@@ -152,13 +153,18 @@ public class SyncPushService {
      */
     @Transactional
     public SyncMutationsResponse push(Integer orgId, String orgSlug, SyncMutationRequest request) {
-        List<Result> results = new ArrayList<>();
-        if (request != null && request.mutations() != null) {
-            for (SyncMutationRequest.Item item : request.mutations()) {
-                results.add(processOne(orgId, orgSlug, item));
+        // Replaying the client's outbox can apply many domain changes at once; suppress the
+        // per-change lifecycle emails so subscribers are not flooded for edits the user already
+        // made locally (B3). Resend idempotency keys remain a second line of defence.
+        return NotificationSuppressionContext.runSuppressed(() -> {
+            List<Result> results = new ArrayList<>();
+            if (request != null && request.mutations() != null) {
+                for (SyncMutationRequest.Item item : request.mutations()) {
+                    results.add(processOne(orgId, orgSlug, item));
+                }
             }
-        }
-        return new SyncMutationsResponse(results, SyncService.MIN_CLIENT_VERSION);
+            return new SyncMutationsResponse(results, SyncService.MIN_CLIENT_VERSION);
+        });
     }
 
     private Result processOne(Integer orgId, String orgSlug, SyncMutationRequest.Item item) {

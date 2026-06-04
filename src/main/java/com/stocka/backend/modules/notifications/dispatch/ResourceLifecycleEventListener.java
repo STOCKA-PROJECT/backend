@@ -34,6 +34,13 @@ public class ResourceLifecycleEventListener {
     @Async
     @TransactionalEventListener
     public void onResourceLifecycle(ResourceLifecycleEvent event) {
+        if (event.replay()) {
+            // Offline outbox replay: the user already saw these changes locally, so suppress the
+            // notification storm that draining the queue would otherwise produce.
+            log.debug("Skipping lifecycle notification for replayed event kind={} action={} resourceId={}",
+                    event.kind(), event.action(), event.resourceId());
+            return;
+        }
         try {
             pendingService.enqueue(event);
         } catch (RuntimeException ex) {

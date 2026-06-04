@@ -1,6 +1,10 @@
 package com.stocka.backend.modules.sync.dto;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.Date;
+
+import com.stocka.backend.modules.pieces.entity.PieceAttachment;
 
 /**
  * A {@code attachmentsMeta} change in the sync pull feed. Carries attachment metadata only; the
@@ -31,4 +35,29 @@ public record AttachmentSyncDto(
         LocalDateTime createdAt,
         LocalDateTime deletedAt
 ) {
+
+    /**
+     * Maps a persisted attachment to its sync wire form (e.g. the response to a queued offline
+     * upload), so the desktop client reconciles its local metadata with the canonical {@code rev}.
+     *
+     * @param a the attachment entity
+     * @return the wire DTO
+     */
+    public static AttachmentSyncDto from(PieceAttachment a) {
+        return new AttachmentSyncDto(
+                a.getSyncId(),
+                a.getRev() == null ? 0L : a.getRev(),
+                a.getPiece() == null ? null : a.getPiece().getSyncId(),
+                a.getKind() == null ? null : a.getKind().name(),
+                a.getOriginalFilename(),
+                a.getMimeType(),
+                a.getSizeBytes(),
+                a.getR2Key(),
+                toLocalDateTime(a.getCreatedAt()),
+                a.getDeletedAt());
+    }
+
+    private static LocalDateTime toLocalDateTime(Date date) {
+        return date == null ? null : LocalDateTime.ofInstant(date.toInstant(), ZoneOffset.UTC);
+    }
 }
