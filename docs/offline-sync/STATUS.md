@@ -14,8 +14,8 @@
 | Cliente escritorio (Tauri + RxDB Dexie + motor de sync + repos de las 6 colecciones) | ✅ Completo y verificado (26 tests Vitest) |
 | Auth escritorio (refresh por header + token en body) + CORS Tauri + `DesktopSession` cliente | ✅ Backend + sesión cliente; falta solo el `TokenStore` de keychain |
 | Bootstrap Nuxt (`$stockaSync`) + `useSync` + Dexie + checkpoint persistente | ✅ Implementado; build de escritorio verificado |
-| Integración con stores/componentes existentes (`id`→`syncId`) | ⏳ Pendiente (requiere la app en ejecución) |
-| Adjuntos (binarios + caché) | ⏳ Pendiente |
+| Integración con stores/componentes existentes (`id`→`syncId`) | 🟡 Stores `locations`, `pieceTypes`, `organizationPieceAttributes` y `pieces` en modo dual (web=API, escritorio=RxDB); pendiente validar con la app en ejecución |
+| Adjuntos (binarios + caché) | ⏳ Pendiente (metadatos sí se asemblan offline; descarga/subida de binarios siguen online) |
 | `TokenStore` keychain · cifrado en reposo (F3) · firma (M-Dist) | ⏳ Pendiente |
 
 ## Backend (verificado con Java 25 + H2)
@@ -58,14 +58,35 @@
   LWW + dead-letter R8), `runSync` (orquestador), `createSyncTransport` (`/sync/v1` con Bearer).
 - **Escritura offline** — `locationRepository` (escritura local inmediata + encolado).
 
+### Integración de stores (modo dual web/escritorio)
+
+Patrón: el store ramifica en `useRuntimeConfig().public.desktop`. En web la ruta es **idéntica**
+a la actual (API vía BFF Nitro); en escritorio se respalda con RxDB + outbox y un `syncQuietly`
+best-effort (push+pull) tras cada mutación. La identidad `syncId` se expone a los componentes como
+un `id` numérico determinista (FNV-1a de `syncId`), compartido entre stores, y se mapea de vuelta
+para las escrituras. Los **76 componentes y páginas no se tocan**.
+
+Migrados y verificados (Vitest + `generate:desktop` + `generate`):
+
+- **`locations`** — árbol, detalle con breadcrumb, crear/renombrar/mover/borrar offline.
+- **`pieceTypes`** — listado/detalle con atributos embebidos (ensamblados desde la colección
+  `pieceTypeAttributes`), crear/renombrar/borrar y alta/edición/baja de atributos offline. Las
+  *actions* (sub-recurso gated, fuera del set de sync) siguen siendo online.
+- **`organizationPieceAttributes`** — listado y CRUD de atributos de organización offline.
+- **`pieces`** (el agregado) — tablero por ubicación, listado paginado con filtros (`typeId`,
+  `locationId`, `ownerUserId`, `status`, `q`, orden y paginado resueltos en cliente), detalle con
+  valores de atributos (tipo+org) y metadatos de adjuntos, y crear/editar/mover/borrar offline.
+  El **historial** es best-effort (server-computed; offline → página vacía) y los **binarios de
+  adjuntos** (subida/descarga) siguen siendo online (no forman parte del set de sync).
+
 ### Pendiente frontend
 
-- **Integración UI (el grande)**: reescribir los stores Pinia para consumir RxDB y migrar la
-  identidad `id` numérico → `syncId` en los componentes. **Requiere la app en ejecución**
-  (Tauri + WebView + backend) para verificarse; no encaja en tests unitarios aislados.
-- Repositorios RxDB para las demás colecciones (réplicas de `locationRepository`).
-- `useApi` con estrategia bearer+keychain por target; `useSync` (online real + badges);
-  middlewares offline.
+- **Validación end-to-end con la app en ejecución** (Tauri + WebView + backend) de los stores en
+  modo dual; algunos flujos (cobertura de portada offline, descarga de binarios) dependen del
+  workstream de adjuntos.
+- `org` resolution offline ya cae a `localStorage`; equipo/puertos quedan online (fuera de scope).
+- `useApi` con `TokenStore` de keychain (hoy en memoria); `useSync` (online real + badges);
+  cola de binarios de adjuntos; cifrado en reposo (F3); firma (M-Dist).
 
 ## Verticales funcionando end-to-end
 
