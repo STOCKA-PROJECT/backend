@@ -10,13 +10,17 @@
 |------|--------|
 | Identidad `syncId`/`rev` + secuencia de cambios (CSN) | ✅ Completo (6 entidades) |
 | Pull `/sync/v1/changes` | ✅ Completo (6 colecciones, tombstones R1) |
-| Push `/sync/v1/mutations` | 🟡 5/6 colecciones (catálogo + pieces); falta attachments |
-| Cliente escritorio (Tauri + RxDB Dexie + motor de sync + repos de las 6 colecciones) | ✅ Completo y verificado (26 tests Vitest) |
-| Auth escritorio (refresh por header + token en body) + CORS Tauri + `DesktopSession` cliente | ✅ Backend + sesión cliente; falta solo el `TokenStore` de keychain |
+| Push `/sync/v1/mutations` | ✅ 5 colecciones de datos + endpoints de binarios de adjuntos (`/sync/v1/attachments`) |
+| Supresión de emails en replay (B3) | ✅ `NotificationSuppressionContext` + flag `replay` en el evento |
+| Cliente escritorio (Tauri + RxDB Dexie + motor de sync + repos de las 6 colecciones) | ✅ Completo y verificado (39 tests Vitest) |
+| Auth escritorio (refresh por header + token en body) + CORS Tauri + `DesktopSession` cliente | ✅ Completo |
 | Bootstrap Nuxt (`$stockaSync`) + `useSync` + Dexie + checkpoint persistente | ✅ Implementado; build de escritorio verificado |
-| Integración con stores/componentes existentes (`id`→`syncId`) | 🟡 Stores `locations`, `pieceTypes`, `organizationPieceAttributes` y `pieces` en modo dual (web=API, escritorio=RxDB); pendiente validar con la app en ejecución |
-| Adjuntos (binarios + caché) | ⏳ Pendiente (metadatos sí se asemblan offline; descarga/subida de binarios siguen online) |
-| `TokenStore` keychain · cifrado en reposo (F3) · firma (M-Dist) | ⏳ Pendiente |
+| Integración con stores/componentes existentes (`id`→`syncId`) | ✅ Stores `locations`, `pieceTypes`, `organizationPieceAttributes` y `pieces` en modo dual; pendiente validar con la app en ejecución |
+| Adjuntos (binarios + cola separada) | ✅ Cola local `attachmentQueue` + push best-effort (R15–R17); descarga on-demand pendiente de la app |
+| `TokenStore` keychain | ✅ `TauriKeychainTokenStore` (crate `keyring`) con fallback a memoria |
+| Cifrado en reposo (R29) | ✅ Cifrado de campos sensibles en RxDB con clave en keychain |
+| Auto-sync al reconectar + badge de estado de sync | ✅ Plugin `online` + `useDesktopSyncStatus` + `SyncStatusBadge` |
+| Firma / notarización / auto-update (M-Dist) | 🟡 Infra lista (updater + workflow CI); requiere certificados externos y el JS del updater para el "buscar actualizaciones" |
 
 ## Backend (verificado con Java 25 + H2)
 
@@ -39,15 +43,27 @@
   → `serial_conflict` / `dependency_failed` / `validation_failed`. El `serverDoc` devuelto incluye
   los valores de atributos (no se pierden al reconciliar).
 
-### Pendiente backend — y por qué
+### Adjuntos (push de binarios) — ✅
 
-- **`attachments` (push)**: implica subida de binarios a R2 desde la cola offline (no solo
-  metadatos); cola binaria separada + caché LRU.
-- **Supresión de emails en replay** (B3): el push de pieces reutiliza `PieceService`, que publica
-  eventos de ciclo de vida (emails). Falta un flag "origen sync" para suprimirlos al drenar el
-  outbox y evitar avalanchas de correo.
-- **Auth (C)**: aceptar el refresh token por header/body además de cookie; CORS para el origin
-  de Tauri.
+- `POST /organizations/{slug}/sync/v1/attachments` (multipart): resuelve la pieza por `syncId`,
+  conserva el `syncId` de adjunto asignado por el cliente e **idempotente** por ese `syncId`
+  (reintento devuelve el existente sin re-subir). Reutiliza todo el pipeline de validación
+  (Tika MIME, dimensiones/tamaño/cuota, enlace de portada).
+- `DELETE /organizations/{slug}/sync/v1/attachments/{syncId}`: replay de borrado offline,
+  idempotente. Ambos requieren `canWritePieces`.
+- `PieceAttachmentService` refactorizado (`store`/`deleteResolved` compartidos) +
+  `uploadForSync`/`softDeleteBySyncId`; `PieceAttachmentRepository.findBySyncId`.
+
+### Supresión de emails en replay (B3) — ✅
+
+- `NotificationSuppressionContext` (thread-local) capturado en `ResourceLifecycleEvent` al
+  publicar (el listener `@Async` corre en otro hilo). `SyncPushService.push` envuelve el lote, así
+  drenar el outbox no inunda a los suscriptores con un email por cada cambio reaplicado. Los
+  servicios de dominio no se tocan (el constructor de 7 args del evento lee el contexto).
+
+### Completado previamente
+
+- **Auth (C)**: refresh token por header/body además de cookie; CORS para el origin de Tauri.
 
 ## Frontend / escritorio (verificado con Vitest)
 
@@ -76,17 +92,32 @@ Migrados y verificados (Vitest + `generate:desktop` + `generate`):
 - **`pieces`** (el agregado) — tablero por ubicación, listado paginado con filtros (`typeId`,
   `locationId`, `ownerUserId`, `status`, `q`, orden y paginado resueltos en cliente), detalle con
   valores de atributos (tipo+org) y metadatos de adjuntos, y crear/editar/mover/borrar offline.
-  El **historial** es best-effort (server-computed; offline → página vacía) y los **binarios de
-  adjuntos** (subida/descarga) siguen siendo online (no forman parte del set de sync).
+  El **historial** es best-effort (server-computed; offline → página vacía). Los **adjuntos** se
+  suben/borran offline vía la cola de binarios (abajo); la **descarga** on-demand del binario sigue
+  necesitando red.
+
+### Adjuntos, seguridad y estado de sync — ✅
+
+- **Cola de binarios** (`attachmentQueue`, R15–R17): `queueAttachmentUpload`/`queueAttachmentDelete`
+  + `pushAttachments` (drenaje best-effort: reconcilia `rev`/`r2Key` al subir, dead-letter en 4xx,
+  reintenta 5xx/red; nunca aborta el sync de datos). `transport` con multipart contra
+  `/sync/v1/attachments`; el motor la drena entre push y pull. Store `pieces` encola la subida con
+  los bytes en base64.
+- **Keychain** (`TauriKeychainTokenStore`, crate `keyring`): tokens en el llavero del SO; degrada a
+  memoria fuera de Tauri. `createTokenStore()` elige automáticamente.
+- **Cifrado en reposo** (R29): campos sensibles cifrados en RxDB con clave por máquina en el
+  llavero (`db_key`).
+- **Auto-sync al reconectar** (plugin `online`) y **badge de estado** (`useDesktopSyncStatus` +
+  `SyncStatusBadge` en el topbar: pendientes/sincronizando/sin conexión/conflictos + sincronizar
+  manual).
 
 ### Pendiente frontend
 
-- **Validación end-to-end con la app en ejecución** (Tauri + WebView + backend) de los stores en
-  modo dual; algunos flujos (cobertura de portada offline, descarga de binarios) dependen del
-  workstream de adjuntos.
-- `org` resolution offline ya cae a `localStorage`; equipo/puertos quedan online (fuera de scope).
-- `useApi` con `TokenStore` de keychain (hoy en memoria); `useSync` (online real + badges);
-  cola de binarios de adjuntos; cifrado en reposo (F3); firma (M-Dist).
+- **Validación end-to-end con la app Tauri en ejecución** (la valida el usuario): los binarios de
+  adjuntos y la descarga on-demand dependen del WebView + R2 reales.
+- **Disparador "buscar actualizaciones" en la UI**: necesita el paquete JS
+  `@tauri-apps/plugin-updater` (el canal de updater y el CI de firma ya están listos, M-Dist).
+- `equipo`/`puertos` quedan online a propósito (fuera del set de sync).
 
 ## Verticales funcionando end-to-end
 
