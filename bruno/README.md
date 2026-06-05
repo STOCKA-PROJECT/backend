@@ -24,6 +24,11 @@ Orden recomendado para probar:
 9. `organizations/70-pieces/attachments/download-attachment` — devuelve `302` a la presigned URL.
 10. `organizations/70-pieces/get-piece-history` — entradas: `PIECE_CREATED`, `ATTRIBUTE_VALUE_CHANGED`, `STATUS_CHANGED`, `ATTACHMENT_ADDED`, etc.
 
+Timelines (líneas de tiempo, mismos permisos que pieces):
+
+- `organizations/66-timelines/create-timeline` — captura `timelineId`. Nombre único por organización.
+- `organizations/66-timelines/list-timelines` / `get-timeline` / `update-timeline` / `delete-timeline`.
+
 Notas:
 
 - `owner@stocka.local / 123456` lo crea el `AdminSeeder` al arrancar la app.

@@ -43,6 +43,7 @@ import com.stocka.backend.modules.piecetypes.repository.PieceTypeActionRepositor
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeAttributeRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeRepository;
 import com.stocka.backend.modules.ports.repository.PortRepository;
+import com.stocka.backend.modules.timelines.repository.TimelineRepository;
 import com.stocka.backend.modules.users.entity.User;
 
 @Service
@@ -70,6 +71,7 @@ public class OrganizationService {
     private final OrganizationPieceAttributeRepository organizationPieceAttributeRepository;
     private final NotificationPreferenceRepository notificationPreferenceRepository;
     private final PortRepository portRepository;
+    private final TimelineRepository timelineRepository;
 
     public OrganizationService(
             OrganizationRepository organizationRepository,
@@ -88,7 +90,8 @@ public class OrganizationService {
             PieceTypeActionRepository pieceTypeActionRepository,
             OrganizationPieceAttributeRepository organizationPieceAttributeRepository,
             NotificationPreferenceRepository notificationPreferenceRepository,
-            PortRepository portRepository
+            PortRepository portRepository,
+            TimelineRepository timelineRepository
     ) {
         this.organizationRepository = organizationRepository;
         this.memberRepository = memberRepository;
@@ -107,6 +110,7 @@ public class OrganizationService {
         this.organizationPieceAttributeRepository = organizationPieceAttributeRepository;
         this.notificationPreferenceRepository = notificationPreferenceRepository;
         this.portRepository = portRepository;
+        this.timelineRepository = timelineRepository;
     }
 
     @Transactional
@@ -219,6 +223,7 @@ public class OrganizationService {
         locationRepository.softDeleteByOrganization(org);
         notificationPreferenceRepository.softDeleteByOrganization(org);
         portRepository.softDeleteByOrganization(org);
+        timelineRepository.softDeleteByOrganization(org);
 
         List<OrganizationMember> members = memberRepository.findByOrganization(org);
         for (OrganizationMember m : members) {

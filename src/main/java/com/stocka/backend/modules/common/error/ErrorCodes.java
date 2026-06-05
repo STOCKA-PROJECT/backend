@@ -60,6 +60,10 @@ public final class ErrorCodes {
     public static final String PIECE_TYPES_ATTRIBUTE_NAME_CONFLICT = "piece_types.attribute_name_conflict";
     public static final String LOCATIONS_NOT_FOUND = "locations.not_found";
 
+    // ---- timelines ------------------------------------------------------
+    public static final String TIMELINES_NOT_FOUND = "timelines.not_found";
+    public static final String TIMELINES_NAME_CONFLICT = "timelines.name_conflict";
+
     // ---- organizations --------------------------------------------------
     public static final String ORGANIZATIONS_NOT_FOUND = "organizations.not_found";
     public static final String ORGANIZATIONS_INVITATION_LIMIT_REACHED = "organizations.invitation_limit_reached";
