@@ -18,6 +18,7 @@ import com.stocka.backend.modules.timelines.dto.CreateTimelineDto;
 import com.stocka.backend.modules.timelines.dto.UpdateTimelineDto;
 import com.stocka.backend.modules.timelines.entity.Timeline;
 import com.stocka.backend.modules.timelines.repository.TimelineRepository;
+import com.stocka.backend.modules.timelines.repository.TimelineSceneRepository;
 
 /**
  * CRUD for {@link Timeline} entities. Names are unique per organization; deletes are soft and free
@@ -30,10 +31,16 @@ public class TimelineService {
 
     private final TimelineRepository timelineRepository;
     private final OrganizationService organizationService;
+    private final TimelineSceneRepository sceneRepository;
 
-    public TimelineService(TimelineRepository timelineRepository, OrganizationService organizationService) {
+    public TimelineService(
+            TimelineRepository timelineRepository,
+            OrganizationService organizationService,
+            TimelineSceneRepository sceneRepository
+    ) {
         this.timelineRepository = timelineRepository;
         this.organizationService = organizationService;
+        this.sceneRepository = sceneRepository;
     }
 
     @Transactional
@@ -86,6 +93,8 @@ public class TimelineService {
         timeline.setName(buildSoftDeletedName(timeline.getName(), timeline.getId(), MAX_NAME_LENGTH));
         timeline.setDeletedAt(LocalDateTime.now());
         timelineRepository.save(timeline);
+        // Cascade: free the timeline's editor scene so it does not dangle.
+        sceneRepository.softDeleteByTimeline(timeline);
     }
 
     private void ensureUniqueName(Organization org, String name, Integer excludeId) {

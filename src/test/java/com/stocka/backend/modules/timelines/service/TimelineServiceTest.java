@@ -30,6 +30,7 @@ import com.stocka.backend.modules.timelines.dto.CreateTimelineDto;
 import com.stocka.backend.modules.timelines.dto.UpdateTimelineDto;
 import com.stocka.backend.modules.timelines.entity.Timeline;
 import com.stocka.backend.modules.timelines.repository.TimelineRepository;
+import com.stocka.backend.modules.timelines.repository.TimelineSceneRepository;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("TimelineService")
@@ -37,6 +38,7 @@ class TimelineServiceTest {
 
     @Mock TimelineRepository timelineRepository;
     @Mock OrganizationService organizationService;
+    @Mock TimelineSceneRepository sceneRepository;
 
     private TimelineService sut;
 
@@ -45,7 +47,7 @@ class TimelineServiceTest {
     @BeforeEach
     void setUp() {
         org.setId(1);
-        sut = new TimelineService(timelineRepository, organizationService);
+        sut = new TimelineService(timelineRepository, organizationService, sceneRepository);
         // Lenient because the static-helper tests don't go through the service layer.
         lenient().when(organizationService.findById(1)).thenReturn(org);
     }

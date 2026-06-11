@@ -28,6 +28,13 @@ Timelines (líneas de tiempo, mismos permisos que pieces):
 
 - `organizations/66-timelines/create-timeline` — captura `timelineId`. Nombre único por organización.
 - `organizations/66-timelines/list-timelines` / `get-timeline` / `update-timeline` / `delete-timeline`.
+- `organizations/66-timelines/get-scene` / `put-scene` — documento del Timeline Editor (tablero +
+  capas + clips) como JSON versionado. `put-scene` usa concurrencia optimista (`version`).
+
+Timeline Editor (ventana nueva):
+
+- `auth/handoff` (con `JWTtoken`) → devuelve un `ticket`; cópialo a la var `handoffTicket`.
+- `auth/handoff-exchange` → canjea el `ticket` por una sesión (igual que login).
 
 Notas:
 

@@ -1,0 +1,41 @@
+meta {
+  name: Upsert Timeline Scene
+  type: http
+  seq: 7
+}
+
+put {
+  url: {{baseUrl}}/organizations/{{orgId}}/timelines/{{timelineId}}/scene
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "schemaVersion": 1,
+    "version": null,
+    "document": {
+      "schemaVersion": 1,
+      "board": { "width": 1920, "height": 1080 },
+      "layers": [ { "id": "l1", "name": "Capa 1", "z": 0, "visible": true } ],
+      "items": [ { "id": "i1", "pieceId": 1, "layerId": "l1", "x": 100, "y": 80, "width": 200, "height": 120, "rotation": 0 } ],
+      "tracks": [ { "id": "t1", "itemId": "i1", "name": "Artículo 1" } ],
+      "clips": [ { "id": "c1", "trackId": "t1", "pieceTypeActionId": 1, "startMs": 0, "durationMs": 2000, "paramValues": {} } ],
+      "durationMs": 60000
+    }
+  }
+}
+
+docs {
+  Creates/updates the scene. Send the `version` you last loaded for optimistic concurrency
+  (null on first save). 409 on a stale version; 400 on invalid/oversized document or a
+  cross-organization reference.
+}

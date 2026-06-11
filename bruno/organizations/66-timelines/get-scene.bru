@@ -1,0 +1,19 @@
+meta {
+  name: Get Timeline Scene
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/timelines/{{timelineId}}/scene
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  Returns the editor document for the timeline. 204 No Content when it has never been saved.
+}

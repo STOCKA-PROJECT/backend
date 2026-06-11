@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(node -e 'JSON.parse\\(require\\('\\\\''fs'\\\\''\\).readFileSync\\('\\\\''i18n/locales/__TRACKED_VAR__.json'\\\\'','\\\\''utf8'\\\\''\\)\\)')"
+    ],
+    "additionalDirectories": [
+      "/home/joan/Stocka/timeline-editor/app/stores",
+      "/home/joan/Stocka/timeline-editor/app/composables",
+      "/home/joan/Stocka/timeline-editor/app/middleware",
+      "/home/joan/Stocka/timeline-editor/app/layouts",
+      "/home/joan/Stocka/timeline-editor/app/pages",
+      "/home/joan/Stocka/timeline-editor/app/components/editor",
+      "/home/joan/Stocka/timeline-editor"
+    ]
+  }
+}

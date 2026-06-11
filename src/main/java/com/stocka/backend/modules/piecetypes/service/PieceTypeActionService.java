@@ -16,6 +16,7 @@ import org.springframework.web.server.ResponseStatusException;
 import com.stocka.backend.modules.piecetypes.dto.ActionParameterDto;
 import com.stocka.backend.modules.piecetypes.dto.CreatePieceTypeActionDto;
 import com.stocka.backend.modules.piecetypes.dto.UpdatePieceTypeActionDto;
+import com.stocka.backend.modules.piecetypes.entity.AttributeType;
 import com.stocka.backend.modules.piecetypes.entity.PieceType;
 import com.stocka.backend.modules.piecetypes.entity.PieceTypeAction;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeActionRepository;
@@ -144,7 +145,18 @@ public class PieceTypeActionService {
     /**
      * Validates and normalizes the inbound parameter list: each parameter gets a valid technical
      * name, a non-null type, validated type-specific rules, a defaulted {@code required} flag, a
-     * sequential position and a display name. Parameter names must be unique within the action.
+     * sequential position, a display name and a resolved binding mode. Parameter names must be
+     * unique within the action.
+     *
+     * <p>Binding rules: a parameter is <b>static</b> by default ({@code dynamic} defaults to
+     * {@code false}); a static parameter keeps its trimmed {@code staticValue} (blank becomes
+     * {@code null}), while a dynamic one always has its {@code staticValue} cleared since the value is
+     * supplied per clip in the timeline. A parameter that is both <b>required and static</b> must
+     * carry a non-blank {@code staticValue}, otherwise it would have no usable value anywhere.
+     *
+     * <p>Duration rules: at most one parameter per action may be flagged as the duration
+     * ({@code isDuration}); it must be numeric ({@code INTEGER} or {@code DECIMAL}) and, when static,
+     * must carry a {@code staticValue} since the clip length cannot be left undefined.
      *
      * @param raw inbound parameters; may be {@code null}
      * @return a normalized list ready to be serialized (empty when {@code raw} is {@code null})
@@ -156,6 +168,7 @@ public class PieceTypeActionService {
         }
         Set<String> seen = new HashSet<>();
         List<ActionParameterDto> out = new ArrayList<>(raw.size());
+        boolean durationSeen = false;
         int idx = 0;
         for (ActionParameterDto param : raw) {
             PieceTypeService.validateAttributeName(param.getName());
@@ -169,16 +182,53 @@ public class PieceTypeActionService {
             }
             PieceTypeService.validateValidators(param.getType(), param.getValidators());
 
+            boolean required = param.getRequired() == null || param.getRequired();
+            boolean dynamic = Boolean.TRUE.equals(param.getDynamic());
+            String staticValue = dynamic ? null : trimToNull(param.getStaticValue());
+            boolean isDuration = Boolean.TRUE.equals(param.getIsDuration());
+
+            if (isDuration) {
+                if (param.getType() != AttributeType.INTEGER && param.getType() != AttributeType.DECIMAL) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "El parámetro de duración '" + param.getName() + "' debe ser numérico");
+                }
+                if (durationSeen) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Solo un parámetro de la acción puede ser la duración");
+                }
+                durationSeen = true;
+                if (!dynamic && staticValue == null) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "El parámetro de duración estático '" + param.getName()
+                                    + "' necesita un valor fijo");
+                }
+            } else if (required && !dynamic && staticValue == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "El parámetro estático y obligatorio '" + param.getName()
+                                + "' necesita un valor fijo");
+            }
+
             out.add(new ActionParameterDto()
                     .setName(param.getName())
                     .setDisplayName(sanitizeDisplayName(param.getDisplayName(), param.getName()))
                     .setType(param.getType())
-                    .setRequired(param.getRequired() == null || param.getRequired())
+                    .setRequired(required)
                     .setPosition(param.getPosition() == null ? idx : param.getPosition())
-                    .setValidators(param.getValidators()));
+                    .setValidators(param.getValidators())
+                    .setDynamic(dynamic)
+                    .setStaticValue(staticValue)
+                    .setIsDuration(isDuration));
             idx++;
         }
         return out;
+    }
+
+    private static String trimToNull(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private void ensureUniqueActionName(PieceType type, String name, Integer excludeId) {

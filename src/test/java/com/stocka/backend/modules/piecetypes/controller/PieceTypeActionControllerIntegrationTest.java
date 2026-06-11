@@ -83,7 +83,8 @@ class PieceTypeActionControllerIntegrationTest {
                 .andExpect(jsonPath("$.name").value("encender"))
                 .andExpect(jsonPath("$.parameters[0].name").value("tiempo"))
                 .andExpect(jsonPath("$.parameters[0].type").value("INTEGER"))
-                .andExpect(jsonPath("$.parameters[0].required").value(true));
+                .andExpect(jsonPath("$.parameters[0].required").value(true))
+                .andExpect(jsonPath("$.parameters[0].dynamic").value(true));
 
         mockMvc.perform(get(actionsPath(acmeSlug, acmeTypeId))
                         .header("Authorization", "Bearer " + adminToken))
@@ -131,7 +132,8 @@ class PieceTypeActionControllerIntegrationTest {
             String token, String slug, Integer typeId
     ) throws Exception {
         Map<String, Object> param = Map.of(
-                "name", "tiempo", "displayName", "Tiempo", "type", "INTEGER", "required", true);
+                "name", "tiempo", "displayName", "Tiempo", "type", "INTEGER",
+                "required", true, "dynamic", true);
         Map<String, Object> body = Map.of(
                 "name", "encender", "displayName", "Encender", "parameters", List.of(param));
         return mockMvc.perform(post(actionsPath(slug, typeId))

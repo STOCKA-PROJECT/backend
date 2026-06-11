@@ -1,0 +1,26 @@
+meta {
+  name: Handoff (exchange)
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{baseUrl}}/auth/handoff/exchange
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "ticket": "{{handoffTicket}}"
+  }
+}
+
+docs {
+  Exchanges a handoff ticket for a full session (access token + refresh cookie),
+  exactly like /auth/login. Called server-side by the editor's BFF.
+}
