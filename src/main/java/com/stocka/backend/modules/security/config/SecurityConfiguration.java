@@ -71,7 +71,7 @@ public class SecurityConfiguration {
                         .contentSecurityPolicy(csp -> csp.policyDirectives(
                                 "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/auth/2fa/**", "/auth/oauth/google/unlink").authenticated()
+                        .requestMatchers("/auth/2fa/**", "/auth/oauth/google/unlink", "/auth/handoff").authenticated()
                         .requestMatchers("/auth/**", "/health").permitAll()
                         .requestMatchers("/webhooks/resend").permitAll()
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()

@@ -1,0 +1,43 @@
+meta {
+  name: Create Port (with typed parameters)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/ports
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Salida tira led 1",
+    "pieceTypeId": {{pieceTypeId}},
+    "pin": 21,
+    "parameters": [
+      {
+        "name": "channel",
+        "displayName": "Channel",
+        "type": "INTEGER",
+        "required": true,
+        "validators": { "min": 0, "max": 1 }
+      },
+      {
+        "name": "dma",
+        "displayName": "DMA",
+        "type": "INTEGER",
+        "required": true,
+        "validators": { "min": 0, "max": 15 }
+      }
+    ]
+  }
+}

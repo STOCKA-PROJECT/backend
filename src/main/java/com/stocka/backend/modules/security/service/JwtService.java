@@ -51,6 +51,14 @@ public class JwtService {
      */
     public static final String TYPE_MFA_CHALLENGE = "mfa_challenge";
 
+    /**
+     * Short-lived single-purpose token used to hand off an authenticated session to a separate
+     * front-end app (the Timeline Editor) opened in a new window. The main app mints it via
+     * {@code POST /auth/handoff} and the editor's BFF exchanges it for a full session via
+     * {@code POST /auth/handoff/exchange}. TTL is intentionally tiny.
+     */
+    public static final String TYPE_HANDOFF = "handoff";
+
     private static final int MIN_HEX_LENGTH = 64;
 
     @Value("${security.jwt.secret-key}")
@@ -169,6 +177,44 @@ public class JwtService {
         try {
             if (extractExpiration(token).before(new Date())) return false;
             if (!TYPE_MFA_CHALLENGE.equals(extractTokenType(token))) return false;
+            Integer version = extractTokenVersion(token);
+            return version != null && version == currentTokenVersion;
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    /**
+     * Builds a short-lived {@link #TYPE_HANDOFF} token carrying the user's email as subject. Used to
+     * pass an authenticated session to a separate front-end app opened in a new window.
+     *
+     * @param email      user being handed off
+     * @param ttlSeconds lifetime (kept very short)
+     * @return signed JWT
+     */
+    public String generateHandoffToken(String email, long ttlSeconds) {
+        long now = System.currentTimeMillis();
+        return Jwts.builder()
+                .claims(Map.of(CLAIM_TOKEN_TYPE, TYPE_HANDOFF,
+                        CLAIM_TOKEN_VERSION, currentTokenVersion))
+                .subject(email)
+                .issuedAt(new Date(now))
+                .expiration(new Date(now + ttlSeconds * 1000L))
+                .signWith(getSignInKey())
+                .compact();
+    }
+
+    /**
+     * Validates a {@link #TYPE_HANDOFF} token's signature, expiration and type. Subject (the email)
+     * is exposed via {@link #extractUsername}.
+     *
+     * @param token signed JWT
+     * @return {@code true} when the token can be trusted as a handoff ticket
+     */
+    public boolean isHandoffValid(String token) {
+        try {
+            if (extractExpiration(token).before(new Date())) return false;
+            if (!TYPE_HANDOFF.equals(extractTokenType(token))) return false;
             Integer version = extractTokenVersion(token);
             return version != null && version == currentTokenVersion;
         } catch (RuntimeException ignored) {

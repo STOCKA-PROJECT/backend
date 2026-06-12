@@ -1,0 +1,27 @@
+meta {
+  name: Create Port (duplicate pin -> 409)
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/ports
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Salida tira led 2",
+    "pieceTypeId": {{pieceTypeId}},
+    "pin": 21
+  }
+}

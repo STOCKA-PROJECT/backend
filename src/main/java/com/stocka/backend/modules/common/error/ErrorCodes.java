@@ -37,6 +37,7 @@ public final class ErrorCodes {
     public static final String AUTH_2FA_ALREADY_ENABLED = "auth.2fa_already_enabled";
     public static final String AUTH_2FA_NOT_ENABLED = "auth.2fa_not_enabled";
     public static final String AUTH_2FA_REQUIRED = "auth.2fa_required";
+    public static final String AUTH_HANDOFF_TOKEN_INVALID = "auth.handoff_token_invalid";
     public static final String OAUTH_NOT_CONFIGURED = "auth.oauth_not_configured";
     public static final String OAUTH_STATE_INVALID = "auth.oauth_state_invalid";
     public static final String OAUTH_PROVIDER_ERROR = "auth.oauth_provider_error";
@@ -60,12 +61,27 @@ public final class ErrorCodes {
     public static final String PIECE_TYPES_ATTRIBUTE_NAME_CONFLICT = "piece_types.attribute_name_conflict";
     public static final String LOCATIONS_NOT_FOUND = "locations.not_found";
 
+    // ---- timelines ------------------------------------------------------
+    public static final String TIMELINES_NOT_FOUND = "timelines.not_found";
+    public static final String TIMELINES_NAME_CONFLICT = "timelines.name_conflict";
+    public static final String TIMELINE_SCENE_DOCUMENT_INVALID = "timeline_scenes.document_invalid";
+    public static final String TIMELINE_SCENE_INVALID_REFERENCE = "timeline_scenes.invalid_reference";
+    public static final String TIMELINE_SCENE_VERSION_CONFLICT = "timeline_scenes.version_conflict";
+
     // ---- organizations --------------------------------------------------
     public static final String ORGANIZATIONS_NOT_FOUND = "organizations.not_found";
     public static final String ORGANIZATIONS_INVITATION_LIMIT_REACHED = "organizations.invitation_limit_reached";
     public static final String ORGANIZATIONS_INVITATION_EXPIRED = "organizations.invitation_expired";
     public static final String ORGANIZATIONS_INVITATION_ALREADY_PROCESSED = "organizations.invitation_already_processed";
     public static final String ORGANIZATIONS_QUOTA_EXCEEDED = "organizations.quota_exceeded";
+
+    // ---- ports ----------------------------------------------------------
+    public static final String PORTS_NOT_FOUND = "ports.not_found";
+    public static final String PORTS_NAME_REQUIRED = "ports.name_required";
+    public static final String PORTS_NAME_CONFLICT = "ports.name_conflict";
+    public static final String PORTS_PIECE_TYPE_REQUIRED = "ports.piece_type_required";
+    public static final String PORTS_PIN_INVALID = "ports.pin_invalid";
+    public static final String PORTS_PIN_CONFLICT = "ports.pin_conflict";
 
     // ---- storage / upload -----------------------------------------------
     public static final String STORAGE_R2_UNAVAILABLE = "storage.r2_unavailable";

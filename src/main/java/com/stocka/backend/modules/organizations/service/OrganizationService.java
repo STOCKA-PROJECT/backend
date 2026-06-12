@@ -39,8 +39,12 @@ import com.stocka.backend.modules.pieces.repository.PieceAttachmentRepository;
 import com.stocka.backend.modules.pieces.repository.PieceAttributeValueRepository;
 import com.stocka.backend.modules.pieces.repository.PieceOrganizationAttributeValueRepository;
 import com.stocka.backend.modules.pieces.repository.PieceRepository;
+import com.stocka.backend.modules.piecetypes.repository.PieceTypeActionRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeAttributeRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeRepository;
+import com.stocka.backend.modules.ports.repository.PortRepository;
+import com.stocka.backend.modules.timelines.repository.TimelineRepository;
+import com.stocka.backend.modules.timelines.repository.TimelineSceneRepository;
 import com.stocka.backend.modules.users.entity.User;
 
 @Service
@@ -64,8 +68,12 @@ public class OrganizationService {
     private final LocationRepository locationRepository;
     private final PieceTypeRepository pieceTypeRepository;
     private final PieceTypeAttributeRepository pieceTypeAttributeRepository;
+    private final PieceTypeActionRepository pieceTypeActionRepository;
     private final OrganizationPieceAttributeRepository organizationPieceAttributeRepository;
     private final NotificationPreferenceRepository notificationPreferenceRepository;
+    private final PortRepository portRepository;
+    private final TimelineRepository timelineRepository;
+    private final TimelineSceneRepository timelineSceneRepository;
 
     public OrganizationService(
             OrganizationRepository organizationRepository,
@@ -81,8 +89,12 @@ public class OrganizationService {
             LocationRepository locationRepository,
             PieceTypeRepository pieceTypeRepository,
             PieceTypeAttributeRepository pieceTypeAttributeRepository,
+            PieceTypeActionRepository pieceTypeActionRepository,
             OrganizationPieceAttributeRepository organizationPieceAttributeRepository,
-            NotificationPreferenceRepository notificationPreferenceRepository
+            NotificationPreferenceRepository notificationPreferenceRepository,
+            PortRepository portRepository,
+            TimelineRepository timelineRepository,
+            TimelineSceneRepository timelineSceneRepository
     ) {
         this.organizationRepository = organizationRepository;
         this.memberRepository = memberRepository;
@@ -97,8 +109,12 @@ public class OrganizationService {
         this.locationRepository = locationRepository;
         this.pieceTypeRepository = pieceTypeRepository;
         this.pieceTypeAttributeRepository = pieceTypeAttributeRepository;
+        this.pieceTypeActionRepository = pieceTypeActionRepository;
         this.organizationPieceAttributeRepository = organizationPieceAttributeRepository;
         this.notificationPreferenceRepository = notificationPreferenceRepository;
+        this.portRepository = portRepository;
+        this.timelineRepository = timelineRepository;
+        this.timelineSceneRepository = timelineSceneRepository;
     }
 
     @Transactional
@@ -204,11 +220,15 @@ public class OrganizationService {
         pieceOrganizationAttributeValueRepository.deleteByOrganization(org);
         pieceAttachmentRepository.softDeleteByOrganization(org);
         pieceTypeAttributeRepository.softDeleteByOrganization(org);
+        pieceTypeActionRepository.softDeleteByOrganization(org);
         pieceTypeRepository.softDeleteByOrganization(org);
         organizationPieceAttributeRepository.softDeleteByOrganization(org);
         pieceRepository.softDeleteByOrganization(org);
         locationRepository.softDeleteByOrganization(org);
         notificationPreferenceRepository.softDeleteByOrganization(org);
+        portRepository.softDeleteByOrganization(org);
+        timelineSceneRepository.softDeleteByOrganization(org);
+        timelineRepository.softDeleteByOrganization(org);
 
         List<OrganizationMember> members = memberRepository.findByOrganization(org);
         for (OrganizationMember m : members) {

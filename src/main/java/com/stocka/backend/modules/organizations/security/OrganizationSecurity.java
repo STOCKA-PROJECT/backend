@@ -84,6 +84,147 @@ public class OrganizationSecurity {
         return isOwnerOrManager(orgSlug, principal);
     }
 
+    /**
+     * Whether the caller may read the piece-type actions feature for {@code orgSlug}. This is a
+     * private feature: it is only available on organizations whose owner is a global admin. Any
+     * member of such an organization can read, and global admins can read anywhere.
+     *
+     * @param orgSlug   current slug of the organization
+     * @param principal the authenticated principal ({@link User})
+     * @return {@code true} when the caller may read actions
+     */
+    public boolean canReadPieceTypeActions(String orgSlug, Object principal) {
+        if (!(principal instanceof User user)) {
+            return false;
+        }
+        if (isGlobalAdmin(user)) {
+            return true;
+        }
+        Optional<Organization> orgOpt = lookupActionsOrg(orgSlug);
+        if (orgOpt.isEmpty() || !orgOwnerIsGlobalAdmin(orgOpt.get())) {
+            return false;
+        }
+        return memberRepository.findByUserAndOrganization(user, orgOpt.get()).isPresent();
+    }
+
+    /**
+     * Whether the caller may create/modify/delete piece-type actions for {@code orgSlug}. Requires
+     * OWNER or MANAGER on an organization whose owner is a global admin; global admins may always.
+     *
+     * @param orgSlug   current slug of the organization
+     * @param principal the authenticated principal ({@link User})
+     * @return {@code true} when the caller may manage actions
+     */
+    public boolean canManagePieceTypeActions(String orgSlug, Object principal) {
+        if (!(principal instanceof User user)) {
+            return false;
+        }
+        if (isGlobalAdmin(user)) {
+            return true;
+        }
+        Optional<Organization> orgOpt = lookupActionsOrg(orgSlug);
+        if (orgOpt.isEmpty() || !orgOwnerIsGlobalAdmin(orgOpt.get())) {
+            return false;
+        }
+        return memberRepository.findByUserAndOrganization(user, orgOpt.get())
+                .map(m -> m.getRole() == OrganizationRoleEnum.OWNER
+                        || m.getRole() == OrganizationRoleEnum.MANAGER)
+                .orElse(false);
+    }
+
+    /**
+     * Whether the piece-type actions feature is enabled for {@code org} as seen by {@code user}.
+     * Used to expose a capability flag on the organization response so the frontend can show or
+     * hide the feature without probing the endpoint. Mirrors {@link #canReadPieceTypeActions} for a
+     * caller already known to be a member.
+     *
+     * @param org  organization to inspect (may be {@code null})
+     * @param user authenticated user (may be {@code null})
+     * @return {@code true} when actions should be exposed to {@code user} for {@code org}
+     */
+    public boolean pieceTypeActionsEnabled(Organization org, User user) {
+        if (isGlobalAdmin(user)) {
+            return true;
+        }
+        return org != null && orgOwnerIsGlobalAdmin(org);
+    }
+
+    /**
+     * Whether the caller may read the ports feature for {@code orgSlug}. Like the piece-type actions
+     * feature, this is a private feature: it is only available on organizations whose owner is a
+     * global admin. Any member of such an organization can read, and global admins can read anywhere.
+     *
+     * @param orgSlug   current slug of the organization
+     * @param principal the authenticated principal ({@link User})
+     * @return {@code true} when the caller may read ports
+     */
+    public boolean canReadPorts(String orgSlug, Object principal) {
+        if (!(principal instanceof User user)) {
+            return false;
+        }
+        if (isGlobalAdmin(user)) {
+            return true;
+        }
+        Optional<Organization> orgOpt = lookupActionsOrg(orgSlug);
+        if (orgOpt.isEmpty() || !orgOwnerIsGlobalAdmin(orgOpt.get())) {
+            return false;
+        }
+        return memberRepository.findByUserAndOrganization(user, orgOpt.get()).isPresent();
+    }
+
+    /**
+     * Whether the caller may create/modify/delete ports for {@code orgSlug}. Requires OWNER or
+     * MANAGER on an organization whose owner is a global admin; global admins may always.
+     *
+     * @param orgSlug   current slug of the organization
+     * @param principal the authenticated principal ({@link User})
+     * @return {@code true} when the caller may manage ports
+     */
+    public boolean canManagePorts(String orgSlug, Object principal) {
+        if (!(principal instanceof User user)) {
+            return false;
+        }
+        if (isGlobalAdmin(user)) {
+            return true;
+        }
+        Optional<Organization> orgOpt = lookupActionsOrg(orgSlug);
+        if (orgOpt.isEmpty() || !orgOwnerIsGlobalAdmin(orgOpt.get())) {
+            return false;
+        }
+        return memberRepository.findByUserAndOrganization(user, orgOpt.get())
+                .map(m -> m.getRole() == OrganizationRoleEnum.OWNER
+                        || m.getRole() == OrganizationRoleEnum.MANAGER)
+                .orElse(false);
+    }
+
+    /**
+     * Whether the ports feature is enabled for {@code org} as seen by {@code user}. Used to expose a
+     * capability flag on the organization response so the frontend can show or hide the feature
+     * without probing the endpoint. Mirrors {@link #canReadPorts} for a caller already known to be a
+     * member.
+     *
+     * @param org  organization to inspect (may be {@code null})
+     * @param user authenticated user (may be {@code null})
+     * @return {@code true} when ports should be exposed to {@code user} for {@code org}
+     */
+    public boolean portsEnabled(Organization org, User user) {
+        if (isGlobalAdmin(user)) {
+            return true;
+        }
+        return org != null && orgOwnerIsGlobalAdmin(org);
+    }
+
+    private Optional<Organization> lookupActionsOrg(String orgSlug) {
+        if (orgSlug == null || orgSlug.isBlank()) {
+            return Optional.empty();
+        }
+        return organizationRepository.findBySlug(orgSlug);
+    }
+
+    private boolean orgOwnerIsGlobalAdmin(Organization org) {
+        return memberRepository.existsAdminOwner(org, RoleEnum.ADMIN);
+    }
+
     private boolean hasAnyRole(String orgSlug, Object principal, Set<OrganizationRoleEnum> allowed) {
         if (orgSlug == null || orgSlug.isBlank()) {
             return false;

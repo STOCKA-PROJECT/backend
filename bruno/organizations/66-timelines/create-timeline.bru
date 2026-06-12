@@ -1,0 +1,25 @@
+meta {
+  name: Create Timeline
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/timelines
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Lanzamiento 2026"
+  }
+}

@@ -23,6 +23,7 @@ import com.stocka.backend.modules.organizations.dto.OrganizationResponseDto;
 import com.stocka.backend.modules.organizations.dto.UpdateOrganizationDto;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.entity.OrganizationRoleEnum;
+import com.stocka.backend.modules.organizations.security.OrganizationSecurity;
 import com.stocka.backend.modules.organizations.service.OrganizationResolver;
 import com.stocka.backend.modules.organizations.service.OrganizationResolver.Resolved;
 import com.stocka.backend.modules.organizations.service.OrganizationService;
@@ -33,10 +34,16 @@ import com.stocka.backend.modules.users.entity.User;
 public class OrganizationController {
     private final OrganizationService organizationService;
     private final OrganizationResolver orgResolver;
+    private final OrganizationSecurity orgSecurity;
 
-    public OrganizationController(OrganizationService organizationService, OrganizationResolver orgResolver) {
+    public OrganizationController(
+            OrganizationService organizationService,
+            OrganizationResolver orgResolver,
+            OrganizationSecurity orgSecurity
+    ) {
         this.organizationService = organizationService;
         this.orgResolver = orgResolver;
+        this.orgSecurity = orgSecurity;
     }
 
     @PostMapping
@@ -44,7 +51,8 @@ public class OrganizationController {
     public ResponseEntity<OrganizationResponseDto> create(@RequestBody CreateOrganizationDto dto) {
         User actor = currentUser();
         Organization org = organizationService.create(dto, actor);
-        return ResponseEntity.ok(OrganizationResponseDto.from(org, OrganizationRoleEnum.OWNER));
+        return ResponseEntity.ok(OrganizationResponseDto.from(org, OrganizationRoleEnum.OWNER,
+                orgSecurity.pieceTypeActionsEnabled(org, actor), orgSecurity.portsEnabled(org, actor)));
     }
 
     /**
@@ -65,7 +73,8 @@ public class OrganizationController {
         User actor = currentUser();
         List<OrganizationResponseDto> orgs = organizationService.findUserOrganizations(actor).stream()
                 .map(o -> OrganizationResponseDto.from(o,
-                        organizationService.getCurrentUserRole(o, actor).orElse(null)))
+                        organizationService.getCurrentUserRole(o, actor).orElse(null),
+                        orgSecurity.pieceTypeActionsEnabled(o, actor), orgSecurity.portsEnabled(o, actor)))
                 .toList();
         return ResponseEntity.ok(orgs);
     }
@@ -89,7 +98,8 @@ public class OrganizationController {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok(new OrganizationLookupResponseDto(
-                OrganizationResponseDto.from(org, role),
+                OrganizationResponseDto.from(org, role, orgSecurity.pieceTypeActionsEnabled(org, actor),
+                        orgSecurity.portsEnabled(org, actor)),
                 resolved.historical(),
                 resolved.currentSlug()
         ));
@@ -101,7 +111,8 @@ public class OrganizationController {
         User actor = currentUser();
         Organization org = orgResolver.requireCurrent(orgSlug);
         return ResponseEntity.ok(OrganizationResponseDto.from(org,
-                organizationService.getCurrentUserRole(org, actor).orElse(null)));
+                organizationService.getCurrentUserRole(org, actor).orElse(null),
+                orgSecurity.pieceTypeActionsEnabled(org, actor), orgSecurity.portsEnabled(org, actor)));
     }
 
     @PatchMapping("/{orgSlug}")
@@ -114,7 +125,8 @@ public class OrganizationController {
         Organization current = orgResolver.requireCurrent(orgSlug);
         Organization org = organizationService.update(current.getId(), dto, actor);
         return ResponseEntity.ok(OrganizationResponseDto.from(org,
-                organizationService.getCurrentUserRole(org, actor).orElse(null)));
+                organizationService.getCurrentUserRole(org, actor).orElse(null),
+                orgSecurity.pieceTypeActionsEnabled(org, actor), orgSecurity.portsEnabled(org, actor)));
     }
 
     @DeleteMapping("/{orgSlug}")

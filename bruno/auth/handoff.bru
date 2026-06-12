@@ -1,0 +1,20 @@
+meta {
+  name: Handoff (mint ticket)
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{baseUrl}}/auth/handoff
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  Mints a short-lived ticket for opening the Timeline Editor in a new window.
+  Copy the returned `ticket` into the `handoffTicket` env var and run "Handoff (exchange)".
+}

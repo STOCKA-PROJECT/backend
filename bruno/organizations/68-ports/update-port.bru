@@ -1,0 +1,26 @@
+meta {
+  name: Update Port
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{baseUrl}}/organizations/{{orgId}}/ports/{{portId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Salida tira led 1 (renombrada)",
+    "pin": 22
+  }
+}

@@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.stocka.backend.modules.auth.dto.ForgotPasswordRequestDto;
+import com.stocka.backend.modules.auth.dto.HandoffExchangeRequestDto;
+import com.stocka.backend.modules.auth.dto.HandoffTicketResponseDto;
 import com.stocka.backend.modules.auth.dto.LoginResponseDto;
 import com.stocka.backend.modules.auth.dto.LoginUserDto;
 import com.stocka.backend.modules.auth.dto.RegisterUserDto;
@@ -78,6 +80,7 @@ public class AuthController {
     private final GoogleOAuthService googleOAuthService;
     private final OAuthAccountLinker oauthAccountLinker;
     private final long mfaChallengeTtlSeconds;
+    private final long handoffTtlSeconds;
 
     public AuthController(
             AuthenticationService authenticationService,
@@ -94,7 +97,8 @@ public class AuthController {
             SecurityAuditService securityAuditService,
             GoogleOAuthService googleOAuthService,
             OAuthAccountLinker oauthAccountLinker,
-            @Value("${security.twofactor.mfa-challenge-ttl-seconds:300}") long mfaChallengeTtlSeconds
+            @Value("${security.twofactor.mfa-challenge-ttl-seconds:300}") long mfaChallengeTtlSeconds,
+            @Value("${security.handoff.ttl-seconds:60}") long handoffTtlSeconds
     ) {
         this.authenticationService = authenticationService;
         this.passwordResetService = passwordResetService;
@@ -111,6 +115,7 @@ public class AuthController {
         this.googleOAuthService = googleOAuthService;
         this.oauthAccountLinker = oauthAccountLinker;
         this.mfaChallengeTtlSeconds = mfaChallengeTtlSeconds;
+        this.handoffTtlSeconds = handoffTtlSeconds;
     }
 
     @PostMapping("/logout")
@@ -371,6 +376,43 @@ public class AuthController {
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cookie.toString())
                 .body(body);
+    }
+
+    /**
+     * Mints a short-lived handoff ticket for the authenticated user. The frontend uses it to open a
+     * separate front-end app (the Timeline Editor) in a new window without exposing the session
+     * cookies across origins; the editor exchanges the ticket via {@link #handoffExchange}.
+     *
+     * @return the signed handoff ticket
+     */
+    @PostMapping("/handoff")
+    @org.springframework.security.access.prepost.PreAuthorize("isAuthenticated()")
+    public ResponseEntity<HandoffTicketResponseDto> handoff() {
+        User user = currentUser();
+        String ticket = jwtService.generateHandoffToken(user.getEmail(), handoffTtlSeconds);
+        return ResponseEntity.ok(new HandoffTicketResponseDto(ticket));
+    }
+
+    /**
+     * Exchanges a handoff ticket (see {@link #handoff}) for a full session, issuing the same payload
+     * as a regular login. Public: the editor's BFF calls this server-side with only the ticket.
+     *
+     * @param dto     request body carrying the handoff ticket
+     * @param request HTTP request — used for IP / UA capture on the device row
+     * @return login response with access token and refresh cookie
+     */
+    @PostMapping("/handoff/exchange")
+    public ResponseEntity<LoginResponseDto> handoffExchange(
+            @Valid @RequestBody HandoffExchangeRequestDto dto,
+            HttpServletRequest request) {
+        if (!jwtService.isHandoffValid(dto.getTicket())) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_HANDOFF_TOKEN_INVALID);
+        }
+        String email = jwtService.extractUsername(dto.getTicket());
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED,
+                        ErrorCodes.AUTH_HANDOFF_TOKEN_INVALID));
+        return issueSession(user, false, request);
     }
 
     @PostMapping("/forgot-password")
