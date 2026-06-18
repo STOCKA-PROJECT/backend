@@ -92,13 +92,18 @@ class PortControllerIntegrationTest {
                 .andExpect(jsonPath("$.pin").value(21))
                 .andExpect(jsonPath("$.parameters[0].name").value("channel"))
                 .andExpect(jsonPath("$.parameters[0].type").value("INTEGER"))
-                .andExpect(jsonPath("$.parameters[1].name").value("dma"));
+                .andExpect(jsonPath("$.parameters[0].dynamic").value(false))
+                .andExpect(jsonPath("$.parameters[0].staticValue").value("0"))
+                .andExpect(jsonPath("$.parameters[1].name").value("dma"))
+                .andExpect(jsonPath("$.parameters[1].staticValue").value("10"));
 
         mockMvc.perform(get(portsPath(acmeSlug)).header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].name").value("Salida tira led 1"))
                 .andExpect(jsonPath("$[0].pieceTypeName").value("Pieza Movimiento"))
-                .andExpect(jsonPath("$[0].pin").value(21));
+                .andExpect(jsonPath("$[0].pin").value(21))
+                .andExpect(jsonPath("$[0].parameters[0].staticValue").value("0"))
+                .andExpect(jsonPath("$[0].parameters[1].staticValue").value("10"));
     }
 
     @Test
@@ -222,9 +227,11 @@ class PortControllerIntegrationTest {
     private ResultActions createPort(String token, String slug, String name, int pin, int pieceTypeId)
             throws Exception {
         Map<String, Object> channel = Map.of(
-                "name", "channel", "displayName", "Channel", "type", "INTEGER", "required", true);
+                "name", "channel", "displayName", "Channel", "type", "INTEGER", "required", true,
+                "dynamic", false, "staticValue", "0");
         Map<String, Object> dma = Map.of(
-                "name", "dma", "displayName", "DMA", "type", "INTEGER", "required", true);
+                "name", "dma", "displayName", "DMA", "type", "INTEGER", "required", true,
+                "dynamic", false, "staticValue", "10");
         Map<String, Object> body = Map.of(
                 "name", name, "pieceTypeId", pieceTypeId, "pin", pin, "parameters", List.of(channel, dma));
         return mockMvc.perform(post(portsPath(slug))

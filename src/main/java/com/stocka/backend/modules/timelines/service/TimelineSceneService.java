@@ -13,6 +13,7 @@ import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.pieces.repository.PieceRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeActionRepository;
+import com.stocka.backend.modules.ports.repository.PortRepository;
 import com.stocka.backend.modules.timelines.dto.UpsertTimelineSceneDto;
 import com.stocka.backend.modules.timelines.entity.Timeline;
 import com.stocka.backend.modules.timelines.entity.TimelineScene;
@@ -23,8 +24,8 @@ import tools.jackson.databind.JsonNode;
 /**
  * Loads and persists the editor {@link TimelineScene} document for a timeline. The document is an
  * opaque, front-end-owned JSON tree; this service only validates structural integrity, size, and
- * that referenced pieces / piece-type actions are not foreign to the organization, and enforces
- * optimistic concurrency for autosave.
+ * that referenced pieces / piece-type actions / ports are not foreign to the organization, and
+ * enforces optimistic concurrency for autosave.
  */
 @Service
 public class TimelineSceneService {
@@ -36,19 +37,22 @@ public class TimelineSceneService {
     private final TimelineSceneJsonCodec codec;
     private final PieceRepository pieceRepository;
     private final PieceTypeActionRepository actionRepository;
+    private final PortRepository portRepository;
 
     public TimelineSceneService(
             TimelineSceneRepository sceneRepository,
             TimelineService timelineService,
             TimelineSceneJsonCodec codec,
             PieceRepository pieceRepository,
-            PieceTypeActionRepository actionRepository
+            PieceTypeActionRepository actionRepository,
+            PortRepository portRepository
     ) {
         this.sceneRepository = sceneRepository;
         this.timelineService = timelineService;
         this.codec = codec;
         this.pieceRepository = pieceRepository;
         this.actionRepository = actionRepository;
+        this.portRepository = portRepository;
     }
 
     /**
@@ -112,9 +116,10 @@ public class TimelineSceneService {
 
     /**
      * Light integrity check: internal references (item→layer, track→item, clip→track) must resolve,
-     * and any referenced piece / piece-type action that resolves must belong to {@code org} (guards
-     * against cross-organization references). Stale references (ids that no longer resolve, e.g. a
-     * deleted piece) are tolerated so autosave keeps working.
+     * and any referenced piece / piece-type action / port that resolves must belong to {@code org}
+     * (guards against cross-organization references). An item may carry zero, one or many port ids
+     * in its {@code ports} array. Stale references (ids that no longer resolve, e.g. a deleted piece
+     * or port) are tolerated so autosave keeps working.
      */
     private void validateReferences(Organization org, JsonNode document) {
         Set<String> layerIds = collectStringIds(document.path("layers"), "id");
@@ -122,12 +127,14 @@ public class TimelineSceneService {
         Set<String> trackIds = collectStringIds(document.path("tracks"), "id");
 
         Set<Integer> pieceIds = new HashSet<>();
+        Set<Integer> portIds = new HashSet<>();
         for (JsonNode item : asArray(document.path("items"))) {
             requireRef(layerIds, text(item, "layerId"));
             Integer pieceId = intOrNull(item, "pieceId");
             if (pieceId != null) {
                 pieceIds.add(pieceId);
             }
+            collectInts(item.path("ports"), portIds);
         }
         for (JsonNode track : asArray(document.path("tracks"))) {
             requireRef(itemIds, text(track, "itemId"));
@@ -152,11 +159,25 @@ public class TimelineSceneService {
                 throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.TIMELINE_SCENE_INVALID_REFERENCE);
             }
         });
+        portRepository.findAllById(portIds).forEach(p -> {
+            if (!p.getOrganization().getId().equals(org.getId())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.TIMELINE_SCENE_INVALID_REFERENCE);
+            }
+        });
     }
 
     private void requireRef(Set<String> known, String ref) {
         if (ref != null && !known.contains(ref)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.TIMELINE_SCENE_INVALID_REFERENCE);
+        }
+    }
+
+    /** Adds every numeric element of {@code array} to {@code out} (non-array / non-numeric ignored). */
+    private static void collectInts(JsonNode array, Set<Integer> out) {
+        for (JsonNode value : asArray(array)) {
+            if (value.isNumber()) {
+                out.add(value.intValue());
+            }
         }
     }
 

@@ -1,0 +1,25 @@
+meta {
+  name: Import commit (create)
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces/import?format=csv&mode=create&dryRun=false
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:multipart-form {
+  file: @file()
+}
+
+docs {
+  Applies the import in a single all-or-nothing transaction. Every row creates a
+  new piece. Answers 200 with applied=true on success, or 422 with applied=false
+  (and writes nothing) when any row is invalid. Requires write access.
+}

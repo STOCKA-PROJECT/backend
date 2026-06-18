@@ -29,6 +29,8 @@ import com.stocka.backend.modules.pieces.repository.PieceRepository;
 import com.stocka.backend.modules.piecetypes.entity.PieceType;
 import com.stocka.backend.modules.piecetypes.entity.PieceTypeAction;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeActionRepository;
+import com.stocka.backend.modules.ports.entity.Port;
+import com.stocka.backend.modules.ports.repository.PortRepository;
 import com.stocka.backend.modules.timelines.dto.UpsertTimelineSceneDto;
 import com.stocka.backend.modules.timelines.entity.Timeline;
 import com.stocka.backend.modules.timelines.entity.TimelineScene;
@@ -44,6 +46,7 @@ class TimelineSceneServiceTest {
     @Mock TimelineService timelineService;
     @Mock PieceRepository pieceRepository;
     @Mock PieceTypeActionRepository actionRepository;
+    @Mock PortRepository portRepository;
 
     private final TimelineSceneJsonCodec codec = new TimelineSceneJsonCodec();
     private TimelineSceneService sut;
@@ -56,10 +59,12 @@ class TimelineSceneServiceTest {
         org.setId(1);
         timeline = new Timeline().setOrganization(org);
         timeline.setId(10);
-        sut = new TimelineSceneService(sceneRepository, timelineService, codec, pieceRepository, actionRepository);
+        sut = new TimelineSceneService(
+                sceneRepository, timelineService, codec, pieceRepository, actionRepository, portRepository);
         lenient().when(timelineService.findInOrg(1, 10)).thenReturn(timeline);
         lenient().when(pieceRepository.findAllById(anyIterable())).thenReturn(List.of());
         lenient().when(actionRepository.findAllById(anyIterable())).thenReturn(List.of());
+        lenient().when(portRepository.findAllById(anyIterable())).thenReturn(List.of());
         lenient().when(sceneRepository.save(any(TimelineScene.class))).thenAnswer(inv -> inv.getArgument(0));
     }
 
@@ -197,6 +202,114 @@ class TimelineSceneServiceTest {
                     + "\"tracks\":[{\"id\":\"t1\",\"itemId\":\"i1\"}],"
                     + "\"clips\":[{\"id\":\"c1\",\"trackId\":\"t1\",\"pieceTypeActionId\":7}]"
                     + "}";
+
+            TimelineScene saved = sut.upsert(1, 10, dto(doc, null));
+
+            assertThat(saved.getVersion()).isEqualTo(1);
+        }
+    }
+
+    @Nested
+    @DisplayName("upsert — port references")
+    class PortReferences {
+
+        private Port portIn(int id) {
+            return new Port().setOrganization(org).setId(id);
+        }
+
+        @BeforeEach
+        void noExistingScene() {
+            lenient().when(sceneRepository.findByTimeline(timeline)).thenReturn(Optional.empty());
+        }
+
+        @Test
+        @DisplayName("accepts an item with zero ports (empty array)")
+        void should_acceptZeroPorts() {
+            String doc = "{\"layers\":[{\"id\":\"l1\"}],"
+                    + "\"items\":[{\"id\":\"i1\",\"layerId\":\"l1\",\"ports\":[]}]}";
+
+            TimelineScene saved = sut.upsert(1, 10, dto(doc, null));
+
+            assertThat(saved.getVersion()).isEqualTo(1);
+            verify(portRepository).findAllById(anyIterable());
+        }
+
+        @Test
+        @DisplayName("accepts an item with a single in-org port")
+        void should_acceptSinglePort() {
+            when(portRepository.findAllById(anyIterable())).thenReturn(List.of(portIn(7)));
+            String doc = "{\"layers\":[{\"id\":\"l1\"}],"
+                    + "\"items\":[{\"id\":\"i1\",\"layerId\":\"l1\",\"ports\":[7]}]}";
+
+            TimelineScene saved = sut.upsert(1, 10, dto(doc, null));
+
+            assertThat(saved.getVersion()).isEqualTo(1);
+            assertThat(saved.getDocument()).contains("\"ports\":[7]");
+        }
+
+        @Test
+        @DisplayName("accepts an item with multiple in-org ports")
+        void should_acceptMultiplePorts() {
+            when(portRepository.findAllById(anyIterable())).thenReturn(List.of(portIn(7), portIn(8)));
+            String doc = "{\"layers\":[{\"id\":\"l1\"}],"
+                    + "\"items\":[{\"id\":\"i1\",\"layerId\":\"l1\",\"ports\":[7,8]}]}";
+
+            TimelineScene saved = sut.upsert(1, 10, dto(doc, null));
+
+            assertThat(saved.getVersion()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("rejects a port that belongs to another organization with 400 invalid_reference")
+        void should_rejectForeignPort() {
+            Organization other = new Organization();
+            other.setId(2);
+            Port foreign = new Port().setOrganization(other).setId(99);
+            when(portRepository.findAllById(anyIterable())).thenReturn(List.of(foreign));
+            String doc = "{\"layers\":[{\"id\":\"l1\"}],"
+                    + "\"items\":[{\"id\":\"i1\",\"layerId\":\"l1\",\"ports\":[99]}]}";
+
+            assertThatThrownBy(() -> sut.upsert(1, 10, dto(doc, null)))
+                    .isInstanceOfSatisfying(ApiException.class, ex -> {
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                        assertThat(ex.getCode()).isEqualTo(ErrorCodes.TIMELINE_SCENE_INVALID_REFERENCE);
+                    });
+            verify(sceneRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("rejects when one of several ports is foreign")
+        void should_rejectWhenAnyPortForeign() {
+            Organization other = new Organization();
+            other.setId(2);
+            when(portRepository.findAllById(anyIterable()))
+                    .thenReturn(List.of(portIn(7), new Port().setOrganization(other).setId(8)));
+            String doc = "{\"layers\":[{\"id\":\"l1\"}],"
+                    + "\"items\":[{\"id\":\"i1\",\"layerId\":\"l1\",\"ports\":[7,8]}]}";
+
+            assertThatThrownBy(() -> sut.upsert(1, 10, dto(doc, null)))
+                    .isInstanceOfSatisfying(ApiException.class, ex ->
+                            assertThat(ex.getCode()).isEqualTo(ErrorCodes.TIMELINE_SCENE_INVALID_REFERENCE));
+            verify(sceneRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("tolerates a port id that no longer resolves (e.g. soft-deleted)")
+        void should_tolerateStalePort() {
+            // Default stub: findAllById returns empty, so the referenced port does not resolve.
+            String doc = "{\"layers\":[{\"id\":\"l1\"}],"
+                    + "\"items\":[{\"id\":\"i1\",\"layerId\":\"l1\",\"ports\":[123]}]}";
+
+            TimelineScene saved = sut.upsert(1, 10, dto(doc, null));
+
+            assertThat(saved.getVersion()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("ignores non-numeric entries in the ports array")
+        void should_ignoreNonNumericPortEntries() {
+            String doc = "{\"layers\":[{\"id\":\"l1\"}],"
+                    + "\"items\":[{\"id\":\"i1\",\"layerId\":\"l1\",\"ports\":[\"oops\",null]}]}";
 
             TimelineScene saved = sut.upsert(1, 10, dto(doc, null));
 

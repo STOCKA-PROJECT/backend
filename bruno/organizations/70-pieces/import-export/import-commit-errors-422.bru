@@ -1,0 +1,26 @@
+meta {
+  name: Import commit with errors (expect 422)
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces/import?format=csv&mode=create&dryRun=false
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:multipart-form {
+  file: @file()
+}
+
+docs {
+  Upload a file with at least one invalid row (e.g. an unknown type in
+  piece_types, a non-member owner_email, or a duplicate serial_number) to see the
+  commit rejected: HTTP 422, applied=false, and nothing written. Run the dry-run
+  first to get the full list of per-row errors before fixing the file.
+}

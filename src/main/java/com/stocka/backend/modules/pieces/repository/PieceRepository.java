@@ -42,6 +42,18 @@ public interface PieceRepository extends JpaRepository<Piece, Integer>, JpaSpeci
     Optional<Piece> findByIdAndOrganization(Integer id, Organization organization);
 
     /**
+     * Looks up the (single) non-soft-deleted piece in {@code organizationId} carrying
+     * {@code serialNumber}. Per-org serial uniqueness is enforced at the service layer, so at most
+     * one active row matches. Used by the import module to decide whether an upsert row creates or
+     * updates.
+     *
+     * @param organizationId organization scope
+     * @param serialNumber   serial number to match (case-sensitive)
+     * @return the matching piece, if any
+     */
+    Optional<Piece> findFirstByOrganization_IdAndSerialNumber(Integer organizationId, String serialNumber);
+
+    /**
      * All non-soft-deleted pieces of an organization. Used to recompute status in bulk after the
      * organization's attribute schema changes.
      */

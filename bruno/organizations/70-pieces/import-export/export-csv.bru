@@ -1,0 +1,21 @@
+meta {
+  name: Export pieces (CSV)
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces/export?format=csv
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  Downloads every piece (optionally filtered with the same query params as the
+  list endpoint: typeId, locationId, ownerUserId, status, q) as a CSV attachment.
+  Readable by any member, including SPECTATOR. The file round-trips with import.
+}

@@ -18,6 +18,7 @@ import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.service.OrganizationService;
 import com.stocka.backend.modules.piecetypes.dto.ActionParameterDto;
+import com.stocka.backend.modules.piecetypes.entity.AttributeType;
 import com.stocka.backend.modules.piecetypes.entity.PieceType;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeRepository;
 import com.stocka.backend.modules.piecetypes.service.ActionParametersJsonCodec;
@@ -207,6 +208,7 @@ public class PortService {
         }
         Set<String> seen = new HashSet<>();
         List<ActionParameterDto> out = new ArrayList<>(raw.size());
+        boolean durationSeen = false;
         int idx = 0;
         for (ActionParameterDto param : raw) {
             PieceTypeService.validateAttributeName(param.getName());
@@ -220,16 +222,53 @@ public class PortService {
             }
             PieceTypeService.validateValidators(param.getType(), param.getValidators());
 
+            boolean required = param.getRequired() == null || param.getRequired();
+            boolean dynamic = Boolean.TRUE.equals(param.getDynamic());
+            String staticValue = dynamic ? null : trimToNull(param.getStaticValue());
+            boolean isDuration = Boolean.TRUE.equals(param.getIsDuration());
+
+            if (isDuration) {
+                if (param.getType() != AttributeType.INTEGER && param.getType() != AttributeType.DECIMAL) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "El parámetro de duración '" + param.getName() + "' debe ser numérico");
+                }
+                if (durationSeen) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Solo un parámetro del puerto puede ser la duración");
+                }
+                durationSeen = true;
+                if (!dynamic && staticValue == null) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "El parámetro de duración estático '" + param.getName()
+                                    + "' necesita un valor fijo");
+                }
+            } else if (required && !dynamic && staticValue == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "El parámetro estático y obligatorio '" + param.getName()
+                                + "' necesita un valor fijo");
+            }
+
             out.add(new ActionParameterDto()
                     .setName(param.getName())
                     .setDisplayName(sanitizeDisplayName(param.getDisplayName(), param.getName()))
                     .setType(param.getType())
-                    .setRequired(param.getRequired() == null || param.getRequired())
+                    .setRequired(required)
                     .setPosition(param.getPosition() == null ? idx : param.getPosition())
-                    .setValidators(param.getValidators()));
+                    .setValidators(param.getValidators())
+                    .setDynamic(dynamic)
+                    .setStaticValue(staticValue)
+                    .setIsDuration(isDuration));
             idx++;
         }
         return out;
+    }
+
+    private static String trimToNull(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private void ensureUniqueName(Organization org, String name, Integer excludeId) {

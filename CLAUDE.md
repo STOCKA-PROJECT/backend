@@ -101,6 +101,19 @@ Org membership roles: `OWNER`, `MANAGER`, `USER`, `SPECTATOR` (read-only).
 | GET    | `/pieces/{id}/attachments(?kind=)`            | any member                | List                            |
 | GET    | `/pieces/{id}/attachments/{aid}/download`     | any member                | 302 to presigned URL            |
 | DELETE | `/pieces/{id}/attachments/{aid}`              | OWNER, MANAGER, USER      | Soft-delete + best-effort R2 rm |
+| GET    | `/pieces/export(?format=csv\|xlsx&filters)`   | any member                | Bulk export (CSV/XLSX), filtered |
+| GET    | `/pieces/import/template(?format=)`           | OWNER, MANAGER, USER      | Empty header-only template       |
+| POST   | `/pieces/import(?format=&mode=&dryRun=)`      | OWNER, MANAGER, USER      | Bulk import; dry-run preview then all-or-nothing commit |
+
+Import/export share the piece column schema (fixed columns + one column per
+attribute, named `"<Type> / <DisplayName>"` or `"Org / <DisplayName>"`).
+References are by human-readable name: `owner_email`, `location_path`
+(`Almacén/Estante`), `piece_types` (`;`-separated). `mode=create` (default) or
+`upsert` (match existing by `serialNumber`); `dryRun=true` validates without
+writing and returns a per-row report; `dryRun=false` rejects with 422 (writing
+nothing) if any row is invalid. Blank cells mean "leave unchanged" — import never
+clears fields, and attachments are out of scope. Caps:
+`stocka.pieces.import-export.max-{import,export}-rows`.
 
 ### Email providers
 

@@ -1,0 +1,26 @@
+meta {
+  name: Import commit (upsert by serial)
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces/import?format=csv&mode=upsert&dryRun=false
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:multipart-form {
+  file: @file()
+}
+
+docs {
+  Upsert mode: a row whose serial_number matches an existing piece updates it;
+  otherwise the row creates a new piece. Re-importing a previous export updates
+  in place without duplicating. Blank cells are left unchanged (the import never
+  clears fields). Requires write access.
+}
