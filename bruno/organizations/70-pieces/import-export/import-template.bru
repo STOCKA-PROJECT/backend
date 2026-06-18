@@ -1,0 +1,21 @@
+meta {
+  name: Import template (empty headers)
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces/import/template?format=csv
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  Downloads an empty file with just the column headers (fixed columns plus one
+  per attribute defined in the organization) to fill in and import. Requires
+  write access (OWNER, MANAGER or USER). Use format=xlsx for an Excel template.
+}

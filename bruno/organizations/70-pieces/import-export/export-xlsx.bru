@@ -1,0 +1,19 @@
+meta {
+  name: Export pieces (Excel .xlsx)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces/export?format=xlsx
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  Same as the CSV export but produces an Office Open XML (.xlsx) workbook.
+}

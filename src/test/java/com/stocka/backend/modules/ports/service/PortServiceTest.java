@@ -66,8 +66,10 @@ class PortServiceTest {
                 .setPieceTypeId(PIECE_TYPE_ID)
                 .setPin(21)
                 .setParameters(List.of(
-                        new ActionParameterDto().setName("channel").setType(AttributeType.INTEGER).setRequired(true),
-                        new ActionParameterDto().setName("dma").setType(AttributeType.INTEGER).setRequired(true)));
+                        new ActionParameterDto().setName("channel").setType(AttributeType.INTEGER)
+                                .setRequired(true).setDynamic(true),
+                        new ActionParameterDto().setName("dma").setType(AttributeType.INTEGER)
+                                .setRequired(true).setDynamic(true)));
     }
 
     private Port existingPort(int id, String name, Integer pin) {
@@ -260,7 +262,7 @@ class PortServiceTest {
             when(portRepository.saveAndFlush(any(Port.class))).thenAnswer(inv -> inv.getArgument(0));
 
             CreatePortDto dto = tiraLed1().setParameters(List.of(
-                    new ActionParameterDto().setName("channel").setType(AttributeType.INTEGER)));
+                    new ActionParameterDto().setName("channel").setType(AttributeType.INTEGER).setDynamic(true)));
 
             Port port = sut.create(ORG_ID, dto);
 
@@ -361,7 +363,7 @@ class PortServiceTest {
             when(portRepository.saveAndFlush(any(Port.class))).thenAnswer(inv -> inv.getArgument(0));
 
             Port updated = sut.update(ORG_ID, 7, new UpdatePortDto().setParameters(List.of(
-                    new ActionParameterDto().setName("brightness").setType(AttributeType.DECIMAL))));
+                    new ActionParameterDto().setName("brightness").setType(AttributeType.DECIMAL).setDynamic(true))));
 
             List<ActionParameterDto> params = sut.parametersOf(updated);
             assertThat(params).hasSize(1);
@@ -507,6 +509,171 @@ class PortServiceTest {
             assertThat(dto.pin()).isEqualTo(21);
             assertThat(dto.parameters()).hasSize(1);
             assertThat(dto.parameters().get(0).getName()).isEqualTo("channel");
+        }
+    }
+
+    @Nested
+    @DisplayName("parameter value persistence (dynamic / staticValue / isDuration)")
+    class ParameterValues {
+
+        /** Stubs the lookups create() performs before normalizeParameters; rejection paths stop here. */
+        private void stubLookups() {
+            when(organizationService.findById(ORG_ID)).thenReturn(org);
+            when(pieceTypeService.findInOrg(ORG_ID, PIECE_TYPE_ID)).thenReturn(pieceType);
+            when(portRepository.findByOrganizationAndName(org, "Salida tira led 1")).thenReturn(Optional.empty());
+            when(portRepository.findByOrganizationAndPin(org, 21)).thenReturn(Optional.empty());
+            when(portRepository.findByOrganizationOrderByPositionAscIdAsc(org)).thenReturn(List.of());
+        }
+
+        /** Adds the persistence stub on top of {@link #stubLookups()} for the happy paths. */
+        private void stubHappyLookups() {
+            stubLookups();
+            when(portRepository.saveAndFlush(any(Port.class))).thenAnswer(inv -> inv.getArgument(0));
+        }
+
+        @Test
+        @DisplayName("persists the static fixed value of a static parameter (round-trip through serialization)")
+        void should_persistStaticValue() {
+            stubHappyLookups();
+
+            CreatePortDto dto = tiraLed1().setParameters(List.of(
+                    new ActionParameterDto().setName("channel").setType(AttributeType.INTEGER)
+                            .setRequired(true).setDynamic(false).setStaticValue("7")));
+
+            Port port = sut.create(ORG_ID, dto);
+
+            List<ActionParameterDto> params = sut.parametersOf(port);
+            assertThat(params).hasSize(1);
+            assertThat(params.get(0).getDynamic()).isFalse();
+            assertThat(params.get(0).getStaticValue()).isEqualTo("7");
+        }
+
+        @Test
+        @DisplayName("trims the static value and keeps it through serialization")
+        void should_trimStaticValue() {
+            stubHappyLookups();
+
+            CreatePortDto dto = tiraLed1().setParameters(List.of(
+                    new ActionParameterDto().setName("channel").setType(AttributeType.TEXT)
+                            .setRequired(true).setDynamic(false).setStaticValue("  rojo  ")));
+
+            Port port = sut.create(ORG_ID, dto);
+
+            assertThat(sut.parametersOf(port).get(0).getStaticValue()).isEqualTo("rojo");
+        }
+
+        @Test
+        @DisplayName("nulls the static value of a dynamic parameter")
+        void should_nullStaticValueWhenDynamic() {
+            stubHappyLookups();
+
+            CreatePortDto dto = tiraLed1().setParameters(List.of(
+                    new ActionParameterDto().setName("channel").setType(AttributeType.INTEGER)
+                            .setDynamic(true).setStaticValue("7")));
+
+            Port port = sut.create(ORG_ID, dto);
+
+            List<ActionParameterDto> params = sut.parametersOf(port);
+            assertThat(params.get(0).getDynamic()).isTrue();
+            assertThat(params.get(0).getStaticValue()).isNull();
+        }
+
+        @Test
+        @DisplayName("persists the isDuration flag of a numeric duration parameter")
+        void should_persistIsDuration() {
+            stubHappyLookups();
+
+            CreatePortDto dto = tiraLed1().setParameters(List.of(
+                    new ActionParameterDto().setName("seconds").setType(AttributeType.INTEGER)
+                            .setIsDuration(true).setDynamic(true)));
+
+            Port port = sut.create(ORG_ID, dto);
+
+            assertThat(sut.parametersOf(port).get(0).getIsDuration()).isTrue();
+        }
+
+        @Test
+        @DisplayName("rejects a static required parameter without a fixed value")
+        void should_rejectStaticRequiredWithoutValue() {
+            stubLookups();
+
+            CreatePortDto dto = tiraLed1().setParameters(List.of(
+                    new ActionParameterDto().setName("channel").setType(AttributeType.INTEGER)
+                            .setRequired(true).setDynamic(false)));
+
+            assertThatThrownBy(() -> sut.create(ORG_ID, dto))
+                    .isInstanceOfSatisfying(ResponseStatusException.class,
+                            ex -> assertThat(ex.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST));
+        }
+
+        @Test
+        @DisplayName("allows a static optional parameter without a fixed value")
+        void should_allowStaticOptionalWithoutValue() {
+            stubHappyLookups();
+
+            CreatePortDto dto = tiraLed1().setParameters(List.of(
+                    new ActionParameterDto().setName("channel").setType(AttributeType.INTEGER)
+                            .setRequired(false).setDynamic(false)));
+
+            Port port = sut.create(ORG_ID, dto);
+
+            assertThat(sut.parametersOf(port).get(0).getStaticValue()).isNull();
+        }
+
+        @Test
+        @DisplayName("rejects a duration parameter that is not numeric")
+        void should_rejectNonNumericDuration() {
+            stubLookups();
+
+            CreatePortDto dto = tiraLed1().setParameters(List.of(
+                    new ActionParameterDto().setName("label").setType(AttributeType.TEXT)
+                            .setIsDuration(true).setDynamic(true)));
+
+            assertThatThrownBy(() -> sut.create(ORG_ID, dto))
+                    .isInstanceOf(ResponseStatusException.class);
+        }
+
+        @Test
+        @DisplayName("rejects more than one duration parameter")
+        void should_rejectMultipleDurations() {
+            stubLookups();
+
+            CreatePortDto dto = tiraLed1().setParameters(List.of(
+                    new ActionParameterDto().setName("a").setType(AttributeType.INTEGER)
+                            .setIsDuration(true).setDynamic(true),
+                    new ActionParameterDto().setName("b").setType(AttributeType.INTEGER)
+                            .setIsDuration(true).setDynamic(true)));
+
+            assertThatThrownBy(() -> sut.create(ORG_ID, dto))
+                    .isInstanceOf(ResponseStatusException.class);
+        }
+
+        @Test
+        @DisplayName("rejects a static duration parameter without a fixed value")
+        void should_rejectStaticDurationWithoutValue() {
+            stubLookups();
+
+            CreatePortDto dto = tiraLed1().setParameters(List.of(
+                    new ActionParameterDto().setName("seconds").setType(AttributeType.INTEGER)
+                            .setIsDuration(true).setDynamic(false)));
+
+            assertThatThrownBy(() -> sut.create(ORG_ID, dto))
+                    .isInstanceOf(ResponseStatusException.class);
+        }
+
+        @Test
+        @DisplayName("update replaces parameters preserving the static fixed value")
+        void update_should_preserveStaticValue() {
+            Port port = existingPort(7, "Salida tira led 1", 21);
+            when(organizationService.findById(ORG_ID)).thenReturn(org);
+            when(portRepository.findById(7)).thenReturn(Optional.of(port));
+            when(portRepository.saveAndFlush(any(Port.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            Port updated = sut.update(ORG_ID, 7, new UpdatePortDto().setParameters(List.of(
+                    new ActionParameterDto().setName("brightness").setType(AttributeType.DECIMAL)
+                            .setRequired(true).setDynamic(false).setStaticValue("0.5"))));
+
+            assertThat(sut.parametersOf(updated).get(0).getStaticValue()).isEqualTo("0.5");
         }
     }
 }

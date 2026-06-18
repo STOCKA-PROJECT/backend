@@ -55,6 +55,10 @@ public final class ErrorCodes {
 
     // ---- pieces / piece types / locations -------------------------------
     public static final String PIECES_NOT_FOUND = "pieces.not_found";
+    public static final String PIECES_IMPORT_INVALID_FILE = "pieces.import.invalid_file";
+    public static final String PIECES_IMPORT_TOO_MANY_ROWS = "pieces.import.too_many_rows";
+    public static final String PIECES_IMPORT_HAS_BLOCKING_ERRORS = "pieces.import.has_blocking_errors";
+    public static final String PIECES_EXPORT_TOO_MANY_ROWS = "pieces.export.too_many_rows";
     public static final String PIECE_TYPES_NOT_FOUND = "piece_types.not_found";
     public static final String PIECE_TYPES_ATTRIBUTE_INVALID = "piece_types.attribute_invalid";
     public static final String PIECE_TYPES_NAME_CONFLICT = "piece_types.name_conflict";

@@ -12,7 +12,9 @@ import java.util.stream.Collectors;
 
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -216,7 +218,48 @@ public class PieceService {
     ) {
         Organization org = organizationService.findById(orgId);
         Pageable bounded = boundPageable(pageable);
-        Specification<Piece> spec = (root, query, cb) -> {
+        Specification<Piece> spec = buildListSpec(org, pieceTypeId, locationId, ownerUserId, status, q);
+        return pieceRepository.findAll(spec, bounded);
+    }
+
+    /**
+     * Eagerly fetches up to {@code limit} pieces matching the same filters as {@link #list}, without
+     * the per-page cap, so the import/export module can serialize a whole (bounded) result set. The
+     * caller is responsible for rejecting results that exceed its own row cap.
+     *
+     * @param orgId        organization id
+     * @param pieceTypeId  optional piece-type filter
+     * @param locationId   optional location filter
+     * @param ownerUserId  optional owner filter
+     * @param status       optional status filter
+     * @param q            optional name/description search
+     * @param limit        maximum number of pieces to return
+     * @return the matching pieces, ordered by id ascending, capped at {@code limit}
+     */
+    public List<Piece> findAllForExport(
+            Integer orgId,
+            Integer pieceTypeId,
+            Integer locationId,
+            Integer ownerUserId,
+            PieceStatus status,
+            String q,
+            int limit
+    ) {
+        Organization org = organizationService.findById(orgId);
+        Specification<Piece> spec = buildListSpec(org, pieceTypeId, locationId, ownerUserId, status, q);
+        Pageable page = PageRequest.of(0, Math.max(1, limit), Sort.by("id").ascending());
+        return pieceRepository.findAll(spec, page).getContent();
+    }
+
+    private Specification<Piece> buildListSpec(
+            Organization org,
+            Integer pieceTypeId,
+            Integer locationId,
+            Integer ownerUserId,
+            PieceStatus status,
+            String q
+    ) {
+        return (root, query, cb) -> {
             List<Predicate> preds = new ArrayList<>();
             preds.add(cb.equal(root.get("organization"), org));
             if (pieceTypeId != null) {
@@ -236,7 +279,6 @@ public class PieceService {
             }
             return cb.and(preds.toArray(new Predicate[0]));
         };
-        return pieceRepository.findAll(spec, bounded);
     }
 
     @Transactional

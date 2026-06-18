@@ -1,0 +1,29 @@
+meta {
+  name: Import dry-run (validate only)
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces/import?format=csv&mode=create&dryRun=true
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:multipart-form {
+  file: @file()
+}
+
+docs {
+  Validates the uploaded CSV/XLSX and returns a per-row report WITHOUT writing
+  anything (always 200, even when rows fail). Attach a file in the 'file' field.
+  Header row example:
+    name,serial_number,piece_types,owner_email,location_path,Tool / Color
+  Reference columns are resolved by name: owner_email, location_path (e.g.
+  Almacen/Estante), piece_types (semicolon-separated), and attribute columns
+  named "<Type> / <DisplayName>" or "Org / <DisplayName>".
+}

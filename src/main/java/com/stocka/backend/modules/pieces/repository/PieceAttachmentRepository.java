@@ -1,5 +1,6 @@
 package com.stocka.backend.modules.pieces.repository;
 
+import java.util.Collection;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -20,6 +21,17 @@ public interface PieceAttachmentRepository extends JpaRepository<PieceAttachment
     List<PieceAttachment> findByPieceAndKind(Piece piece, PieceAttachmentKind kind);
 
     long countByPieceAndKind(Piece piece, PieceAttachmentKind kind);
+
+    /**
+     * Counts non-soft-deleted attachments per piece for the given pieces in a single query, so the
+     * export can fill the {@code attachments_count} column without an N+1 fetch.
+     *
+     * @param pieces the pieces to count attachments for
+     * @return rows of {@code [pieceId (Integer), count (Long)]}; pieces with no attachments are absent
+     */
+    @Query("SELECT a.piece.id, COUNT(a) FROM PieceAttachment a WHERE a.piece IN :pieces "
+            + "GROUP BY a.piece.id")
+    List<Object[]> countActiveGroupedByPiece(@Param("pieces") Collection<Piece> pieces);
 
     /**
      * Sum of {@code size_bytes} of every non-soft-deleted attachment belonging to a non-soft-deleted
