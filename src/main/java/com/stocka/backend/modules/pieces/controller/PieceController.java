@@ -78,6 +78,7 @@ public class PieceController {
             @RequestParam(required = false) List<Integer> typeIds,
             @RequestParam(required = false) Integer locationId,
             @RequestParam(required = false) Integer ownerUserId,
+            @RequestParam(required = false) Integer ownerContactId,
             @RequestParam(required = false) PieceStatus status,
             @RequestParam(required = false) String q,
             @RequestParam(name = "attr", required = false) List<String> attr,
@@ -85,7 +86,7 @@ public class PieceController {
     ) {
         Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         PieceFilterCriteria criteria = filterParser.parse(
-                typeId, typeIds, locationId, ownerUserId, status, q, attr);
+                typeId, typeIds, locationId, ownerUserId, ownerContactId, status, q, attr);
         Page<Piece> page = pieceService.list(orgId, criteria, pageable);
         return ResponseEntity.ok(page.map(PieceListItemDto::from));
     }

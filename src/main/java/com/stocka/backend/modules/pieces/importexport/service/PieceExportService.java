@@ -18,6 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
+import com.stocka.backend.modules.contacts.entity.Contact;
+import com.stocka.backend.modules.contacts.service.ContactService;
 import com.stocka.backend.modules.locations.entity.Location;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.entity.OrganizationPieceAttribute;
@@ -173,6 +175,7 @@ public class PieceExportService {
         row.put(PieceColumns.DESCRIPTION, nullToEmpty(piece.getDescription()));
         row.put(PieceColumns.STATUS, piece.getStatus() == null ? "" : piece.getStatus().name());
         row.put(PieceColumns.OWNER_EMAIL, piece.getOwner() == null ? "" : piece.getOwner().getEmail());
+        row.put(PieceColumns.OWNER_CONTACT, ownerContactCell(piece));
         row.put(PieceColumns.LOCATION_PATH, locationPath(piece.getLocation()));
         row.put(PieceColumns.PIECE_TYPES, typeNames(piece));
         row.put(PieceColumns.ATTACHMENTS_COUNT,
@@ -243,6 +246,19 @@ public class PieceExportService {
             counts.put((Integer) tuple[0], (Long) tuple[1]);
         }
         return counts;
+    }
+
+    /**
+     * Cell form of a contact owner: the contact's e-mail when it has one (the most stable
+     * re-import key), otherwise its display name. Empty when the piece has no contact owner.
+     */
+    private static String ownerContactCell(Piece piece) {
+        Contact contact = piece.getOwnerContact();
+        if (contact == null) {
+            return "";
+        }
+        String email = contact.getEmail();
+        return (email == null || email.isBlank()) ? nullToEmpty(ContactService.displayName(contact)) : email;
     }
 
     private String typeNames(Piece piece) {

@@ -15,7 +15,8 @@ import com.stocka.backend.modules.pieces.entity.PieceStatus;
  *
  * @param typeIds          piece-type ids; empty means no type filter
  * @param locationId       optional exact location filter
- * @param ownerUserId      optional owner filter
+ * @param ownerUserId      optional member-owner filter
+ * @param ownerContactId   optional contact-owner filter
  * @param status           optional status filter
  * @param q                optional name/description search
  * @param attributeFilters advanced per-attribute filters; empty means none
@@ -24,6 +25,7 @@ public record PieceFilterCriteria(
         List<Integer> typeIds,
         Integer locationId,
         Integer ownerUserId,
+        Integer ownerContactId,
         PieceStatus status,
         String q,
         List<AttributeFilter> attributeFilters
@@ -53,6 +55,6 @@ public record PieceFilterCriteria(
      * @return an empty criteria instance
      */
     public static PieceFilterCriteria empty() {
-        return new PieceFilterCriteria(List.of(), null, null, null, null, List.of());
+        return new PieceFilterCriteria(List.of(), null, null, null, null, null, List.of());
     }
 }

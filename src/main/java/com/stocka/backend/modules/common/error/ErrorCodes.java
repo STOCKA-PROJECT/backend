@@ -55,6 +55,7 @@ public final class ErrorCodes {
 
     // ---- pieces / piece types / locations -------------------------------
     public static final String PIECES_NOT_FOUND = "pieces.not_found";
+    public static final String PIECES_OWNER_CONFLICT = "pieces.owner_conflict";
     public static final String PIECES_IMPORT_INVALID_FILE = "pieces.import.invalid_file";
     public static final String PIECES_IMPORT_TOO_MANY_ROWS = "pieces.import.too_many_rows";
     public static final String PIECES_IMPORT_HAS_BLOCKING_ERRORS = "pieces.import.has_blocking_errors";
@@ -87,6 +88,16 @@ public final class ErrorCodes {
     public static final String PORTS_PIECE_TYPE_REQUIRED = "ports.piece_type_required";
     public static final String PORTS_PIN_INVALID = "ports.pin_invalid";
     public static final String PORTS_PIN_CONFLICT = "ports.pin_conflict";
+
+    // ---- contacts --------------------------------------------------------
+    public static final String CONTACTS_NOT_FOUND = "contacts.not_found";
+    public static final String CONTACTS_NAME_REQUIRED = "contacts.name_required";
+    public static final String CONTACTS_EMAIL_CONFLICT = "contacts.email_conflict";
+    public static final String CONTACTS_OWNS_PIECES = "contacts.owns_pieces";
+    public static final String CONTACTS_ALREADY_LINKED = "contacts.already_linked";
+    public static final String CONTACTS_USER_ALREADY_LINKED = "contacts.user_already_linked";
+    public static final String CONTACTS_LINK_USER_NOT_MEMBER = "contacts.link_user_not_member";
+    public static final String CONTACTS_LINK_SPECTATOR_CANNOT_OWN = "contacts.link_spectator_cannot_own";
 
     // ---- storage / upload -----------------------------------------------
     public static final String STORAGE_R2_UNAVAILABLE = "storage.r2_unavailable";

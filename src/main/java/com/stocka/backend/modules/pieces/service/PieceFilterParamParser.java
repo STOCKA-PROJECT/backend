@@ -41,7 +41,8 @@ public class PieceFilterParamParser {
      * @param typeId  legacy single piece-type filter, merged into {@code typeIds}
      * @param typeIds repeatable piece-type filter (OR semantics)
      * @param locationId optional exact location filter
-     * @param ownerUserId optional owner filter
+     * @param ownerUserId optional member-owner filter
+     * @param ownerContactId optional contact-owner filter
      * @param status optional status filter
      * @param q optional name/description search
      * @param attrParams repeatable {@code attr} parameters, may be {@code null}
@@ -54,6 +55,7 @@ public class PieceFilterParamParser {
             List<Integer> typeIds,
             Integer locationId,
             Integer ownerUserId,
+            Integer ownerContactId,
             PieceStatus status,
             String q,
             List<String> attrParams
@@ -69,6 +71,7 @@ public class PieceFilterParamParser {
                 List.copyOf(mergedTypeIds),
                 locationId,
                 ownerUserId,
+                ownerContactId,
                 status,
                 q,
                 parseAttributeFilters(attrParams)

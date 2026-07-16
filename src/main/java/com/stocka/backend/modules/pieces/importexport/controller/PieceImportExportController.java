@@ -62,16 +62,17 @@ public class PieceImportExportController {
      * member, including SPECTATOR. Accepts exactly the same filters as the piece listing,
      * including repeatable {@code typeIds} and {@code attr} advanced filters.
      *
-     * @param orgSlug     current organization slug
-     * @param format      {@code csv} (default) or {@code xlsx}
-     * @param typeId      legacy single piece-type filter (merged into {@code typeIds})
-     * @param typeIds     repeatable piece-type filter (OR semantics)
-     * @param locationId  optional location filter
-     * @param ownerUserId optional owner filter
-     * @param status      optional status filter
-     * @param q           optional name/description search
-     * @param attr        repeatable advanced attribute filters
-     *                    ({@code <scope>:<attributeId>:<v1>|<v2>|...})
+     * @param orgSlug        current organization slug
+     * @param format         {@code csv} (default) or {@code xlsx}
+     * @param typeId         legacy single piece-type filter (merged into {@code typeIds})
+     * @param typeIds        repeatable piece-type filter (OR semantics)
+     * @param locationId     optional location filter
+     * @param ownerUserId    optional member-owner filter
+     * @param ownerContactId optional contact-owner filter
+     * @param status         optional status filter
+     * @param q              optional name/description search
+     * @param attr           repeatable advanced attribute filters
+     *                       ({@code <scope>:<attributeId>:<v1>|<v2>|...})
      * @return the file as an attachment
      */
     @GetMapping("/export")
@@ -83,6 +84,7 @@ public class PieceImportExportController {
             @RequestParam(required = false) List<Integer> typeIds,
             @RequestParam(required = false) Integer locationId,
             @RequestParam(required = false) Integer ownerUserId,
+            @RequestParam(required = false) Integer ownerContactId,
             @RequestParam(required = false) PieceStatus status,
             @RequestParam(required = false) String q,
             @RequestParam(name = "attr", required = false) List<String> attr
@@ -90,7 +92,7 @@ public class PieceImportExportController {
         Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         SpreadsheetFormat fmt = SpreadsheetFormat.fromParam(format);
         PieceFilterCriteria criteria = filterParser.parse(
-                typeId, typeIds, locationId, ownerUserId, status, q, attr);
+                typeId, typeIds, locationId, ownerUserId, ownerContactId, status, q, attr);
         byte[] body = exportService.export(orgId, criteria, fmt);
         return fileResponse(body, fmt, "pieces-" + orgSlug + "." + fmt.extension());
     }

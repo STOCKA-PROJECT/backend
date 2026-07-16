@@ -460,6 +460,141 @@ class PieceImportExportIntegrationTest {
         }
     }
 
+    @Nested
+    @DisplayName("Contact owners")
+    class ContactOwners {
+
+        private Integer createContact(String name, String lastName, String email) throws Exception {
+            Map<String, Object> body = new java.util.HashMap<>();
+            body.put("name", name);
+            if (lastName != null) body.put("lastName", lastName);
+            if (email != null) body.put("email", email);
+            MvcResult r = mockMvc.perform(post("/organizations/" + orgSlug + "/contacts")
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(body)))
+                    .andExpect(status().isCreated())
+                    .andReturn();
+            return (Integer) om.readValue(r.getResponse().getContentAsString(), Map.class).get("id");
+        }
+
+        private void createPieceOwnedByContact(String name, String serial, Integer contactId)
+                throws Exception {
+            Map<String, Object> body = new java.util.HashMap<>();
+            body.put("name", name);
+            body.put("serialNumber", serial);
+            body.put("ownerContactId", contactId);
+            mockMvc.perform(post("/organizations/" + orgSlug + "/pieces")
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(body)))
+                    .andExpect(status().isCreated());
+        }
+
+        @Test
+        @DisplayName("export writes the contact email, falling back to the display name")
+        void export_writesContactCell() throws Exception {
+            Integer withEmail = createContact("Jane", "Doe", "jane@ext.com");
+            Integer noEmail = createContact("Nameless", "Person", null);
+            createPieceOwnedByContact("Hammer", "SN-1", withEmail);
+            createPieceOwnedByContact("Anvil", "SN-2", noEmail);
+
+            String csv = exportCsv(ownerToken, "");
+            Assertions.assertThat(csv).contains("owner_contact");
+            Assertions.assertThat(csv).contains("jane@ext.com");
+            Assertions.assertThat(csv).contains("Nameless Person");
+        }
+
+        @Test
+        @DisplayName("import resolves a contact by email or by display name")
+        void import_resolvesContact() throws Exception {
+            Integer withEmail = createContact("Jane", "Doe", "jane@ext.com");
+            createContact("Bob", "Smith", null);
+            String csv = "name,serial_number,owner_contact\n"
+                    + "Hammer,SN-1,JANE@EXT.COM\n"
+                    + "Anvil,SN-2,bob smith\n";
+
+            mockMvc.perform(importBuilder(ownerToken, csv, "create", false))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.created").value(2));
+
+            mockMvc.perform(get("/organizations/" + orgSlug + "/pieces")
+                            .param("ownerContactId", String.valueOf(withEmail))
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(jsonPath("$.content.length()").value(1))
+                    .andExpect(jsonPath("$.content[0].name").value("Hammer"));
+        }
+
+        @Test
+        @DisplayName("an unknown contact is a row error and is never auto-created")
+        void import_unknownContact_error() throws Exception {
+            String csv = "name,owner_contact\nHammer,nobody@ext.com\n";
+            mockMvc.perform(importBuilder(ownerToken, csv, "create", true))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.failed").value(1));
+
+            mockMvc.perform(get("/organizations/" + orgSlug + "/contacts")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(jsonPath("$").isEmpty());
+        }
+
+        @Test
+        @DisplayName("filling both owner_email and owner_contact is a row error")
+        void import_bothOwnerCells_error() throws Exception {
+            createContact("Jane", null, "jane@ext.com");
+            String csv = "name,owner_email,owner_contact\n"
+                    + "Hammer,manager@test.com,jane@ext.com\n";
+            mockMvc.perform(importBuilder(ownerToken, csv, "create", true))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.failed").value(1));
+        }
+
+        @Test
+        @DisplayName("an ambiguous contact name is a row error suggesting the email")
+        void import_ambiguousName_error() throws Exception {
+            createContact("Jane", "Doe", "jane1@ext.com");
+            createContact("Jane", "Doe", "jane2@ext.com");
+            String csv = "name,owner_contact\nHammer,Jane Doe\n";
+            mockMvc.perform(importBuilder(ownerToken, csv, "create", true))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.failed").value(1));
+        }
+
+        @Test
+        @DisplayName("an exported contact-owned piece round-trips through upsert unchanged")
+        void export_then_upsert_keepsContactOwner() throws Exception {
+            Integer contactId = createContact("Jane", "Doe", "jane@ext.com");
+            createPieceOwnedByContact("Hammer", "SN-1", contactId);
+
+            String exported = exportCsv(ownerToken, "");
+            mockMvc.perform(importBuilder(ownerToken, exported, "upsert", false))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.updated").value(1));
+
+            Assertions.assertThat(pieceCount()).isEqualTo(1);
+            mockMvc.perform(get("/organizations/" + orgSlug + "/pieces")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(jsonPath("$.content[0].ownerContactId").value(contactId));
+        }
+
+        @Test
+        @DisplayName("a blank owner_contact cell leaves the owner unchanged on upsert")
+        void upsert_blankCell_keepsOwner() throws Exception {
+            Integer contactId = createContact("Jane", null, "jane@ext.com");
+            createPieceOwnedByContact("Hammer", "SN-1", contactId);
+
+            String csv = "name,serial_number,owner_contact\nHammerV2,SN-1,\n";
+            mockMvc.perform(importBuilder(ownerToken, csv, "upsert", false))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.updated").value(1));
+
+            mockMvc.perform(get("/organizations/" + orgSlug + "/pieces")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(jsonPath("$.content[0].name").value("HammerV2"))
+                    .andExpect(jsonPath("$.content[0].ownerContactId").value(contactId));
+        }
+    }
+
     private MockMultipartHttpServletRequestBuilder importBuilder(String token, String csv,
                                                                  String mode, boolean dryRun) {
         MockMultipartFile file = new MockMultipartFile(
