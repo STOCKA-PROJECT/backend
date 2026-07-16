@@ -11,6 +11,9 @@ import com.stocka.backend.modules.notifications.preferences.entity.LifecycleActi
  * publish time (the security context is not reliable from {@code @Async} threads), and
  * {@code resourceName} is the snapshot at the moment of the action so a renamed resource
  * still shows up with its current name in the eventual email.
+ *
+ * <p>{@code ownerUserId} always refers to a registered user (someone who can be notified);
+ * for pieces owned by an external contact it is {@code null}.
  */
 public record ResourceLifecycleEvent(
         Integer organizationId,

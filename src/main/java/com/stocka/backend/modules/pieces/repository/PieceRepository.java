@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import com.stocka.backend.modules.contacts.entity.Contact;
 import com.stocka.backend.modules.locations.entity.Location;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.pieces.entity.Piece;
@@ -72,6 +73,19 @@ public interface PieceRepository extends JpaRepository<Piece, Integer>, JpaSpeci
      */
     boolean existsByOrganization_IdAndSerialNumberAndIdNot(
             Integer organizationId, String serialNumber, Integer excludePieceId);
+
+    /**
+     * Whether any (non-deleted) piece is owned by {@code contact}. Used to block contact deletion:
+     * a live piece pointing at a soft-deleted contact would break hydration (the contact carries
+     * {@code @SQLRestriction("deleted_at IS NULL")}).
+     */
+    boolean existsByOwnerContact(Contact contact);
+
+    /**
+     * All non-soft-deleted pieces owned by {@code contact}. Used to migrate ownership to a member
+     * when the contact gets linked to its user account.
+     */
+    List<Piece> findByOwnerContact(Contact contact);
 
     /**
      * Bulk soft-delete every still-active piece of {@code organization}. Invoked when an

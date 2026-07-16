@@ -66,12 +66,14 @@ public class PieceController {
             @RequestParam(required = false) Integer typeId,
             @RequestParam(required = false) Integer locationId,
             @RequestParam(required = false) Integer ownerUserId,
+            @RequestParam(required = false) Integer ownerContactId,
             @RequestParam(required = false) PieceStatus status,
             @RequestParam(required = false) String q,
             @PageableDefault(size = 20, sort = "updatedAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
         Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
-        Page<Piece> page = pieceService.list(orgId, typeId, locationId, ownerUserId, status, q, pageable);
+        Page<Piece> page = pieceService.list(
+                orgId, typeId, locationId, ownerUserId, ownerContactId, status, q, pageable);
         return ResponseEntity.ok(page.map(PieceListItemDto::from));
     }
 

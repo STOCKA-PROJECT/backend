@@ -10,6 +10,9 @@ import java.util.Set;
 
 import org.springframework.stereotype.Service;
 
+import com.stocka.backend.modules.contacts.entity.Contact;
+import com.stocka.backend.modules.contacts.repository.ContactRepository;
+import com.stocka.backend.modules.contacts.service.ContactService;
 import com.stocka.backend.modules.locations.entity.Location;
 import com.stocka.backend.modules.locations.repository.LocationRepository;
 import com.stocka.backend.modules.organizations.entity.Organization;
@@ -42,6 +45,7 @@ public class RowReferenceResolver {
     private final PieceTypeRepository pieceTypeRepository;
     private final PieceTypeService pieceTypeService;
     private final OrganizationPieceAttributeRepository orgAttributeRepository;
+    private final ContactRepository contactRepository;
 
     public RowReferenceResolver(
             UserRepository userRepository,
@@ -49,7 +53,8 @@ public class RowReferenceResolver {
             LocationRepository locationRepository,
             PieceTypeRepository pieceTypeRepository,
             PieceTypeService pieceTypeService,
-            OrganizationPieceAttributeRepository orgAttributeRepository
+            OrganizationPieceAttributeRepository orgAttributeRepository,
+            ContactRepository contactRepository
     ) {
         this.userRepository = userRepository;
         this.memberRepository = memberRepository;
@@ -57,6 +62,7 @@ public class RowReferenceResolver {
         this.pieceTypeRepository = pieceTypeRepository;
         this.pieceTypeService = pieceTypeService;
         this.orgAttributeRepository = orgAttributeRepository;
+        this.contactRepository = contactRepository;
     }
 
     /**
@@ -126,6 +132,44 @@ public class RowReferenceResolver {
                     "Un espectador no puede ser propietario de un artículo: '" + trimmed + "'");
         }
         return user.getId();
+    }
+
+    /**
+     * Resolves a contact owner from an {@code owner_contact} cell. The cell is matched (1) against
+     * the organization's contact e-mails (case-insensitive) and, when no e-mail matches, (2)
+     * against their display names ({@code "First Last"} or the bare first name; whitespace
+     * collapsed, case-insensitive). Contacts are never auto-created — a typo must not silently
+     * mint a directory entry.
+     *
+     * @param org  owning organization
+     * @param cell raw {@code owner_contact} cell; blank means "no contact owner"
+     * @return the contact id, or {@code null} when blank
+     * @throws RowValidationException when the cell matches no contact, or its name form matches
+     *                                more than one contact (ambiguous — use the e-mail instead)
+     */
+    public Integer resolveOwnerContactId(Organization org, String cell) {
+        if (isBlank(cell)) {
+            return null;
+        }
+        String trimmed = cell.trim();
+        Contact byEmail = contactRepository.findFirstByOrganizationAndEmailIgnoreCase(org, trimmed)
+                .orElse(null);
+        if (byEmail != null) {
+            return byEmail.getId();
+        }
+        String needle = PieceColumns.normalize(trimmed);
+        List<Contact> byName = contactRepository.findByOrganizationOrderByNameAscIdAsc(org).stream()
+                .filter(c -> needle.equals(PieceColumns.normalize(ContactService.displayName(c))))
+                .toList();
+        if (byName.size() > 1) {
+            throw new RowValidationException(
+                    "El contacto '" + trimmed + "' es ambiguo (hay varios con ese nombre); usa su email");
+        }
+        if (byName.isEmpty()) {
+            throw new RowValidationException(
+                    "No existe ningún contacto '" + trimmed + "' en la organización");
+        }
+        return byName.get(0).getId();
     }
 
     /**

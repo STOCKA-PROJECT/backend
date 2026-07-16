@@ -6,7 +6,11 @@ import java.util.List;
 import com.stocka.backend.modules.pieces.entity.Piece;
 import com.stocka.backend.modules.pieces.entity.PieceStatus;
 
-/** Full piece detail with values and attachments. */
+/**
+ * Full piece detail with values and attachments. {@code ownerUserId} / {@code ownerContactId} are
+ * the raw ids (at most one non-null) and {@code owner} is the embedded display summary — clients
+ * should render from {@code owner} and use the ids only to initialize edit forms.
+ */
 public record PieceResponseDto(
         Integer id,
         Integer organizationId,
@@ -15,6 +19,8 @@ public record PieceResponseDto(
         String description,
         List<PieceTypeRefDto> pieceTypes,
         Integer ownerUserId,
+        Integer ownerContactId,
+        PieceOwnerSummaryDto owner,
         Integer locationId,
         Integer coverAttachmentId,
         PieceStatus status,
@@ -38,6 +44,8 @@ public record PieceResponseDto(
                 piece.getDescription(),
                 types,
                 piece.getOwner() == null ? null : piece.getOwner().getId(),
+                piece.getOwnerContact() == null ? null : piece.getOwnerContact().getId(),
+                PieceOwnerSummaryDto.from(piece),
                 piece.getLocation() == null ? null : piece.getLocation().getId(),
                 piece.getCoverAttachment() == null ? null : piece.getCoverAttachment().getId(),
                 piece.getStatus(),

@@ -25,6 +25,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
+import com.stocka.backend.modules.contacts.entity.Contact;
+import com.stocka.backend.modules.contacts.repository.ContactRepository;
+import com.stocka.backend.modules.contacts.service.ContactService;
 import com.stocka.backend.modules.locations.entity.Location;
 import com.stocka.backend.modules.locations.repository.LocationRepository;
 import com.stocka.backend.modules.notifications.events.ResourceKind;
@@ -90,6 +93,7 @@ public class PieceService {
     private final AttributeValueValidationRegistry validationRegistry;
     private final LocationRepository locationRepository;
     private final UserRepository userRepository;
+    private final ContactRepository contactRepository;
     private final OrganizationQuotaProperties quotas;
     private final ApplicationEventPublisher events;
 
@@ -107,6 +111,7 @@ public class PieceService {
             AttributeValueValidationRegistry validationRegistry,
             LocationRepository locationRepository,
             UserRepository userRepository,
+            ContactRepository contactRepository,
             OrganizationQuotaProperties quotas,
             ApplicationEventPublisher events
     ) {
@@ -123,6 +128,7 @@ public class PieceService {
         this.validationRegistry = validationRegistry;
         this.locationRepository = locationRepository;
         this.userRepository = userRepository;
+        this.contactRepository = contactRepository;
         this.quotas = quotas;
         this.events = events;
     }
@@ -137,7 +143,9 @@ public class PieceService {
         String serialNumber = sanitizeSerialNumber(dto.getSerialNumber());
         ensureSerialNumberUnique(orgId, serialNumber, null);
         Location location = resolveLocation(org, dto.getLocationId(), false);
+        ensureSingleOwnerKind(dto.getOwnerUserId(), dto.getOwnerContactId());
         User owner = resolveOwner(org, dto.getOwnerUserId(), false);
+        Contact ownerContact = resolveOwnerContact(org, dto.getOwnerContactId());
 
         Piece piece = new Piece()
                 .setOrganization(org)
@@ -147,6 +155,7 @@ public class PieceService {
                 .setDescription(emptyToNull(dto.getDescription()))
                 .setLocation(location)
                 .setOwner(owner)
+                .setOwnerContact(ownerContact)
                 .setStatus(PieceStatus.PENDING);
         piece = pieceRepository.save(piece);
 
@@ -212,13 +221,15 @@ public class PieceService {
             Integer pieceTypeId,
             Integer locationId,
             Integer ownerUserId,
+            Integer ownerContactId,
             PieceStatus status,
             String q,
             Pageable pageable
     ) {
         Organization org = organizationService.findById(orgId);
         Pageable bounded = boundPageable(pageable);
-        Specification<Piece> spec = buildListSpec(org, pieceTypeId, locationId, ownerUserId, status, q);
+        Specification<Piece> spec = buildListSpec(
+                org, pieceTypeId, locationId, ownerUserId, ownerContactId, status, q);
         return pieceRepository.findAll(spec, bounded);
     }
 
@@ -227,13 +238,14 @@ public class PieceService {
      * the per-page cap, so the import/export module can serialize a whole (bounded) result set. The
      * caller is responsible for rejecting results that exceed its own row cap.
      *
-     * @param orgId        organization id
-     * @param pieceTypeId  optional piece-type filter
-     * @param locationId   optional location filter
-     * @param ownerUserId  optional owner filter
-     * @param status       optional status filter
-     * @param q            optional name/description search
-     * @param limit        maximum number of pieces to return
+     * @param orgId          organization id
+     * @param pieceTypeId    optional piece-type filter
+     * @param locationId     optional location filter
+     * @param ownerUserId    optional member-owner filter
+     * @param ownerContactId optional contact-owner filter
+     * @param status         optional status filter
+     * @param q              optional name/description search
+     * @param limit          maximum number of pieces to return
      * @return the matching pieces, ordered by id ascending, capped at {@code limit}
      */
     public List<Piece> findAllForExport(
@@ -241,12 +253,14 @@ public class PieceService {
             Integer pieceTypeId,
             Integer locationId,
             Integer ownerUserId,
+            Integer ownerContactId,
             PieceStatus status,
             String q,
             int limit
     ) {
         Organization org = organizationService.findById(orgId);
-        Specification<Piece> spec = buildListSpec(org, pieceTypeId, locationId, ownerUserId, status, q);
+        Specification<Piece> spec = buildListSpec(
+                org, pieceTypeId, locationId, ownerUserId, ownerContactId, status, q);
         Pageable page = PageRequest.of(0, Math.max(1, limit), Sort.by("id").ascending());
         return pieceRepository.findAll(spec, page).getContent();
     }
@@ -256,6 +270,7 @@ public class PieceService {
             Integer pieceTypeId,
             Integer locationId,
             Integer ownerUserId,
+            Integer ownerContactId,
             PieceStatus status,
             String q
     ) {
@@ -269,6 +284,7 @@ public class PieceService {
             }
             if (locationId != null) preds.add(cb.equal(root.get("location").get("id"), locationId));
             if (ownerUserId != null) preds.add(cb.equal(root.get("owner").get("id"), ownerUserId));
+            if (ownerContactId != null) preds.add(cb.equal(root.get("ownerContact").get("id"), ownerContactId));
             if (status != null) preds.add(cb.equal(root.get("status"), status));
             if (q != null && !q.isBlank()) {
                 String pattern = "%" + q.trim().toLowerCase() + "%";
@@ -324,10 +340,11 @@ public class PieceService {
             }
         }
 
+        ensureSingleOwnerKind(dto.getOwnerUserId(), dto.getOwnerContactId());
         if (Boolean.TRUE.equals(dto.getClearOwner())) {
-            if (piece.getOwner() != null) {
-                String oldName = displayUserName(piece.getOwner());
-                piece.setOwner(null);
+            if (piece.getOwner() != null || piece.getOwnerContact() != null) {
+                String oldName = currentOwnerDisplayName(piece);
+                piece.setOwner(null).setOwnerContact(null);
                 historyService.recordOwnerChanged(piece, actor, oldName, null);
                 mutated = true;
             }
@@ -335,10 +352,21 @@ public class PieceService {
             User newOwner = resolveOwner(org, dto.getOwnerUserId(), true);
             Integer oldId = piece.getOwner() == null ? null : piece.getOwner().getId();
             Integer newId = newOwner == null ? null : newOwner.getId();
-            if (!java.util.Objects.equals(oldId, newId)) {
-                String oldName = displayUserName(piece.getOwner());
+            if (piece.getOwnerContact() != null || !java.util.Objects.equals(oldId, newId)) {
+                String oldName = currentOwnerDisplayName(piece);
                 String newName = displayUserName(newOwner);
-                piece.setOwner(newOwner);
+                piece.setOwner(newOwner).setOwnerContact(null);
+                historyService.recordOwnerChanged(piece, actor, oldName, newName);
+                mutated = true;
+            }
+        } else if (dto.getOwnerContactId() != null) {
+            Contact newOwner = resolveOwnerContact(org, dto.getOwnerContactId());
+            Integer oldId = piece.getOwnerContact() == null ? null : piece.getOwnerContact().getId();
+            Integer newId = newOwner == null ? null : newOwner.getId();
+            if (piece.getOwner() != null || !java.util.Objects.equals(oldId, newId)) {
+                String oldName = currentOwnerDisplayName(piece);
+                String newName = ContactService.displayName(newOwner);
+                piece.setOwner(null).setOwnerContact(newOwner);
                 historyService.recordOwnerChanged(piece, actor, oldName, newName);
                 mutated = true;
             }
@@ -682,6 +710,52 @@ public class PieceService {
                     "Un espectador no puede ser propietario de un artículo");
         }
         return user;
+    }
+
+    /**
+     * Rejects payloads that reference both owner directories at once. A piece owner is either an
+     * organization member ({@code ownerUserId}) or an external contact ({@code ownerContactId}),
+     * never both.
+     *
+     * @param ownerUserId    inbound member-owner id (may be {@code null})
+     * @param ownerContactId inbound contact-owner id (may be {@code null})
+     * @throws ApiException 400 ({@link ErrorCodes#PIECES_OWNER_CONFLICT}) when both are non-null
+     */
+    private void ensureSingleOwnerKind(Integer ownerUserId, Integer ownerContactId) {
+        if (ownerUserId != null && ownerContactId != null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PIECES_OWNER_CONFLICT);
+        }
+    }
+
+    /**
+     * Resolves a contact-owner id against the organization's contact directory. Unlike
+     * {@link #resolveOwner} there are no membership or role checks — contacts exist precisely for
+     * people outside the organization.
+     *
+     * @param org       organization the piece belongs to
+     * @param contactId contact id; {@code null} resolves to {@code null}
+     * @return the contact, or {@code null} when {@code contactId} is null
+     * @throws ApiException 400 ({@link ErrorCodes#CONTACTS_NOT_FOUND}) when the contact does not
+     *                      exist in the organization
+     */
+    private Contact resolveOwnerContact(Organization org, Integer contactId) {
+        if (contactId == null) {
+            return null;
+        }
+        return contactRepository.findByIdAndOrganization(contactId, org)
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.CONTACTS_NOT_FOUND));
+    }
+
+    /**
+     * Display name of the piece's current owner, whichever directory it comes from: the member's
+     * name, the contact's name, or {@code null} when the piece has no owner. Used for the old-value
+     * side of {@code OWNER_CHANGED} history entries.
+     */
+    private static String currentOwnerDisplayName(Piece piece) {
+        if (piece.getOwner() != null) {
+            return displayUserName(piece.getOwner());
+        }
+        return ContactService.displayName(piece.getOwnerContact());
     }
 
     private String sanitizeName(String raw) {
