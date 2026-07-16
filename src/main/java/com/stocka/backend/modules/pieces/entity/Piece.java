@@ -10,6 +10,7 @@ import org.hibernate.annotations.SQLRestriction;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.stocka.backend.modules.contacts.entity.Contact;
 import com.stocka.backend.modules.locations.entity.Location;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.piecetypes.entity.PieceType;
@@ -36,6 +37,10 @@ import jakarta.persistence.UniqueConstraint;
  * {@link PieceType}s that together define its dynamic attribute schema. Optional owner,
  * location, serial number (unique within the organization, validated at the service layer)
  * and cover attachment.
+ *
+ * <p>The owner is either an organization member ({@link #owner}) or an external person from the
+ * organization's contact directory ({@link #ownerContact}); at most one of the two is set,
+ * enforced at the service layer.
  */
 @Entity
 @Table(
@@ -79,6 +84,10 @@ public class Piece {
     @ManyToOne
     @JoinColumn(name = "owner_user_id", referencedColumnName = "id")
     private User owner;
+
+    @ManyToOne
+    @JoinColumn(name = "owner_contact_id", referencedColumnName = "id")
+    private Contact ownerContact;
 
     @ManyToOne
     @JoinColumn(name = "location_id", referencedColumnName = "id")
@@ -128,6 +137,9 @@ public class Piece {
 
     public User getOwner() { return owner; }
     public Piece setOwner(User owner) { this.owner = owner; return this; }
+
+    public Contact getOwnerContact() { return ownerContact; }
+    public Piece setOwnerContact(Contact ownerContact) { this.ownerContact = ownerContact; return this; }
 
     public Location getLocation() { return location; }
     public Piece setLocation(Location location) { this.location = location; return this; }

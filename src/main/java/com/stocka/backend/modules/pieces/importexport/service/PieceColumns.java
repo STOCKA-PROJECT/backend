@@ -7,8 +7,10 @@ import java.util.Locale;
  * Column-naming conventions shared by the import and export sides so a file produced by export can
  * be re-imported without edits.
  *
- * <p>Fixed columns have stable snake_case names. Attribute columns are qualified with their scope
- * so the same display name can appear in several types without colliding:
+ * <p>Fixed columns have stable snake_case names. The owner spans two mutually-exclusive columns:
+ * {@link #OWNER_EMAIL} references an organization member by e-mail and {@link #OWNER_CONTACT}
+ * references an external contact by e-mail or display name. Attribute columns are qualified with
+ * their scope so the same display name can appear in several types without colliding:
  * <ul>
  *   <li>type-level attribute → {@code "<TypeName> / <DisplayName>"}</li>
  *   <li>organization-level attribute → {@code "Org / <DisplayName>"}</li>
@@ -22,6 +24,7 @@ public final class PieceColumns {
     public static final String DESCRIPTION = "description";
     public static final String STATUS = "status";
     public static final String OWNER_EMAIL = "owner_email";
+    public static final String OWNER_CONTACT = "owner_contact";
     public static final String LOCATION_PATH = "location_path";
     public static final String PIECE_TYPES = "piece_types";
     public static final String ATTACHMENTS_COUNT = "attachments_count";
@@ -39,7 +42,7 @@ public final class PieceColumns {
 
     /** Fixed columns, in the order they appear in an export. */
     public static final List<String> FIXED_COLUMNS = List.of(
-            ID, NAME, SERIAL_NUMBER, DESCRIPTION, STATUS, OWNER_EMAIL, LOCATION_PATH,
+            ID, NAME, SERIAL_NUMBER, DESCRIPTION, STATUS, OWNER_EMAIL, OWNER_CONTACT, LOCATION_PATH,
             PIECE_TYPES, ATTACHMENTS_COUNT, CREATED_AT, UPDATED_AT);
 
     private static final List<String> NORMALIZED_FIXED = FIXED_COLUMNS.stream()

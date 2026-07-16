@@ -244,8 +244,14 @@ public class PieceImportService {
         String serial = blankToNull(cell(fixedHeaders, rowMap, PieceColumns.SERIAL_NUMBER));
         String description = cell(fixedHeaders, rowMap, PieceColumns.DESCRIPTION);
 
-        Integer ownerUserId = referenceResolver.resolveOwnerUserId(org,
-                cell(fixedHeaders, rowMap, PieceColumns.OWNER_EMAIL));
+        String ownerEmailCell = cell(fixedHeaders, rowMap, PieceColumns.OWNER_EMAIL);
+        String ownerContactCell = cell(fixedHeaders, rowMap, PieceColumns.OWNER_CONTACT);
+        if (!ownerEmailCell.isBlank() && !ownerContactCell.isBlank()) {
+            throw new RowValidationException(
+                    "Indica solo una de las columnas owner_email / owner_contact, no ambas");
+        }
+        Integer ownerUserId = referenceResolver.resolveOwnerUserId(org, ownerEmailCell);
+        Integer ownerContactId = referenceResolver.resolveOwnerContactId(org, ownerContactCell);
         Integer locationId = referenceResolver.resolveLocationId(org,
                 cell(fixedHeaders, rowMap, PieceColumns.LOCATION_PATH));
         List<Integer> typeIds = referenceResolver.resolveTypeIds(org,
@@ -273,6 +279,9 @@ public class PieceImportService {
             if (ownerUserId != null) {
                 dto.setOwnerUserId(ownerUserId);
             }
+            if (ownerContactId != null) {
+                dto.setOwnerContactId(ownerContactId);
+            }
             if (locationId != null) {
                 dto.setLocationId(locationId);
             }
@@ -288,6 +297,7 @@ public class PieceImportService {
                 .setDescription(description)
                 .setPieceTypeIds(typeIds.isEmpty() ? null : typeIds)
                 .setOwnerUserId(ownerUserId)
+                .setOwnerContactId(ownerContactId)
                 .setLocationId(locationId)
                 .setAttributeValues(attributeValues.isEmpty() ? null : attributeValues);
         return RowPlan.create(dto);

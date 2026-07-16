@@ -1,6 +1,7 @@
 package com.stocka.backend.modules.pieces.importexport.controller;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Locale;
 
 import org.springframework.http.HttpHeaders;
@@ -20,6 +21,7 @@ import org.springframework.web.server.ResponseStatusException;
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.organizations.service.OrganizationResolver;
+import com.stocka.backend.modules.pieces.dto.PieceFilterCriteria;
 import com.stocka.backend.modules.pieces.entity.PieceStatus;
 import com.stocka.backend.modules.pieces.importexport.dto.ImportMode;
 import com.stocka.backend.modules.pieces.importexport.dto.PieceImportReportDto;
@@ -27,6 +29,7 @@ import com.stocka.backend.modules.pieces.importexport.dto.SpreadsheetFormat;
 import com.stocka.backend.modules.pieces.importexport.service.PieceExportService;
 import com.stocka.backend.modules.pieces.importexport.service.PieceImportException;
 import com.stocka.backend.modules.pieces.importexport.service.PieceImportService;
+import com.stocka.backend.modules.pieces.service.PieceFilterParamParser;
 
 /**
  * Bulk import/export of an organization's pieces (articles). Shares the
@@ -40,28 +43,36 @@ public class PieceImportExportController {
     private final OrganizationResolver orgResolver;
     private final PieceExportService exportService;
     private final PieceImportService importService;
+    private final PieceFilterParamParser filterParser;
 
     public PieceImportExportController(
             OrganizationResolver orgResolver,
             PieceExportService exportService,
-            PieceImportService importService
+            PieceImportService importService,
+            PieceFilterParamParser filterParser
     ) {
         this.orgResolver = orgResolver;
         this.exportService = exportService;
         this.importService = importService;
+        this.filterParser = filterParser;
     }
 
     /**
      * Downloads the organization's pieces (optionally filtered) as a CSV/XLSX file. Readable by any
-     * member, including SPECTATOR.
+     * member, including SPECTATOR. Accepts exactly the same filters as the piece listing,
+     * including repeatable {@code typeIds} and {@code attr} advanced filters.
      *
-     * @param orgSlug     current organization slug
-     * @param format      {@code csv} (default) or {@code xlsx}
-     * @param typeId      optional piece-type filter
-     * @param locationId  optional location filter
-     * @param ownerUserId optional owner filter
-     * @param status      optional status filter
-     * @param q           optional name/description search
+     * @param orgSlug        current organization slug
+     * @param format         {@code csv} (default) or {@code xlsx}
+     * @param typeId         legacy single piece-type filter (merged into {@code typeIds})
+     * @param typeIds        repeatable piece-type filter (OR semantics)
+     * @param locationId     optional location filter
+     * @param ownerUserId    optional member-owner filter
+     * @param ownerContactId optional contact-owner filter
+     * @param status         optional status filter
+     * @param q              optional name/description search
+     * @param attr           repeatable advanced attribute filters
+     *                       ({@code <scope>:<attributeId>:<v1>|<v2>|...})
      * @return the file as an attachment
      */
     @GetMapping("/export")
@@ -70,14 +81,19 @@ public class PieceImportExportController {
             @PathVariable String orgSlug,
             @RequestParam(required = false) String format,
             @RequestParam(required = false) Integer typeId,
+            @RequestParam(required = false) List<Integer> typeIds,
             @RequestParam(required = false) Integer locationId,
             @RequestParam(required = false) Integer ownerUserId,
+            @RequestParam(required = false) Integer ownerContactId,
             @RequestParam(required = false) PieceStatus status,
-            @RequestParam(required = false) String q
+            @RequestParam(required = false) String q,
+            @RequestParam(name = "attr", required = false) List<String> attr
     ) {
         Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         SpreadsheetFormat fmt = SpreadsheetFormat.fromParam(format);
-        byte[] body = exportService.export(orgId, typeId, locationId, ownerUserId, status, q, fmt);
+        PieceFilterCriteria criteria = filterParser.parse(
+                typeId, typeIds, locationId, ownerUserId, ownerContactId, status, q, attr);
+        byte[] body = exportService.export(orgId, criteria, fmt);
         return fileResponse(body, fmt, "pieces-" + orgSlug + "." + fmt.extension());
     }
 

@@ -7,13 +7,18 @@ import com.stocka.backend.modules.pieces.entity.Piece;
 import com.stocka.backend.modules.pieces.entity.PieceStatus;
 import com.stocka.backend.modules.piecetypes.entity.PieceType;
 
-/** Compact view of a piece for paginated listings. */
+/**
+ * Compact view of a piece for paginated listings. {@code ownerUserId} / {@code ownerContactId}
+ * are the raw owner ids (at most one non-null) and {@code owner} is the embedded display summary.
+ */
 public record PieceListItemDto(
         Integer id,
         String name,
         String serialNumber,
         List<PieceTypeRefDto> pieceTypes,
         Integer ownerUserId,
+        Integer ownerContactId,
+        PieceOwnerSummaryDto owner,
         Integer locationId,
         Integer coverAttachmentId,
         PieceStatus status,
@@ -46,6 +51,8 @@ public record PieceListItemDto(
                 piece.getSerialNumber(),
                 types,
                 piece.getOwner() == null ? null : piece.getOwner().getId(),
+                piece.getOwnerContact() == null ? null : piece.getOwnerContact().getId(),
+                PieceOwnerSummaryDto.from(piece),
                 piece.getLocation() == null ? null : piece.getLocation().getId(),
                 piece.getCoverAttachment() == null ? null : piece.getCoverAttachment().getId(),
                 piece.getStatus(),
