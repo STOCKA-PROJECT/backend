@@ -36,8 +36,8 @@ CREATE INDEX IF NOT EXISTS idx_contacts_org_email
 -- the service layer.
 ALTER TABLE pieces ADD COLUMN IF NOT EXISTS owner_contact_id INT NULL;
 
-ALTER TABLE pieces ADD CONSTRAINT IF NOT EXISTS fk_piece_owner_contact
-    FOREIGN KEY (owner_contact_id) REFERENCES contacts(id);
+ALTER TABLE pieces ADD CONSTRAINT fk_piece_owner_contact
+    FOREIGN KEY IF NOT EXISTS (owner_contact_id) REFERENCES contacts(id);
 
 CREATE INDEX IF NOT EXISTS idx_piece_owner_contact
     ON pieces (owner_contact_id);
