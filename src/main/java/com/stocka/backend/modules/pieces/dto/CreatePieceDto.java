@@ -15,6 +15,10 @@ import java.util.List;
  *
  * <p>The cover image cannot be set at creation time because the piece does not yet have any
  * attachments. The first IMAGE attachment uploaded after creation is auto-marked as cover.
+ *
+ * <p>The owner is optional and comes from exactly one of two directories: {@code ownerUserId}
+ * (an organization member) or {@code ownerContactId} (an external contact). Sending both is
+ * rejected with 400 ({@code pieces.owner_conflict}).
  */
 public class CreatePieceDto {
     private String name;
@@ -22,6 +26,7 @@ public class CreatePieceDto {
     private String description;
     private List<Integer> pieceTypeIds;
     private Integer ownerUserId;
+    private Integer ownerContactId;
     private Integer locationId;
     private List<AttributeValueInputDto> attributeValues;
 
@@ -39,6 +44,9 @@ public class CreatePieceDto {
 
     public Integer getOwnerUserId() { return ownerUserId; }
     public CreatePieceDto setOwnerUserId(Integer v) { this.ownerUserId = v; return this; }
+
+    public Integer getOwnerContactId() { return ownerContactId; }
+    public CreatePieceDto setOwnerContactId(Integer v) { this.ownerContactId = v; return this; }
 
     public Integer getLocationId() { return locationId; }
     public CreatePieceDto setLocationId(Integer v) { this.locationId = v; return this; }

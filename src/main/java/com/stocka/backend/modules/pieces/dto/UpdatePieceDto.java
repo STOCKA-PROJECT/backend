@@ -11,6 +11,11 @@ import java.util.List;
  * touch". For {@code serialNumber}, sending an empty string clears it (since blank is the canonical
  * "not provided" form for that field).
  *
+ * <p>The owner comes from exactly one of two directories: {@code ownerUserId} (an organization
+ * member) or {@code ownerContactId} (an external contact). Setting one implicitly clears the
+ * other kind; sending both non-null is rejected with 400 ({@code pieces.owner_conflict});
+ * {@code clearOwner=true} clears whichever kind is currently set.
+ *
  * <p>{@code pieceTypeIds}, when not {@code null}, replaces the full set of types attached to the
  * piece (the list may be empty to detach the piece from every type). Removing a type also
  * removes any attribute values for attributes that exclusively belonged to it; the resulting
@@ -29,6 +34,7 @@ public class UpdatePieceDto {
     private String description;
     private List<Integer> pieceTypeIds;
     private Integer ownerUserId;
+    private Integer ownerContactId;
     private Boolean clearOwner;
     private Integer locationId;
     private Boolean clearLocation;
@@ -50,6 +56,9 @@ public class UpdatePieceDto {
 
     public Integer getOwnerUserId() { return ownerUserId; }
     public UpdatePieceDto setOwnerUserId(Integer v) { this.ownerUserId = v; return this; }
+
+    public Integer getOwnerContactId() { return ownerContactId; }
+    public UpdatePieceDto setOwnerContactId(Integer v) { this.ownerContactId = v; return this; }
 
     public Boolean getClearOwner() { return clearOwner; }
     public UpdatePieceDto setClearOwner(Boolean v) { this.clearOwner = v; return this; }

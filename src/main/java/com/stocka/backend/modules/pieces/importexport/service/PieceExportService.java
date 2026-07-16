@@ -18,6 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
+import com.stocka.backend.modules.contacts.entity.Contact;
+import com.stocka.backend.modules.contacts.service.ContactService;
 import com.stocka.backend.modules.locations.entity.Location;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.entity.OrganizationPieceAttribute;
@@ -84,23 +86,24 @@ public class PieceExportService {
     /**
      * Exports the organization's pieces matching the given filters.
      *
-     * @param orgId       organization id
-     * @param typeId      optional piece-type filter
-     * @param locationId  optional location filter
-     * @param ownerUserId optional owner filter
-     * @param status      optional status filter
-     * @param q           optional name/description search
-     * @param format      target file format
+     * @param orgId          organization id
+     * @param typeId         optional piece-type filter
+     * @param locationId     optional location filter
+     * @param ownerUserId    optional member-owner filter
+     * @param ownerContactId optional contact-owner filter
+     * @param status         optional status filter
+     * @param q              optional name/description search
+     * @param format         target file format
      * @return the serialized file bytes
      * @throws ApiException 422 ({@code pieces.export.too_many_rows}) when the result exceeds the cap
      */
     @Transactional(readOnly = true)
     public byte[] export(Integer orgId, Integer typeId, Integer locationId, Integer ownerUserId,
-                         PieceStatus status, String q, SpreadsheetFormat format) {
+                         Integer ownerContactId, PieceStatus status, String q, SpreadsheetFormat format) {
         Organization org = organizationService.findById(orgId);
         int cap = properties.getMaxExportRows();
         List<Piece> pieces = pieceService.findAllForExport(orgId, typeId, locationId, ownerUserId,
-                status, q, cap + 1);
+                ownerContactId, status, q, cap + 1);
         if (pieces.size() > cap) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT,
                     ErrorCodes.PIECES_EXPORT_TOO_MANY_ROWS, Map.of("max", cap));
@@ -179,6 +182,7 @@ public class PieceExportService {
         row.put(PieceColumns.DESCRIPTION, nullToEmpty(piece.getDescription()));
         row.put(PieceColumns.STATUS, piece.getStatus() == null ? "" : piece.getStatus().name());
         row.put(PieceColumns.OWNER_EMAIL, piece.getOwner() == null ? "" : piece.getOwner().getEmail());
+        row.put(PieceColumns.OWNER_CONTACT, ownerContactCell(piece));
         row.put(PieceColumns.LOCATION_PATH, locationPath(piece.getLocation()));
         row.put(PieceColumns.PIECE_TYPES, typeNames(piece));
         row.put(PieceColumns.ATTACHMENTS_COUNT,
@@ -249,6 +253,19 @@ public class PieceExportService {
             counts.put((Integer) tuple[0], (Long) tuple[1]);
         }
         return counts;
+    }
+
+    /**
+     * Cell form of a contact owner: the contact's e-mail when it has one (the most stable
+     * re-import key), otherwise its display name. Empty when the piece has no contact owner.
+     */
+    private static String ownerContactCell(Piece piece) {
+        Contact contact = piece.getOwnerContact();
+        if (contact == null) {
+            return "";
+        }
+        String email = contact.getEmail();
+        return (email == null || email.isBlank()) ? nullToEmpty(ContactService.displayName(contact)) : email;
     }
 
     private String typeNames(Piece piece) {

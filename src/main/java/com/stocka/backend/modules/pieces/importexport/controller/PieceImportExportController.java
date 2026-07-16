@@ -55,13 +55,14 @@ public class PieceImportExportController {
      * Downloads the organization's pieces (optionally filtered) as a CSV/XLSX file. Readable by any
      * member, including SPECTATOR.
      *
-     * @param orgSlug     current organization slug
-     * @param format      {@code csv} (default) or {@code xlsx}
-     * @param typeId      optional piece-type filter
-     * @param locationId  optional location filter
-     * @param ownerUserId optional owner filter
-     * @param status      optional status filter
-     * @param q           optional name/description search
+     * @param orgSlug        current organization slug
+     * @param format         {@code csv} (default) or {@code xlsx}
+     * @param typeId         optional piece-type filter
+     * @param locationId     optional location filter
+     * @param ownerUserId    optional member-owner filter
+     * @param ownerContactId optional contact-owner filter
+     * @param status         optional status filter
+     * @param q              optional name/description search
      * @return the file as an attachment
      */
     @GetMapping("/export")
@@ -72,12 +73,14 @@ public class PieceImportExportController {
             @RequestParam(required = false) Integer typeId,
             @RequestParam(required = false) Integer locationId,
             @RequestParam(required = false) Integer ownerUserId,
+            @RequestParam(required = false) Integer ownerContactId,
             @RequestParam(required = false) PieceStatus status,
             @RequestParam(required = false) String q
     ) {
         Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         SpreadsheetFormat fmt = SpreadsheetFormat.fromParam(format);
-        byte[] body = exportService.export(orgId, typeId, locationId, ownerUserId, status, q, fmt);
+        byte[] body = exportService.export(
+                orgId, typeId, locationId, ownerUserId, ownerContactId, status, q, fmt);
         return fileResponse(body, fmt, "pieces-" + orgSlug + "." + fmt.extension());
     }
 
