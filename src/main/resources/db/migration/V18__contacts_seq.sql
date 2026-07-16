@@ -1,0 +1,13 @@
+-- Contact uses @GeneratedValue(strategy = AUTO). On MariaDB, Hibernate 6/7 maps
+-- AUTO to a per-table sequence named `<table>_seq`, so `ddl-auto=validate` in prod
+-- fails with "missing sequence [contacts_seq]" — the same trap V13 documents for
+-- Flyway-created tables (ddl-auto would have created the sequence alongside the
+-- table, but V17 created `contacts` via Flyway and only defined the AUTO_INCREMENT
+-- column, not the sequence Hibernate expects).
+--
+-- This lives in its own migration rather than being folded into V17 because V17 is
+-- already applied in production; editing it would change its checksum and trip
+-- validate-on-migrate. The `contacts` table is empty, so START WITH 1 is safe;
+-- INCREMENT BY 50 matches Hibernate's default allocationSize and mirrors the
+-- sequence definitions in V13/V15/V16 (verified against users_seq).
+CREATE SEQUENCE IF NOT EXISTS contacts_seq START WITH 1 INCREMENT BY 50 NOCACHE NOCYCLE;
