@@ -41,6 +41,7 @@ import com.stocka.backend.modules.organizations.service.OrganizationService;
 import com.stocka.backend.modules.pieces.dto.AttributeScope;
 import com.stocka.backend.modules.pieces.dto.AttributeValueInputDto;
 import com.stocka.backend.modules.pieces.dto.CreatePieceDto;
+import com.stocka.backend.modules.pieces.dto.PieceFilterCriteria;
 import com.stocka.backend.modules.pieces.dto.UpdatePieceDto;
 import com.stocka.backend.modules.pieces.entity.Piece;
 import com.stocka.backend.modules.pieces.entity.PieceAttachment;
@@ -53,14 +54,19 @@ import com.stocka.backend.modules.pieces.repository.PieceAttributeValueRepositor
 import com.stocka.backend.modules.pieces.repository.PieceOrganizationAttributeValueRepository;
 import com.stocka.backend.modules.pieces.repository.PieceRepository;
 import com.stocka.backend.modules.pieces.service.attributevalidation.AttributeValueValidationRegistry;
+import com.stocka.backend.modules.piecetypes.entity.AttributeType;
 import com.stocka.backend.modules.piecetypes.entity.PieceType;
 import com.stocka.backend.modules.piecetypes.entity.PieceTypeAttribute;
+import com.stocka.backend.modules.piecetypes.repository.PieceTypeAttributeRepository;
 import com.stocka.backend.modules.piecetypes.service.PieceTypeService;
 import com.stocka.backend.modules.users.entity.User;
 import com.stocka.backend.modules.users.repository.UserRepository;
 
 import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.Subquery;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * CRUD and lookup for {@link Piece}. Validates cross-org references, normalizes attribute values
@@ -76,11 +82,14 @@ public class PieceService {
     private static final int MAX_NAME_LENGTH = 255;
     private static final int MAX_SERIAL_LENGTH = 100;
     private static final int MAX_PAGE_SIZE = 100;
+    /** Serializes single values exactly like the MULTI_SELECT canonical array serializer. */
+    private static final ObjectMapper FILTER_JSON = JsonMapper.builder().build();
 
     private final PieceRepository pieceRepository;
     private final PieceAttributeValueRepository valueRepository;
     private final PieceOrganizationAttributeValueRepository orgValueRepository;
     private final OrganizationPieceAttributeRepository orgAttributeRepository;
+    private final PieceTypeAttributeRepository pieceTypeAttributeRepository;
     private final PieceAttachmentRepository attachmentRepository;
     private final PieceStatusCalculator statusCalculator;
     private final PieceHistoryService historyService;
@@ -98,6 +107,7 @@ public class PieceService {
             PieceAttributeValueRepository valueRepository,
             PieceOrganizationAttributeValueRepository orgValueRepository,
             OrganizationPieceAttributeRepository orgAttributeRepository,
+            PieceTypeAttributeRepository pieceTypeAttributeRepository,
             PieceAttachmentRepository attachmentRepository,
             PieceStatusCalculator statusCalculator,
             PieceHistoryService historyService,
@@ -114,6 +124,7 @@ public class PieceService {
         this.valueRepository = valueRepository;
         this.orgValueRepository = orgValueRepository;
         this.orgAttributeRepository = orgAttributeRepository;
+        this.pieceTypeAttributeRepository = pieceTypeAttributeRepository;
         this.attachmentRepository = attachmentRepository;
         this.statusCalculator = statusCalculator;
         this.historyService = historyService;
@@ -207,18 +218,21 @@ public class PieceService {
         return orgValueRepository.findByPiece(piece);
     }
 
-    public Page<Piece> list(
-            Integer orgId,
-            Integer pieceTypeId,
-            Integer locationId,
-            Integer ownerUserId,
-            PieceStatus status,
-            String q,
-            Pageable pageable
-    ) {
+    /**
+     * Returns the paginated pieces of the organization matching {@code criteria}.
+     *
+     * @param orgId    organization id
+     * @param criteria parsed filters (types, scalars and per-attribute filters)
+     * @param pageable page request, capped at {@code MAX_PAGE_SIZE}
+     * @return the matching page of pieces
+     * @throws ApiException 400 ({@code pieces.filter.invalid}) when an attribute filter references
+     *         an unknown attribute, one from another organization, or carries values that do not
+     *         fit the attribute's type
+     */
+    public Page<Piece> list(Integer orgId, PieceFilterCriteria criteria, Pageable pageable) {
         Organization org = organizationService.findById(orgId);
         Pageable bounded = boundPageable(pageable);
-        Specification<Piece> spec = buildListSpec(org, pieceTypeId, locationId, ownerUserId, status, q);
+        Specification<Piece> spec = buildListSpec(org, criteria);
         return pieceRepository.findAll(spec, bounded);
     }
 
@@ -227,44 +241,33 @@ public class PieceService {
      * the per-page cap, so the import/export module can serialize a whole (bounded) result set. The
      * caller is responsible for rejecting results that exceed its own row cap.
      *
-     * @param orgId        organization id
-     * @param pieceTypeId  optional piece-type filter
-     * @param locationId   optional location filter
-     * @param ownerUserId  optional owner filter
-     * @param status       optional status filter
-     * @param q            optional name/description search
-     * @param limit        maximum number of pieces to return
+     * @param orgId    organization id
+     * @param criteria parsed filters (types, scalars and per-attribute filters)
+     * @param limit    maximum number of pieces to return
      * @return the matching pieces, ordered by id ascending, capped at {@code limit}
      */
-    public List<Piece> findAllForExport(
-            Integer orgId,
-            Integer pieceTypeId,
-            Integer locationId,
-            Integer ownerUserId,
-            PieceStatus status,
-            String q,
-            int limit
-    ) {
+    public List<Piece> findAllForExport(Integer orgId, PieceFilterCriteria criteria, int limit) {
         Organization org = organizationService.findById(orgId);
-        Specification<Piece> spec = buildListSpec(org, pieceTypeId, locationId, ownerUserId, status, q);
+        Specification<Piece> spec = buildListSpec(org, criteria);
         Pageable page = PageRequest.of(0, Math.max(1, limit), Sort.by("id").ascending());
         return pieceRepository.findAll(spec, page).getContent();
     }
 
-    private Specification<Piece> buildListSpec(
-            Organization org,
-            Integer pieceTypeId,
-            Integer locationId,
-            Integer ownerUserId,
-            PieceStatus status,
-            String q
-    ) {
+    private Specification<Piece> buildListSpec(Organization org, PieceFilterCriteria criteria) {
+        // Attribute filters are resolved (and validated against the org) eagerly, outside the
+        // lambda, so a bad filter fails with 400 instead of silently matching nothing.
+        List<ResolvedAttributeFilter> attributeFilters = resolveAttributeFilters(org, criteria);
+        List<Integer> typeIds = criteria.typeIds();
+        Integer locationId = criteria.locationId();
+        Integer ownerUserId = criteria.ownerUserId();
+        PieceStatus status = criteria.status();
+        String q = criteria.q();
         return (root, query, cb) -> {
             List<Predicate> preds = new ArrayList<>();
             preds.add(cb.equal(root.get("organization"), org));
-            if (pieceTypeId != null) {
+            if (!typeIds.isEmpty()) {
                 Join<Object, Object> typeJoin = root.join("pieceTypes");
-                preds.add(cb.equal(typeJoin.get("id"), pieceTypeId));
+                preds.add(typeJoin.get("id").in(typeIds));
                 if (query != null) query.distinct(true);
             }
             if (locationId != null) preds.add(cb.equal(root.get("location").get("id"), locationId));
@@ -277,9 +280,166 @@ public class PieceService {
                         cb.like(cb.lower(root.get("description")), pattern)
                 ));
             }
+            for (ResolvedAttributeFilter filter : attributeFilters) {
+                preds.add(attributeExistsPredicate(root, query, cb, filter));
+            }
             return cb.and(preds.toArray(new Predicate[0]));
         };
     }
+
+    /**
+     * Correlated {@code EXISTS} over the matching value table, so multi-row value tables never
+     * duplicate root rows (which would break pagination counts).
+     */
+    private Predicate attributeExistsPredicate(
+            jakarta.persistence.criteria.Root<Piece> root,
+            jakarta.persistence.criteria.CriteriaQuery<?> query,
+            jakarta.persistence.criteria.CriteriaBuilder cb,
+            ResolvedAttributeFilter filter
+    ) {
+        Subquery<Integer> sq = query.subquery(Integer.class);
+        jakarta.persistence.criteria.Root<?> value = filter.scope() == AttributeScope.ORG
+                ? sq.from(PieceOrganizationAttributeValue.class)
+                : sq.from(PieceAttributeValue.class);
+        sq.select(cb.literal(1)).where(cb.and(
+                cb.equal(value.get("piece"), root),
+                cb.equal(value.get("attribute").get("id"), filter.attributeId()),
+                valuePredicate(cb, value.get("value").as(String.class), filter)
+        ));
+        return cb.exists(sq);
+    }
+
+    private Predicate valuePredicate(
+            jakarta.persistence.criteria.CriteriaBuilder cb,
+            jakarta.persistence.criteria.Expression<String> valuePath,
+            ResolvedAttributeFilter filter
+    ) {
+        List<String> values = filter.values();
+        return switch (filter.type()) {
+            case MULTI_SELECT -> {
+                List<Predicate> ors = new ArrayList<>(values.size());
+                for (String v : values) {
+                    // The stored value is the canonical Jackson-serialized JSON array, so the
+                    // exact JSON token ("escaped") is a reliable containment probe.
+                    String token = jsonToken(v);
+                    ors.add(cb.like(valuePath, "%" + likeEscape(token) + "%", '\\'));
+                }
+                yield cb.or(ors.toArray(new Predicate[0]));
+            }
+            case TEXT, LONGTEXT, URL, EMAIL -> {
+                List<Predicate> ors = new ArrayList<>(values.size());
+                for (String v : values) {
+                    String pattern = "%" + likeEscape(v.trim().toLowerCase()) + "%";
+                    ors.add(cb.like(cb.lower(valuePath), pattern, '\\'));
+                }
+                yield cb.or(ors.toArray(new Predicate[0]));
+            }
+            case INTEGER, DECIMAL, PRICE -> {
+                jakarta.persistence.criteria.Expression<java.math.BigDecimal> numeric =
+                        valuePath.as(java.math.BigDecimal.class);
+                List<Predicate> bounds = new ArrayList<>(2);
+                String min = filter.values().get(0);
+                String max = filter.values().get(1);
+                if (!min.isBlank()) bounds.add(cb.ge(numeric, new java.math.BigDecimal(min.trim())));
+                if (!max.isBlank()) bounds.add(cb.le(numeric, new java.math.BigDecimal(max.trim())));
+                yield cb.and(bounds.toArray(new Predicate[0]));
+            }
+            case DATE, DATETIME -> {
+                // Canonical values are ISO strings, so lexicographic comparison is chronological.
+                List<Predicate> bounds = new ArrayList<>(2);
+                String min = filter.values().get(0);
+                String max = filter.values().get(1);
+                if (!min.isBlank()) bounds.add(cb.greaterThanOrEqualTo(valuePath, min.trim()));
+                if (!max.isBlank()) bounds.add(cb.lessThanOrEqualTo(valuePath, max.trim()));
+                yield cb.and(bounds.toArray(new Predicate[0]));
+            }
+            case SELECT, BOOLEAN, MEMBER -> valuePath.in(values);
+        };
+    }
+
+    private List<ResolvedAttributeFilter> resolveAttributeFilters(
+            Organization org, PieceFilterCriteria criteria) {
+        if (criteria.attributeFilters().isEmpty()) {
+            return List.of();
+        }
+        List<ResolvedAttributeFilter> resolved = new ArrayList<>(criteria.attributeFilters().size());
+        for (PieceFilterCriteria.AttributeFilter filter : criteria.attributeFilters()) {
+            AttributeType type;
+            if (filter.scope() == AttributeScope.ORG) {
+                OrganizationPieceAttribute attribute = orgAttributeRepository
+                        .findById(filter.attributeId())
+                        .filter(a -> a.getOrganization().getId().equals(org.getId()))
+                        .orElseThrow(() -> invalidFilter("unknown org attribute: " + filter.attributeId()));
+                type = attribute.getType();
+            } else {
+                PieceTypeAttribute attribute = pieceTypeAttributeRepository
+                        .findById(filter.attributeId())
+                        .filter(a -> a.getPieceType().getOrganization().getId().equals(org.getId()))
+                        .orElseThrow(() -> invalidFilter("unknown type attribute: " + filter.attributeId()));
+                type = attribute.getType();
+            }
+            resolved.add(new ResolvedAttributeFilter(
+                    filter.scope(), filter.attributeId(), type,
+                    validateFilterValues(type, filter)));
+        }
+        return resolved;
+    }
+
+    private List<String> validateFilterValues(
+            AttributeType type, PieceFilterCriteria.AttributeFilter filter) {
+        List<String> values = filter.values();
+        switch (type) {
+            case INTEGER, DECIMAL, PRICE, DATE, DATETIME -> {
+                if (values.size() != 2) {
+                    throw invalidFilter("range filter needs exactly min|max: attribute "
+                            + filter.attributeId());
+                }
+                if (values.get(0).isBlank() && values.get(1).isBlank()) {
+                    throw invalidFilter("range filter needs at least one bound: attribute "
+                            + filter.attributeId());
+                }
+                if (type != AttributeType.DATE && type != AttributeType.DATETIME) {
+                    for (String bound : values) {
+                        if (bound.isBlank()) continue;
+                        try {
+                            new java.math.BigDecimal(bound.trim());
+                        } catch (NumberFormatException e) {
+                            throw invalidFilter("range bound is not a number: " + bound);
+                        }
+                    }
+                }
+                return values;
+            }
+            default -> {
+                List<String> nonBlank = values.stream().filter(v -> !v.isBlank()).toList();
+                if (nonBlank.isEmpty()) {
+                    throw invalidFilter("attribute filter has no values: attribute "
+                            + filter.attributeId());
+                }
+                return nonBlank;
+            }
+        }
+    }
+
+    private String jsonToken(String value) {
+        return FILTER_JSON.writeValueAsString(value);
+    }
+
+    private static String likeEscape(String value) {
+        return value
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
+    }
+
+    private static ApiException invalidFilter(String detail) {
+        return new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PIECES_FILTER_INVALID,
+                Map.of("detail", detail));
+    }
+
+    /** An attribute filter whose attribute has been resolved and validated against the org. */
+    private record ResolvedAttributeFilter(
+            AttributeScope scope, Integer attributeId, AttributeType type, List<String> values) {}
 
     @Transactional
     public Piece update(Integer orgId, Integer pieceId, UpdatePieceDto dto) {

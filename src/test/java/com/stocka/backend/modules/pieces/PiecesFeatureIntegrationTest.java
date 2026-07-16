@@ -606,6 +606,288 @@ class PiecesFeatureIntegrationTest {
     }
 
     @Nested
+    @DisplayName("Advanced filters (types + attributes)")
+    class AdvancedFilters {
+
+        /** Mirrors the frontend's per-token {@code encodeURIComponent} inside an attr param. */
+        private String enc(String value) {
+            return java.net.URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
+        }
+
+        private Integer createTypeWithAttr(String typeName, String attrName, String attrType,
+                                           Map<String, Object> validators) throws Exception {
+            Map<String, Object> attr = new java.util.HashMap<>();
+            attr.put("name", attrName);
+            attr.put("displayName", attrName);
+            attr.put("type", attrType);
+            attr.put("required", false);
+            if (validators != null) attr.put("validators", validators);
+            Map<String, Object> body = Map.of("name", typeName, "attributes", List.of(attr));
+            MvcResult r = mockMvc.perform(post("/organizations/" + orgSlug + "/piece-types")
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(body)))
+                    .andExpect(status().isCreated())
+                    .andReturn();
+            return (Integer) om.readValue(r.getResponse().getContentAsString(), Map.class).get("id");
+        }
+
+        private Integer createOrgAttribute(String name, String attrType,
+                                           Map<String, Object> validators) throws Exception {
+            Map<String, Object> body = new java.util.HashMap<>();
+            body.put("name", name);
+            body.put("displayName", name);
+            body.put("type", attrType);
+            body.put("required", false);
+            if (validators != null) body.put("validators", validators);
+            MvcResult r = mockMvc.perform(post("/organizations/" + orgSlug + "/piece-attributes")
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(body)))
+                    .andExpect(status().isCreated())
+                    .andReturn();
+            return (Integer) om.readValue(r.getResponse().getContentAsString(), Map.class).get("id");
+        }
+
+        private Integer createPieceWithValues(String name, List<Integer> typeIds,
+                                              List<Map<String, Object>> values) throws Exception {
+            Map<String, Object> body = new java.util.HashMap<>();
+            body.put("name", name);
+            body.put("pieceTypeIds", typeIds);
+            if (values != null && !values.isEmpty()) body.put("attributeValues", values);
+            MvcResult r = mockMvc.perform(post("/organizations/" + orgSlug + "/pieces")
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(om.writeValueAsString(body)))
+                    .andExpect(status().isCreated())
+                    .andReturn();
+            return (Integer) om.readValue(r.getResponse().getContentAsString(), Map.class).get("id");
+        }
+
+        private org.springframework.test.web.servlet.ResultActions listWith(String query) throws Exception {
+            return mockMvc.perform(get("/organizations/" + orgSlug + "/pieces" + query)
+                    .header("Authorization", "Bearer " + ownerToken));
+        }
+
+        /**
+         * Lists pieces passing each string as one {@code attr} request parameter, exactly as it
+         * reaches the servlet layer after the container's standard single URL-decoding.
+         */
+        private org.springframework.test.web.servlet.ResultActions listWithAttr(String... attrValues)
+                throws Exception {
+            return mockMvc.perform(get("/organizations/" + orgSlug + "/pieces")
+                    .param("attr", attrValues)
+                    .header("Authorization", "Bearer " + ownerToken));
+        }
+
+        @Test
+        @DisplayName("typeIds is OR across types and never duplicates multi-type pieces")
+        void list_multipleTypeIds_orSemantics() throws Exception {
+            Integer typeA = createSimpleTypeAs(ownerToken, "TypeA", false);
+            Integer typeB = createSimpleTypeAs(ownerToken, "TypeB", false);
+            createPieceWithValues("OnlyA", List.of(typeA), null);
+            createPieceWithValues("OnlyB", List.of(typeB), null);
+            createPieceWithValues("Both", List.of(typeA, typeB), null);
+
+            listWith("?typeIds=" + typeA + "&typeIds=" + typeB)
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content.length()").value(3))
+                    .andExpect(jsonPath("$.totalElements").value(3));
+
+            listWith("?typeIds=" + typeB)
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content.length()").value(2));
+        }
+
+        @Test
+        @DisplayName("SELECT attribute filter matches any of the given values (OR)")
+        void list_selectAttribute_multipleValues() throws Exception {
+            Integer typeId = createTypeWithAttr("Tool", "color", "SELECT",
+                    Map.of("options", List.of("red", "blue", "green")));
+            Integer attrId = firstAttributeIdOfType(typeId);
+            createPieceWithValues("Red", List.of(typeId),
+                    List.of(Map.of("attributeId", attrId, "value", "red")));
+            createPieceWithValues("Blue", List.of(typeId),
+                    List.of(Map.of("attributeId", attrId, "value", "blue")));
+            createPieceWithValues("Green", List.of(typeId),
+                    List.of(Map.of("attributeId", attrId, "value", "green")));
+
+            listWithAttr("TYPE:" + attrId + ":red|blue")
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content.length()").value(2));
+        }
+
+        @Test
+        @DisplayName("org-scope attribute filter works and distinct attributes are AND-ed")
+        void list_orgAttribute_andBetweenAttributes() throws Exception {
+            Integer typeId = createTypeWithAttr("Tool", "color", "SELECT",
+                    Map.of("options", List.of("red", "blue")));
+            Integer colorId = firstAttributeIdOfType(typeId);
+            Integer certifiedId = createOrgAttribute("certified", "BOOLEAN", null);
+
+            createPieceWithValues("RedCertified", List.of(typeId), List.of(
+                    Map.of("attributeId", colorId, "value", "red"),
+                    Map.of("attributeId", certifiedId, "scope", "ORG", "value", "true")));
+            createPieceWithValues("RedUncertified", List.of(typeId), List.of(
+                    Map.of("attributeId", colorId, "value", "red"),
+                    Map.of("attributeId", certifiedId, "scope", "ORG", "value", "false")));
+
+            listWithAttr("ORG:" + certifiedId + ":true")
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content.length()").value(1))
+                    .andExpect(jsonPath("$.content[0].name").value("RedCertified"));
+
+            listWithAttr("TYPE:" + colorId + ":red", "ORG:" + certifiedId + ":true")
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content.length()").value(1))
+                    .andExpect(jsonPath("$.content[0].name").value("RedCertified"));
+        }
+
+        @Test
+        @DisplayName("MULTI_SELECT filter means contains-any, surviving quotes, backslashes and pipes")
+        void list_multiSelectContainsAny_withEscaping() throws Exception {
+            String quoted = "he said \"hi\"";
+            String slashed = "back\\slash";
+            String piped = "a|b";
+            Integer typeId = createTypeWithAttr("Tool", "tags", "MULTI_SELECT",
+                    Map.of("options", List.of(quoted, slashed, piped, "plain")));
+            Integer attrId = firstAttributeIdOfType(typeId);
+
+            createPieceWithValues("Quoted", List.of(typeId), List.of(Map.of(
+                    "attributeId", attrId, "value", om.writeValueAsString(List.of(quoted, "plain")))));
+            createPieceWithValues("Piped", List.of(typeId), List.of(Map.of(
+                    "attributeId", attrId, "value", om.writeValueAsString(List.of(piped)))));
+            createPieceWithValues("Plain", List.of(typeId), List.of(Map.of(
+                    "attributeId", attrId, "value", om.writeValueAsString(List.of("plain")))));
+
+            listWithAttr("TYPE:" + attrId + ":" + enc(quoted) + "|" + enc(piped))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content.length()").value(2));
+
+            listWithAttr("TYPE:" + attrId + ":" + enc(slashed))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content.length()").value(0));
+        }
+
+        @Test
+        @DisplayName("TEXT attribute filter is case-insensitive contains")
+        void list_textAttribute_containsCaseInsensitive() throws Exception {
+            Integer typeId = createSimpleTypeAs(ownerToken, "Tool", false);
+            Integer attrId = firstAttributeIdOfType(typeId);
+            createPieceWithValues("Uno", List.of(typeId),
+                    List.of(Map.of("attributeId", attrId, "value", "Aluminio Rojo")));
+            createPieceWithValues("Dos", List.of(typeId),
+                    List.of(Map.of("attributeId", attrId, "value", "acero mate")));
+
+            listWithAttr("TYPE:" + attrId + ":ROJO")
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content.length()").value(1))
+                    .andExpect(jsonPath("$.content[0].name").value("Uno"));
+        }
+
+        @Test
+        @DisplayName("INTEGER attribute filters by numeric range with open bounds")
+        void list_integerRange() throws Exception {
+            Integer typeId = createTypeWithAttr("Tool", "weight", "INTEGER", null);
+            Integer attrId = firstAttributeIdOfType(typeId);
+            createPieceWithValues("Five", List.of(typeId),
+                    List.of(Map.of("attributeId", attrId, "value", "5")));
+            createPieceWithValues("Ten", List.of(typeId),
+                    List.of(Map.of("attributeId", attrId, "value", "10")));
+            createPieceWithValues("TwentyFive", List.of(typeId),
+                    List.of(Map.of("attributeId", attrId, "value", "25")));
+
+            listWithAttr("TYPE:" + attrId + ":6|20")
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content.length()").value(1))
+                    .andExpect(jsonPath("$.content[0].name").value("Ten"));
+
+            listWithAttr("TYPE:" + attrId + ":|9")
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content.length()").value(1))
+                    .andExpect(jsonPath("$.content[0].name").value("Five"));
+
+            listWithAttr("TYPE:" + attrId + ":8|")
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content.length()").value(2));
+        }
+
+        @Test
+        @DisplayName("DATE attribute filters by date range")
+        void list_dateRange() throws Exception {
+            Integer typeId = createTypeWithAttr("Tool", "bought", "DATE", null);
+            Integer attrId = firstAttributeIdOfType(typeId);
+            createPieceWithValues("Old", List.of(typeId),
+                    List.of(Map.of("attributeId", attrId, "value", "2024-01-15")));
+            createPieceWithValues("New", List.of(typeId),
+                    List.of(Map.of("attributeId", attrId, "value", "2025-06-01")));
+
+            listWithAttr("TYPE:" + attrId + ":2024-01-01|2024-12-31")
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content.length()").value(1))
+                    .andExpect(jsonPath("$.content[0].name").value("Old"));
+        }
+
+        @Test
+        @DisplayName("malformed or foreign attr filters return 400")
+        void list_invalidAttrFilters_return400() throws Exception {
+            Integer typeId = createTypeWithAttr("Tool", "weight", "INTEGER", null);
+            Integer attrId = firstAttributeIdOfType(typeId);
+
+            listWithAttr("FOO:1:x").andExpect(status().isBadRequest());
+            listWithAttr("TYPE:abc:x").andExpect(status().isBadRequest());
+            listWithAttr("TYPE:" + attrId + ":").andExpect(status().isBadRequest());
+            listWithAttr("TYPE:" + attrId + ":|").andExpect(status().isBadRequest());
+            listWithAttr("TYPE:" + attrId + ":abc|").andExpect(status().isBadRequest());
+            listWithAttr("TYPE:" + attrId + ":1|2|3").andExpect(status().isBadRequest());
+            listWithAttr("TYPE:999999:x").andExpect(status().isBadRequest());
+            listWithAttr("ORG:999999:x").andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("attr filter referencing another organization's attribute returns 400")
+        void list_attrFromOtherOrg_returns400() throws Exception {
+            // Seeded via bare SQL (like addMember) because creating a second org through the API
+            // collides with the manually-inserted membership ids of this fixture.
+            Long otherOrgId = jdbcTemplate.queryForObject(
+                    "SELECT COALESCE(MAX(id), 0) + 1 FROM organizations", Long.class);
+            jdbcTemplate.update(
+                    "INSERT INTO organizations (id, name, slug, created_at, updated_at) "
+                            + "VALUES (?, 'Other', 'other', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                    otherOrgId);
+            Long foreignId = jdbcTemplate.queryForObject(
+                    "SELECT COALESCE(MAX(id), 0) + 1 FROM organization_piece_attributes", Long.class);
+            jdbcTemplate.update(
+                    "INSERT INTO organization_piece_attributes "
+                            + "(id, organization_id, name, display_name, type, is_required, position, "
+                            + "created_at, updated_at) "
+                            + "VALUES (?, ?, 'foreign', 'Foreign', 'TEXT', FALSE, 0, "
+                            + "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                    foreignId, otherOrgId);
+
+            listWithAttr("ORG:" + foreignId + ":x").andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("legacy typeId keeps working and merges with typeIds")
+        void list_legacyTypeId_mergesWithTypeIds() throws Exception {
+            Integer typeA = createSimpleTypeAs(ownerToken, "TypeA", false);
+            Integer typeB = createSimpleTypeAs(ownerToken, "TypeB", false);
+            createPieceWithValues("OnlyA", List.of(typeA), null);
+            createPieceWithValues("OnlyB", List.of(typeB), null);
+
+            listWith("?typeId=" + typeA)
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content.length()").value(1))
+                    .andExpect(jsonPath("$.content[0].name").value("OnlyA"));
+
+            listWith("?typeId=" + typeA + "&typeIds=" + typeB)
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content.length()").value(2));
+        }
+    }
+
+    @Nested
     @DisplayName("Attachments")
     class Attachments {
 

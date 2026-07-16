@@ -187,6 +187,18 @@ class PieceImportExportIntegrationTest {
         }
 
         @Test
+        @DisplayName("export honors advanced attr filters, excluding non-matching rows")
+        void export_respectsAttributeFilter() throws Exception {
+            Integer typeId = createType("Tool", "color", "Color", "TEXT", true);
+            Integer attrId = firstAttributeId(typeId);
+            createPiece(typeId, "Hammer", "SN-1", attrId, "red");
+            createPiece(typeId, "Anvil", "SN-2", attrId, "blue");
+
+            String csv = exportCsv(ownerToken, "&attr=TYPE:" + attrId + ":red");
+            Assertions.assertThat(csv).contains("Hammer").doesNotContain("Anvil");
+        }
+
+        @Test
         @DisplayName("empty organization exports just the header row")
         void export_empty() throws Exception {
             String csv = exportCsv(ownerToken, "");

@@ -24,10 +24,10 @@ import com.stocka.backend.modules.organizations.entity.OrganizationPieceAttribut
 import com.stocka.backend.modules.organizations.repository.OrganizationPieceAttributeRepository;
 import com.stocka.backend.modules.organizations.service.OrganizationService;
 import com.stocka.backend.modules.pieces.dto.AttributeScope;
+import com.stocka.backend.modules.pieces.dto.PieceFilterCriteria;
 import com.stocka.backend.modules.pieces.entity.Piece;
 import com.stocka.backend.modules.pieces.entity.PieceAttributeValue;
 import com.stocka.backend.modules.pieces.entity.PieceOrganizationAttributeValue;
-import com.stocka.backend.modules.pieces.entity.PieceStatus;
 import com.stocka.backend.modules.pieces.importexport.config.PieceImportExportProperties;
 import com.stocka.backend.modules.pieces.importexport.dto.SpreadsheetFormat;
 import com.stocka.backend.modules.pieces.importexport.format.SpreadsheetSerializer;
@@ -84,23 +84,17 @@ public class PieceExportService {
     /**
      * Exports the organization's pieces matching the given filters.
      *
-     * @param orgId       organization id
-     * @param typeId      optional piece-type filter
-     * @param locationId  optional location filter
-     * @param ownerUserId optional owner filter
-     * @param status      optional status filter
-     * @param q           optional name/description search
-     * @param format      target file format
+     * @param orgId    organization id
+     * @param criteria parsed filters, shared with the piece listing endpoint
+     * @param format   target file format
      * @return the serialized file bytes
      * @throws ApiException 422 ({@code pieces.export.too_many_rows}) when the result exceeds the cap
      */
     @Transactional(readOnly = true)
-    public byte[] export(Integer orgId, Integer typeId, Integer locationId, Integer ownerUserId,
-                         PieceStatus status, String q, SpreadsheetFormat format) {
+    public byte[] export(Integer orgId, PieceFilterCriteria criteria, SpreadsheetFormat format) {
         Organization org = organizationService.findById(orgId);
         int cap = properties.getMaxExportRows();
-        List<Piece> pieces = pieceService.findAllForExport(orgId, typeId, locationId, ownerUserId,
-                status, q, cap + 1);
+        List<Piece> pieces = pieceService.findAllForExport(orgId, criteria, cap + 1);
         if (pieces.size() > cap) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT,
                     ErrorCodes.PIECES_EXPORT_TOO_MANY_ROWS, Map.of("max", cap));

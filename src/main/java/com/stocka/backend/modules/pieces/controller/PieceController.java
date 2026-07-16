@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.stocka.backend.modules.organizations.service.OrganizationResolver;
 import com.stocka.backend.modules.pieces.dto.CreatePieceDto;
+import com.stocka.backend.modules.pieces.dto.PieceFilterCriteria;
 import com.stocka.backend.modules.pieces.dto.PieceAttachmentResponseDto;
 import com.stocka.backend.modules.pieces.dto.PieceAttributeValueResponseDto;
 import com.stocka.backend.modules.pieces.dto.PieceListItemDto;
@@ -29,6 +30,7 @@ import com.stocka.backend.modules.pieces.dto.UpdatePieceDto;
 import com.stocka.backend.modules.pieces.entity.Piece;
 import com.stocka.backend.modules.pieces.entity.PieceStatus;
 import com.stocka.backend.modules.pieces.repository.PieceAttachmentRepository;
+import com.stocka.backend.modules.pieces.service.PieceFilterParamParser;
 import com.stocka.backend.modules.pieces.service.PieceService;
 
 @RestController
@@ -37,15 +39,18 @@ public class PieceController {
     private final PieceService pieceService;
     private final PieceAttachmentRepository attachmentRepository;
     private final OrganizationResolver orgResolver;
+    private final PieceFilterParamParser filterParser;
 
     public PieceController(
             PieceService pieceService,
             PieceAttachmentRepository attachmentRepository,
-            OrganizationResolver orgResolver
+            OrganizationResolver orgResolver,
+            PieceFilterParamParser filterParser
     ) {
         this.pieceService = pieceService;
         this.attachmentRepository = attachmentRepository;
         this.orgResolver = orgResolver;
+        this.filterParser = filterParser;
     }
 
     @PostMapping
@@ -59,19 +64,29 @@ public class PieceController {
         return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(piece));
     }
 
+    /**
+     * Paginated piece listing with optional filters. Besides the scalar filters, accepts
+     * repeatable {@code typeIds} (OR semantics; {@code typeId} kept for backward compatibility)
+     * and repeatable {@code attr} parameters encoded as
+     * {@code <scope>:<attributeId>:<v1>|<v2>|...} (see {@link PieceFilterParamParser}).
+     */
     @GetMapping
     @PreAuthorize("@orgSecurity.canReadOrgContent(#orgSlug, principal)")
     public ResponseEntity<Page<PieceListItemDto>> list(
             @PathVariable String orgSlug,
             @RequestParam(required = false) Integer typeId,
+            @RequestParam(required = false) List<Integer> typeIds,
             @RequestParam(required = false) Integer locationId,
             @RequestParam(required = false) Integer ownerUserId,
             @RequestParam(required = false) PieceStatus status,
             @RequestParam(required = false) String q,
+            @RequestParam(name = "attr", required = false) List<String> attr,
             @PageableDefault(size = 20, sort = "updatedAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
         Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
-        Page<Piece> page = pieceService.list(orgId, typeId, locationId, ownerUserId, status, q, pageable);
+        PieceFilterCriteria criteria = filterParser.parse(
+                typeId, typeIds, locationId, ownerUserId, status, q, attr);
+        Page<Piece> page = pieceService.list(orgId, criteria, pageable);
         return ResponseEntity.ok(page.map(PieceListItemDto::from));
     }
 
