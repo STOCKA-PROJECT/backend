@@ -1,0 +1,14 @@
+target/
+.git/
+.github/
+.idea/
+.vscode/
+.claude/
+.mvn/
+mvnw
+mvnw.cmd
+bruno/
+*.md
+*.log
+.env
+.env.*
