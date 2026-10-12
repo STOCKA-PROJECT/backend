@@ -1,0 +1,38 @@
+meta {
+  name: Create Port (motor)
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/ports
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Angel",
+    "kind": "motor",
+    "pieceTypeId": {{pieceTypeId}},
+    "config": {
+      "pinR": 3,
+      "pinL": 4,
+      "sensorPin": 7,
+      "downTime": 15
+    }
+  }
+}
+
+docs {
+  Sin pin: los tres pines van en config y cuentan para los conflictos de pin de la organización.
+  Requiere un tipo con kind=motor.
+}

@@ -1,7 +1,7 @@
 meta {
-  name: Update Port
+  name: Update Port (rename / pin / config)
   type: http
-  seq: 3
+  seq: 11
 }
 
 patch {
@@ -20,7 +20,14 @@ auth:bearer {
 
 body:json {
   {
-    "name": "Salida tira led 1 (renombrada)",
+    "name": "Sembra 2",
     "pin": 22
   }
+}
+
+docs {
+  Campos nulos = sin cambio. `config` reemplaza toda la configuración y se re-valida.
+  `kind` solo se admite con el valor actual (400 ports.kind_immutable). Renombrar una tira
+  actualiza el `strip` de sus segmentos; acortarla por debajo de un segmento responde
+  400 ports.strip_shrink_breaks_segment.
 }

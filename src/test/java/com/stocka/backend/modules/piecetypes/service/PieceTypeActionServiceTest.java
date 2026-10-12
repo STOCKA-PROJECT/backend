@@ -3,6 +3,7 @@ package com.stocka.backend.modules.piecetypes.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -15,6 +16,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.stocka.backend.modules.common.error.ApiException;
+import com.stocka.backend.modules.common.error.ErrorCodes;
+import com.stocka.backend.modules.contract.OutputCatalog;
+import com.stocka.backend.modules.contract.OutputKind;
 import com.stocka.backend.modules.piecetypes.dto.ActionParameterDto;
 import com.stocka.backend.modules.piecetypes.dto.CreatePieceTypeActionDto;
 import com.stocka.backend.modules.piecetypes.dto.PieceTypeActionResponseDto;
@@ -40,7 +45,8 @@ class PieceTypeActionServiceTest {
     @BeforeEach
     void setUp() {
         ActionParametersJsonCodec codec = new ActionParametersJsonCodec();
-        sut = new PieceTypeActionService(pieceTypeService, actionRepository, codec);
+        sut = new PieceTypeActionService(pieceTypeService, actionRepository, codec,
+                new ActionCatalogValidator(new OutputCatalog()));
         type = new PieceType().setId(TYPE_ID).setName("Pieza Movimiento");
     }
 
@@ -427,6 +433,117 @@ class PieceTypeActionServiceTest {
             PieceTypeAction action = sut.create(ORG_ID, TYPE_ID, encenderWith(param));
 
             assertThat(sut.parametersOf(action).get(0).getIsDuration()).isFalse();
+        }
+    }
+
+    /**
+     * When the owning type has an output kind, the action must exist in the catalog for that kind.
+     * Types without kind (like {@code type} above) accept any action.
+     */
+    @org.junit.jupiter.api.Nested
+    @DisplayName("catalog validation (typed piece types)")
+    class CatalogValidation {
+
+        private static final Integer TYPED_ID = 6;
+        private PieceType relayType;
+
+        @org.junit.jupiter.api.BeforeEach
+        void setUpTyped() {
+            relayType = new PieceType().setId(TYPED_ID).setName("Figura amb relé").setKind(OutputKind.RELAY);
+            // Lenient: the untyped-type test below resolves another type id.
+            lenient().when(pieceTypeService.findInOrg(ORG_ID, TYPED_ID)).thenReturn(relayType);
+        }
+
+        private CreatePieceTypeActionDto turnOn() {
+            return new CreatePieceTypeActionDto().setName("turn_on").setDisplayName("Encendre")
+                    .setParameters(List.of(new ActionParameterDto().setName("time").setType(AttributeType.DECIMAL)
+                            .setRequired(false).setDynamic(true).setIsDuration(true)));
+        }
+
+        @Test
+        @DisplayName("create accepts a catalog action of the type's kind")
+        void create_should_acceptCatalogAction() {
+            when(actionRepository.findByPieceTypeAndName(relayType, "turn_on")).thenReturn(java.util.Optional.empty());
+            when(actionRepository.findByPieceTypeOrderByPositionAscIdAsc(relayType)).thenReturn(List.of());
+            when(actionRepository.saveAndFlush(any(PieceTypeAction.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            PieceTypeAction action = sut.create(ORG_ID, TYPED_ID, turnOn());
+
+            assertThat(action.getName()).isEqualTo("turn_on");
+            assertThat(sut.parametersOf(action).get(0).getIsDuration()).isTrue();
+        }
+
+        @Test
+        @DisplayName("create rejects an action the kind does not have with piece_types.action_not_in_catalog")
+        void create_should_rejectUnknownAction() {
+            when(actionRepository.findByPieceTypeAndName(relayType, "encender")).thenReturn(java.util.Optional.empty());
+            when(actionRepository.findByPieceTypeOrderByPositionAscIdAsc(relayType)).thenReturn(List.of());
+
+            assertThatThrownBy(() -> sut.create(ORG_ID, TYPED_ID, encenderWithTiempo()))
+                    .isInstanceOfSatisfying(ApiException.class, ex ->
+                            assertThat(ex.getCode()).isEqualTo(ErrorCodes.PIECE_TYPES_ACTION_NOT_IN_CATALOG));
+            org.mockito.Mockito.verify(actionRepository, org.mockito.Mockito.never()).saveAndFlush(any());
+        }
+
+        @Test
+        @DisplayName("create rejects a parameter the catalog action does not have")
+        void create_should_rejectUnknownParam() {
+            when(actionRepository.findByPieceTypeAndName(relayType, "turn_on")).thenReturn(java.util.Optional.empty());
+            when(actionRepository.findByPieceTypeOrderByPositionAscIdAsc(relayType)).thenReturn(List.of());
+            CreatePieceTypeActionDto dto = turnOn().setParameters(List.of(
+                    new ActionParameterDto().setName("tiempo").setType(AttributeType.INTEGER).setDynamic(true)));
+
+            assertThatThrownBy(() -> sut.create(ORG_ID, TYPED_ID, dto))
+                    .isInstanceOfSatisfying(ApiException.class, ex ->
+                            assertThat(ex.getCode()).isEqualTo(ErrorCodes.PIECE_TYPES_ACTION_PARAM_UNKNOWN));
+        }
+
+        @Test
+        @DisplayName("update re-validates when the name changes")
+        void update_should_revalidateOnRename() {
+            PieceTypeAction existing = new PieceTypeAction().setId(9).setName("turn_on").setPieceType(relayType).setParametersJson("[]");
+            when(actionRepository.findById(9)).thenReturn(java.util.Optional.of(existing));
+            when(actionRepository.findByPieceTypeAndName(relayType, "fill")).thenReturn(java.util.Optional.empty());
+
+            assertThatThrownBy(() -> sut.update(ORG_ID, TYPED_ID, 9, new UpdatePieceTypeActionDto().setName("fill")))
+                    .isInstanceOfSatisfying(ApiException.class, ex ->
+                            assertThat(ex.getCode()).isEqualTo(ErrorCodes.PIECE_TYPES_ACTION_NOT_IN_CATALOG));
+        }
+
+        @Test
+        @DisplayName("update re-validates when the parameters change")
+        void update_should_revalidateOnParams() {
+            PieceTypeAction existing = new PieceTypeAction().setId(9).setName("turn_on").setPieceType(relayType).setParametersJson("[]");
+            when(actionRepository.findById(9)).thenReturn(java.util.Optional.of(existing));
+            UpdatePieceTypeActionDto dto = new UpdatePieceTypeActionDto().setParameters(List.of(
+                    new ActionParameterDto().setName("volume").setType(AttributeType.INTEGER).setDynamic(true)));
+
+            assertThatThrownBy(() -> sut.update(ORG_ID, TYPED_ID, 9, dto))
+                    .isInstanceOfSatisfying(ApiException.class, ex ->
+                            assertThat(ex.getCode()).isEqualTo(ErrorCodes.PIECE_TYPES_ACTION_PARAM_UNKNOWN));
+        }
+
+        @Test
+        @DisplayName("update of display name only does not re-validate a legacy action")
+        void update_should_skipValidationWithoutNameOrParams() {
+            PieceTypeAction legacy = new PieceTypeAction().setId(9).setName("encender").setPieceType(relayType).setParametersJson("[]");
+            when(actionRepository.findById(9)).thenReturn(java.util.Optional.of(legacy));
+            when(actionRepository.saveAndFlush(any(PieceTypeAction.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            PieceTypeAction updated = sut.update(ORG_ID, TYPED_ID, 9, new UpdatePieceTypeActionDto().setDisplayName("Encendre"));
+
+            assertThat(updated.getDisplayName()).isEqualTo("Encendre");
+        }
+
+        @Test
+        @DisplayName("an untyped piece type still accepts any action name")
+        void create_should_skipValidationForUntypedType() {
+            when(pieceTypeService.findInOrg(ORG_ID, TYPE_ID)).thenReturn(type);
+            when(actionRepository.findByPieceTypeAndName(type, "encender")).thenReturn(java.util.Optional.empty());
+            when(actionRepository.findByPieceTypeOrderByPositionAscIdAsc(type)).thenReturn(List.of());
+            when(actionRepository.saveAndFlush(any(PieceTypeAction.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            assertThat(sut.create(ORG_ID, TYPE_ID, encenderWithTiempo()).getName()).isEqualTo("encender");
         }
     }
 }

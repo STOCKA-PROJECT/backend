@@ -8,10 +8,13 @@ import org.hibernate.annotations.SQLRestriction;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.stocka.backend.modules.contract.OutputKind;
 import com.stocka.backend.modules.organizations.entity.Organization;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -23,6 +26,10 @@ import jakarta.persistence.UniqueConstraint;
 /**
  * Reusable category of pieces inside an organization. Defines a schema of attributes (see
  * {@link PieceTypeAttribute}) that every piece of this type must respect.
+ *
+ * <p>{@link #kind} is optional: when set, the type drives hardware of that {@link OutputKind}, its
+ * actions must come from the output catalog for that kind, and every port created for the type must
+ * be of the same kind. A type without kind is inventory-only.
  */
 @Entity
 @Table(
@@ -44,6 +51,10 @@ public class PieceType {
 
     @Column(nullable = false, length = 120)
     private String name;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 32)
+    private OutputKind kind;
 
     @CreationTimestamp
     @Column(updatable = false, name = "created_at")
@@ -81,6 +92,15 @@ public class PieceType {
 
     public PieceType setName(String name) {
         this.name = name;
+        return this;
+    }
+
+    public OutputKind getKind() {
+        return kind;
+    }
+
+    public PieceType setKind(OutputKind kind) {
+        this.kind = kind;
         return this;
     }
 

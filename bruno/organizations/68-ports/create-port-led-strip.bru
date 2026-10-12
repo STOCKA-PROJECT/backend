@@ -1,0 +1,37 @@
+meta {
+  name: Create Port (led_strip, infrastructure)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/ports
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "LedStrip3",
+    "kind": "led_strip",
+    "pin": 13,
+    "config": {
+      "dma": 10,
+      "channel": 1,
+      "length": 300
+    }
+  }
+}
+
+docs {
+  Sin pieceTypeId (infraestructura). El pin debe admitir WS281x (12, 18 → channel 0; 13, 19 → channel 1;
+  10 SPI y 21 PCM → channel 0) y `channel` debe coincidir. `brightness`, `freq_hz` e `invert` son opcionales.
+}

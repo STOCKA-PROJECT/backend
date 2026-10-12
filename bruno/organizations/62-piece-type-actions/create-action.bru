@@ -1,0 +1,66 @@
+meta {
+  name: Create Action (animate fade, catalog-validated)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/piece-types/{{pieceTypeId}}/actions
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "animate",
+    "displayName": "Fos",
+    "description": "Fos de color al segment",
+    "parameters": [
+      {
+        "name": "animation_type",
+        "displayName": "Animació",
+        "type": "SELECT",
+        "required": true,
+        "dynamic": false,
+        "staticValue": "fade",
+        "validators": { "options": ["fade"] }
+      },
+      {
+        "name": "color",
+        "displayName": "Color",
+        "type": "TEXT",
+        "required": true,
+        "dynamic": true
+      },
+      {
+        "name": "from_color",
+        "displayName": "Color inicial",
+        "type": "TEXT",
+        "required": false,
+        "dynamic": true
+      },
+      {
+        "name": "duration",
+        "displayName": "Durada (s)",
+        "type": "DECIMAL",
+        "required": false,
+        "dynamic": true,
+        "isDuration": true
+      }
+    ]
+  }
+}
+
+docs {
+  Requiere un tipo con kind=led_segment (create-piece-type-with-kind). Los nombres de acción
+  y de parámetro son los del catálogo (GET /contract/catalog). Los colores se escriben como
+  "[255,50,0]", "255,50,0" o "#ff3200". Captura `actionId`.
+}

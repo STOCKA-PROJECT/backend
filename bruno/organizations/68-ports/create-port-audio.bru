@@ -1,0 +1,31 @@
+meta {
+  name: Create Port (audio)
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/ports
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Audio",
+    "kind": "audio",
+    "pieceTypeId": {{pieceTypeId}}
+  }
+}
+
+docs {
+  Sin pin ni config. Requiere un tipo con kind=audio (igual para video).
+}

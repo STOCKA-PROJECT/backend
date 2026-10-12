@@ -65,6 +65,16 @@ public final class ErrorCodes {
     public static final String PIECE_TYPES_ATTRIBUTE_INVALID = "piece_types.attribute_invalid";
     public static final String PIECE_TYPES_NAME_CONFLICT = "piece_types.name_conflict";
     public static final String PIECE_TYPES_ATTRIBUTE_NAME_CONFLICT = "piece_types.attribute_name_conflict";
+    public static final String PIECE_TYPES_KIND_INVALID = "piece_types.kind_invalid";
+    public static final String PIECE_TYPES_KIND_CHANGE_INVALID = "piece_types.kind_change_invalid";
+    public static final String PIECE_TYPES_KIND_IN_USE = "piece_types.kind_in_use";
+    public static final String PIECE_TYPES_ACTION_NOT_IN_CATALOG = "piece_types.action_not_in_catalog";
+    public static final String PIECE_TYPES_ACTION_PARAM_UNKNOWN = "piece_types.action_param_unknown";
+    public static final String PIECE_TYPES_ACTION_PARAM_MISSING = "piece_types.action_param_missing";
+    public static final String PIECE_TYPES_ACTION_PARAM_TYPE_MISMATCH = "piece_types.action_param_type_mismatch";
+    public static final String PIECE_TYPES_ACTION_PARAM_OPTIONS_INVALID = "piece_types.action_param_options_invalid";
+    public static final String PIECE_TYPES_ACTION_PARAM_STATIC_INVALID = "piece_types.action_param_static_invalid";
+    public static final String PIECE_TYPES_ACTION_DURATION_PARAM_MISMATCH = "piece_types.action_duration_param_mismatch";
     public static final String LOCATIONS_NOT_FOUND = "locations.not_found";
 
     // ---- timelines ------------------------------------------------------
@@ -88,6 +98,23 @@ public final class ErrorCodes {
     public static final String PORTS_PIECE_TYPE_REQUIRED = "ports.piece_type_required";
     public static final String PORTS_PIN_INVALID = "ports.pin_invalid";
     public static final String PORTS_PIN_CONFLICT = "ports.pin_conflict";
+    public static final String PORTS_KIND_REQUIRED = "ports.kind_required";
+    public static final String PORTS_KIND_INVALID = "ports.kind_invalid";
+    public static final String PORTS_KIND_IMMUTABLE = "ports.kind_immutable";
+    public static final String PORTS_PIN_NOT_ALLOWED = "ports.pin_not_allowed";
+    public static final String PORTS_PIN_RESERVED = "ports.pin_reserved";
+    public static final String PORTS_PIECE_TYPE_KIND_MISMATCH = "ports.piece_type_kind_mismatch";
+    public static final String PORTS_CONFIG_UNKNOWN_KEY = "ports.config_unknown_key";
+    public static final String PORTS_CONFIG_MISSING_KEY = "ports.config_missing_key";
+    public static final String PORTS_CONFIG_TYPE_MISMATCH = "ports.config_type_mismatch";
+    public static final String PORTS_CONFIG_OUT_OF_RANGE = "ports.config_out_of_range";
+    public static final String PORTS_MOTOR_PINS_NOT_DISTINCT = "ports.motor_pins_not_distinct";
+    public static final String PORTS_STRIP_PIN_UNSUPPORTED = "ports.strip_pin_unsupported";
+    public static final String PORTS_STRIP_CHANNEL_MISMATCH = "ports.strip_channel_mismatch";
+    public static final String PORTS_SEGMENT_STRIP_NOT_FOUND = "ports.segment_strip_not_found";
+    public static final String PORTS_SEGMENT_OUT_OF_RANGE = "ports.segment_out_of_range";
+    public static final String PORTS_STRIP_SHRINK_BREAKS_SEGMENT = "ports.strip_shrink_breaks_segment";
+    public static final String PORTS_STRIP_IN_USE = "ports.strip_in_use";
 
     // ---- contacts --------------------------------------------------------
     public static final String CONTACTS_NOT_FOUND = "contacts.not_found";

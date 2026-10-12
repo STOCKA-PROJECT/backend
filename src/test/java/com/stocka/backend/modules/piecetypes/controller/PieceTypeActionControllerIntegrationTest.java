@@ -122,6 +122,47 @@ class PieceTypeActionControllerIntegrationTest {
                 .andExpect(jsonPath("$.pieceTypeActionsEnabled").value(false));
     }
 
+    @Test
+    @DisplayName("a piece type with a kind only accepts catalog actions of that kind")
+    void typedPieceType_validatesAgainstCatalog() throws Exception {
+        MvcResult r = mockMvc.perform(post("/organizations/" + acmeSlug + "/piece-types")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of("name", "Figura amb relé", "kind", "relay"))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.kind").value("relay"))
+                .andReturn();
+        Integer relayTypeId = (Integer) om.readValue(r.getResponse().getContentAsString(), Map.class).get("id");
+
+        createAction(adminToken, acmeSlug, relayTypeId)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("piece_types.action_not_in_catalog"));
+
+        Map<String, Object> time = Map.of("name", "time", "displayName", "Temps", "type", "DECIMAL",
+                "required", false, "dynamic", true, "isDuration", true);
+        mockMvc.perform(post(actionsPath(acmeSlug, relayTypeId))
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of("name", "turn_on", "displayName", "Encendre", "parameters", List.of(time)))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name").value("turn_on"))
+                .andExpect(jsonPath("$.parameters[0].isDuration").value(true));
+    }
+
+    @Test
+    @DisplayName("a piece type cannot switch to a kind its actions do not fit")
+    void pieceType_kindChange_isValidatedAgainstActions() throws Exception {
+        createAction(adminToken, acmeSlug, acmeTypeId).andExpect(status().isCreated());
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(
+                        "/organizations/" + acmeSlug + "/piece-types/" + acmeTypeId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of("kind", "relay"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("piece_types.kind_change_invalid"));
+    }
+
     // ---------- helpers ----------
 
     private String actionsPath(String slug, Integer typeId) {

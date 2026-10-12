@@ -54,6 +54,7 @@ class PortControllerIntegrationTest {
     private String outsiderToken;
     private String acmeSlug;
     private Integer acmePieceTypeId;
+    private Integer acmeSegmentTypeId;
     private String betaSlug;
 
     @BeforeEach
@@ -65,7 +66,8 @@ class PortControllerIntegrationTest {
         // done last so their hand-computed ids cannot collide with a Hibernate-assigned one.
         adminToken = login(mockMvc, om, ADMIN_EMAIL, ADMIN_PASSWORD);
         acmeSlug = createOrg(adminToken, "Acme", "acme");
-        acmePieceTypeId = createPieceType(adminToken, acmeSlug, "Pieza Movimiento");
+        acmePieceTypeId = createPieceType(adminToken, acmeSlug, "Pieza Movimiento", "relay");
+        acmeSegmentTypeId = createPieceType(adminToken, acmeSlug, "Edifici amb llum", "led_segment");
 
         outsiderToken = signupAndLogin(mockMvc, om, jdbcTemplate, "out@test.com", "outsider");
         betaSlug = createOrg(outsiderToken, "Beta", "beta");
@@ -87,6 +89,8 @@ class PortControllerIntegrationTest {
         createPort(adminToken, acmeSlug, "Salida tira led 1", 21, acmePieceTypeId)
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.name").value("Salida tira led 1"))
+                .andExpect(jsonPath("$.kind").value("relay"))
+                .andExpect(jsonPath("$.config").isMap())
                 .andExpect(jsonPath("$.pieceTypeId").value(acmePieceTypeId))
                 .andExpect(jsonPath("$.pieceTypeName").value("Pieza Movimiento"))
                 .andExpect(jsonPath("$.pin").value(21))
@@ -166,7 +170,7 @@ class PortControllerIntegrationTest {
     @Test
     @DisplayName("creating a port without a piece type returns 400")
     void missingPieceType_returns400() throws Exception {
-        Map<String, Object> body = Map.of("name", "Salida tira led 1", "pin", 21, "parameters", List.of());
+        Map<String, Object> body = Map.of("name", "Salida tira led 1", "kind", "relay", "pin", 21, "parameters", List.of());
         mockMvc.perform(post(portsPath(acmeSlug))
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -218,6 +222,118 @@ class PortControllerIntegrationTest {
                 .andExpect(status().isCreated());
     }
 
+    // ---------- kinds (output catalog) ----------
+
+    @Test
+    @DisplayName("a strip is an infrastructure port: no piece type, pin and config in the response")
+    void strip_isInfrastructure() throws Exception {
+        createStrip(adminToken, acmeSlug, "LedStrip3", 13, 1, 300)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.kind").value("led_strip"))
+                .andExpect(jsonPath("$.pieceTypeId").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.pieceTypeName").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.pin").value(13))
+                .andExpect(jsonPath("$.config.dma").value(10))
+                .andExpect(jsonPath("$.config.channel").value(1))
+                .andExpect(jsonPath("$.config.length").value(300))
+                .andExpect(jsonPath("$.config.pin").doesNotExist());
+
+        mockMvc.perform(get(portsPath(acmeSlug)).header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].kind").value("led_strip"))
+                .andExpect(jsonPath("$[0].config.length").value(300));
+    }
+
+    @Test
+    @DisplayName("a segment references an existing strip by name and must fit inside it")
+    void segment_referencesStrip() throws Exception {
+        createStrip(adminToken, acmeSlug, "LedStrip4", 10, 0, 44).andExpect(status().isCreated());
+
+        createSegment(adminToken, acmeSlug, "CasaDoble", "LedStrip4", 16, 43)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.kind").value("led_segment"))
+                .andExpect(jsonPath("$.pin").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.pieceTypeId").value(acmeSegmentTypeId))
+                .andExpect(jsonPath("$.config.strip").value("LedStrip4"));
+
+        createSegment(adminToken, acmeSlug, "Fora", "LedStrip4", 16, 44)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ports.segment_out_of_range"));
+
+        createSegment(adminToken, acmeSlug, "Orfe", "LedStrip9", 0, 1)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ports.segment_strip_not_found"));
+    }
+
+    @Test
+    @DisplayName("a strip with segments cannot be deleted")
+    void strip_withSegments_cannotBeDeleted() throws Exception {
+        MvcResult strip = createStrip(adminToken, acmeSlug, "LedStrip4", 10, 0, 44).andExpect(status().isCreated()).andReturn();
+        Integer stripId = (Integer) om.readValue(strip.getResponse().getContentAsString(), Map.class).get("id");
+        createSegment(adminToken, acmeSlug, "CasaDoble", "LedStrip4", 16, 43).andExpect(status().isCreated());
+
+        mockMvc.perform(delete(portsPath(acmeSlug) + "/" + stripId).header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ports.strip_in_use"));
+    }
+
+    @Test
+    @DisplayName("a port whose piece type has another kind is rejected with ports.piece_type_kind_mismatch")
+    void kindMismatch_returns400() throws Exception {
+        postPort(adminToken, acmeSlug, Map.of("name", "Focos", "kind", "relay", "pieceTypeId", acmeSegmentTypeId, "pin", 27))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ports.piece_type_kind_mismatch"));
+    }
+
+    @Test
+    @DisplayName("an unknown kind is rejected with ports.kind_invalid and a missing one with ports.kind_required")
+    void badKind_returns400() throws Exception {
+        postPort(adminToken, acmeSlug, Map.of("name", "Focos", "kind", "laser", "pieceTypeId", acmePieceTypeId, "pin", 27))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ports.kind_invalid"));
+        postPort(adminToken, acmeSlug, Map.of("name", "Focos", "pieceTypeId", acmePieceTypeId, "pin", 27))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ports.kind_required"));
+    }
+
+    @Test
+    @DisplayName("a motor keeps its pins in the config and they count for pin conflicts")
+    void motor_pinsConflict() throws Exception {
+        Integer motorTypeId = createPieceType(adminToken, acmeSlug, "Àngel", "motor");
+        Map<String, Object> config = Map.of("pinR", 3, "pinL", 4, "sensorPin", 7, "downTime", 15);
+        postPort(adminToken, acmeSlug, Map.of("name", "Angel", "kind", "motor", "pieceTypeId", motorTypeId, "config", config))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.pin").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.config.pinR").value(3));
+
+        createPort(adminToken, acmeSlug, "Sembra", 4, acmePieceTypeId)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ports.pin_conflict"));
+    }
+
+    @Test
+    @DisplayName("the kind of a port cannot be changed")
+    void kind_isImmutable() throws Exception {
+        MvcResult created = createPort(adminToken, acmeSlug, "Focos", 27, acmePieceTypeId).andExpect(status().isCreated()).andReturn();
+        Integer portId = (Integer) om.readValue(created.getResponse().getContentAsString(), Map.class).get("id");
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(portsPath(acmeSlug) + "/" + portId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of("kind", "button"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ports.kind_immutable"));
+    }
+
+    @Test
+    @DisplayName("the piece type exposes its kind")
+    void pieceType_exposesKind() throws Exception {
+        mockMvc.perform(get("/organizations/" + acmeSlug + "/piece-types/" + acmeSegmentTypeId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.kind").value("led_segment"));
+    }
+
     // ---------- helpers ----------
 
     private String portsPath(String slug) {
@@ -233,11 +349,29 @@ class PortControllerIntegrationTest {
                 "name", "dma", "displayName", "DMA", "type", "INTEGER", "required", true,
                 "dynamic", false, "staticValue", "10");
         Map<String, Object> body = Map.of(
-                "name", name, "pieceTypeId", pieceTypeId, "pin", pin, "parameters", List.of(channel, dma));
+                "name", name, "kind", "relay", "pieceTypeId", pieceTypeId, "pin", pin,
+                "parameters", List.of(channel, dma));
+        return postPort(token, slug, body);
+    }
+
+    private ResultActions postPort(String token, String slug, Map<String, Object> body) throws Exception {
         return mockMvc.perform(post(portsPath(slug))
                 .header("Authorization", "Bearer " + token)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(om.writeValueAsString(body)));
+    }
+
+    private ResultActions createStrip(String token, String slug, String name, int pin, int channel, int length)
+            throws Exception {
+        Map<String, Object> config = Map.of("dma", 10, "channel", channel, "length", length);
+        return postPort(token, slug, Map.of("name", name, "kind", "led_strip", "pin", pin, "config", config));
+    }
+
+    private ResultActions createSegment(String token, String slug, String name, String strip, int first, int last)
+            throws Exception {
+        Map<String, Object> config = Map.of("strip", strip, "first", first, "last", last);
+        return postPort(token, slug, Map.of("name", name, "kind", "led_segment", "pieceTypeId", acmeSegmentTypeId,
+                "config", config));
     }
 
     private String createOrg(String token, String name, String slug) throws Exception {
@@ -250,11 +384,11 @@ class PortControllerIntegrationTest {
         return (String) om.readValue(r.getResponse().getContentAsString(), Map.class).get("slug");
     }
 
-    private Integer createPieceType(String token, String slug, String name) throws Exception {
+    private Integer createPieceType(String token, String slug, String name, String kind) throws Exception {
         MvcResult r = mockMvc.perform(post("/organizations/" + slug + "/piece-types")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(om.writeValueAsString(Map.of("name", name))))
+                        .content(om.writeValueAsString(Map.of("name", name, "kind", kind))))
                 .andExpect(status().isCreated())
                 .andReturn();
         return (Integer) om.readValue(r.getResponse().getContentAsString(), Map.class).get("id");

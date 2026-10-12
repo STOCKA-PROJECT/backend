@@ -1,0 +1,15 @@
+meta {
+  name: List Actions
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/piece-types/{{pieceTypeId}}/actions
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}

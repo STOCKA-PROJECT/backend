@@ -1,0 +1,46 @@
+meta {
+  name: Create Action (rejected: wrong duration param)
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/piece-types/{{pieceTypeId}}/actions
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "animate",
+    "displayName": "Animació",
+    "parameters": [
+      {
+        "name": "animation_type",
+        "type": "SELECT",
+        "required": true,
+        "dynamic": true,
+        "validators": { "options": ["fade", "fire"] }
+      },
+      {
+        "name": "first",
+        "type": "INTEGER",
+        "required": false,
+        "dynamic": true,
+        "isDuration": true
+      }
+    ]
+  }
+}
+
+docs {
+  400 piece_types.action_duration_param_mismatch: el parámetro de duración de animate es `duration`.
+}

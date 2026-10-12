@@ -3,18 +3,26 @@ package com.stocka.backend.modules.ports.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
@@ -22,6 +30,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
+import com.stocka.backend.modules.contract.OutputCatalog;
+import com.stocka.backend.modules.contract.OutputKind;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.service.OrganizationService;
 import com.stocka.backend.modules.piecetypes.dto.ActionParameterDto;
@@ -41,362 +51,644 @@ import com.stocka.backend.modules.ports.repository.PortRepository;
 class PortServiceTest {
 
     private static final Integer ORG_ID = 1;
-    private static final Integer PIECE_TYPE_ID = 5;
+    private static final Integer RELAY_TYPE_ID = 5;
+    private static final Integer SEGMENT_TYPE_ID = 6;
+    private static final Integer UNTYPED_TYPE_ID = 7;
 
     @Mock private OrganizationService organizationService;
     @Mock private PortRepository portRepository;
     @Mock private PieceTypeService pieceTypeService;
     @Mock private PieceTypeRepository pieceTypeRepository;
 
+    private final OutputCatalog catalog = new OutputCatalog();
+    private final PortConfigJsonCodec configCodec = new PortConfigJsonCodec();
+
     private PortService sut;
     private Organization org;
-    private PieceType pieceType;
+    private PieceType relayType;
+    private PieceType segmentType;
+    private PieceType untypedType;
 
     @BeforeEach
     void setUp() {
         sut = new PortService(organizationService, portRepository, new ActionParametersJsonCodec(),
-                pieceTypeService, pieceTypeRepository);
+                pieceTypeService, pieceTypeRepository, catalog, new PortConfigValidator(catalog), configCodec);
         org = new Organization().setId(ORG_ID);
-        pieceType = new PieceType().setId(PIECE_TYPE_ID).setName("Tira Led");
+        relayType = new PieceType().setId(RELAY_TYPE_ID).setName("Figura amb relé").setKind(OutputKind.RELAY);
+        segmentType = new PieceType().setId(SEGMENT_TYPE_ID).setName("Edifici amb llum").setKind(OutputKind.LED_SEGMENT);
+        untypedType = new PieceType().setId(UNTYPED_TYPE_ID).setName("Caixa");
+        lenient().when(organizationService.findById(ORG_ID)).thenReturn(org);
+        lenient().when(portRepository.saveAndFlush(any(Port.class))).thenAnswer(inv -> inv.getArgument(0));
+        lenient().when(portRepository.save(any(Port.class))).thenAnswer(inv -> inv.getArgument(0));
+        lenient().when(portRepository.findByOrganizationOrderByPositionAscIdAsc(org)).thenReturn(List.of());
+        lenient().when(portRepository.findByOrganizationAndName(eq(org), anyString())).thenReturn(Optional.empty());
+        lenient().when(pieceTypeService.findInOrg(ORG_ID, RELAY_TYPE_ID)).thenReturn(relayType);
+        lenient().when(pieceTypeService.findInOrg(ORG_ID, SEGMENT_TYPE_ID)).thenReturn(segmentType);
+        lenient().when(pieceTypeService.findInOrg(ORG_ID, UNTYPED_TYPE_ID)).thenReturn(untypedType);
     }
 
-    private CreatePortDto tiraLed1() {
-        return new CreatePortDto()
-                .setName("Salida tira led 1")
-                .setPieceTypeId(PIECE_TYPE_ID)
-                .setPin(21)
-                .setParameters(List.of(
-                        new ActionParameterDto().setName("channel").setType(AttributeType.INTEGER)
-                                .setRequired(true).setDynamic(true),
-                        new ActionParameterDto().setName("dma").setType(AttributeType.INTEGER)
-                                .setRequired(true).setDynamic(true)));
+    // ------------------------------------------------------------------ fixtures
+
+    private static CreatePortDto relayDto(String name, Integer pin) {
+        return new CreatePortDto().setName(name).setKind("relay").setPieceTypeId(RELAY_TYPE_ID).setPin(pin);
     }
 
-    private Port existingPort(int id, String name, Integer pin) {
-        return new Port().setId(id).setName(name).setPin(pin).setPieceTypeId(PIECE_TYPE_ID).setOrganization(org);
+    private static CreatePortDto stripDto(String name, Integer pin, int dma, int channel, int length) {
+        Map<String, Object> cfg = new LinkedHashMap<>();
+        cfg.put("dma", dma);
+        cfg.put("channel", channel);
+        cfg.put("length", length);
+        return new CreatePortDto().setName(name).setKind("led_strip").setPin(pin).setConfig(cfg);
     }
+
+    private static CreatePortDto segmentDto(String name, String strip, int first, int last) {
+        Map<String, Object> cfg = new LinkedHashMap<>();
+        cfg.put("strip", strip);
+        cfg.put("first", first);
+        cfg.put("last", last);
+        return new CreatePortDto().setName(name).setKind("led_segment").setPieceTypeId(SEGMENT_TYPE_ID).setConfig(cfg);
+    }
+
+    private static Map<String, Object> motorConfig(int pinR, int pinL, int sensorPin) {
+        Map<String, Object> cfg = new LinkedHashMap<>();
+        cfg.put("pinR", pinR);
+        cfg.put("pinL", pinL);
+        cfg.put("sensorPin", sensorPin);
+        cfg.put("downTime", 15);
+        return cfg;
+    }
+
+    private Port relayPort(int id, String name, Integer pin) {
+        return new Port().setId(id).setName(name).setKind(OutputKind.RELAY).setPin(pin)
+                .setPieceTypeId(RELAY_TYPE_ID).setOrganization(org).setConfigJson("{}");
+    }
+
+    private Port stripPort(int id, String name, int pin, int length) {
+        Map<String, Object> cfg = new LinkedHashMap<>();
+        cfg.put("dma", 10);
+        cfg.put("channel", catalog.board("rpi4b").orElseThrow().ws281xChannel().get(pin));
+        cfg.put("length", length);
+        return new Port().setId(id).setName(name).setKind(OutputKind.LED_STRIP).setPin(pin)
+                .setOrganization(org).setConfigJson(configCodec.serialize(cfg));
+    }
+
+    private Port segmentPort(int id, String name, String strip, int first, int last) {
+        Map<String, Object> cfg = new LinkedHashMap<>();
+        cfg.put("strip", strip);
+        cfg.put("first", first);
+        cfg.put("last", last);
+        return new Port().setId(id).setName(name).setKind(OutputKind.LED_SEGMENT).setPieceTypeId(SEGMENT_TYPE_ID)
+                .setOrganization(org).setConfigJson(configCodec.serialize(cfg));
+    }
+
+    private Port motorPort(int id, String name, int pinR, int pinL, int sensorPin) {
+        return new Port().setId(id).setName(name).setKind(OutputKind.MOTOR).setOrganization(org)
+                .setConfigJson(configCodec.serialize(motorConfig(pinR, pinL, sensorPin)));
+    }
+
+    /** Makes the given ports the organization's current ports, by list and by name. */
+    private void existingPorts(Port... ports) {
+        lenient().when(portRepository.findByOrganizationOrderByPositionAscIdAsc(org)).thenReturn(List.of(ports));
+        for (Port p : ports) {
+            lenient().when(portRepository.findByOrganizationAndName(org, p.getName())).thenReturn(Optional.of(p));
+            lenient().when(portRepository.findById(p.getId())).thenReturn(Optional.of(p));
+        }
+    }
+
+    private static void assertApi(ThrowingCallable call, HttpStatus status, String code) {
+        assertThatThrownBy(call).isInstanceOfSatisfying(ApiException.class, ex -> {
+            assertThat(ex.getStatus()).isEqualTo(status);
+            assertThat(ex.getCode()).isEqualTo(code);
+        });
+    }
+
+    private static void assertApi(ThrowingCallable call, HttpStatus status, String code, String paramKey, Object paramValue) {
+        assertThatThrownBy(call).isInstanceOfSatisfying(ApiException.class, ex -> {
+            assertThat(ex.getStatus()).isEqualTo(status);
+            assertThat(ex.getCode()).isEqualTo(code);
+            assertThat(ex.getParams()).containsEntry(paramKey, paramValue);
+        });
+    }
+
+    // ================================================================== create
 
     @Nested
     @DisplayName("create")
     class Create {
 
         @Test
-        @DisplayName("persists the port with the piece type, pin, serialized parameters and a sequential position")
-        void should_persistPort() {
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
-            when(pieceTypeService.findInOrg(ORG_ID, PIECE_TYPE_ID)).thenReturn(pieceType);
-            when(portRepository.findByOrganizationAndName(org, "Salida tira led 1")).thenReturn(Optional.empty());
-            when(portRepository.findByOrganizationAndPin(org, 21)).thenReturn(Optional.empty());
-            when(portRepository.findByOrganizationOrderByPositionAscIdAsc(org)).thenReturn(List.of());
-            when(portRepository.saveAndFlush(any(Port.class))).thenAnswer(inv -> inv.getArgument(0));
+        @DisplayName("persists a relay with its kind, piece type, pin, empty config and a sequential position")
+        void should_persistRelay() {
+            existingPorts(relayPort(1, "Focos", 27), relayPort(2, "Sembra", 26));
 
-            Port port = sut.create(ORG_ID, tiraLed1());
+            Port port = sut.create(ORG_ID, relayDto("LlumsE", 18));
 
-            assertThat(port.getName()).isEqualTo("Salida tira led 1");
-            assertThat(port.getPieceTypeId()).isEqualTo(PIECE_TYPE_ID);
-            assertThat(port.getPin()).isEqualTo(21);
-            assertThat(port.getPosition()).isZero();
-            assertThat(port.getOrganization()).isSameAs(org);
-
-            List<ActionParameterDto> params = sut.parametersOf(port);
-            assertThat(params).hasSize(2);
-            assertThat(params.get(0).getName()).isEqualTo("channel");
-            assertThat(params.get(0).getType()).isEqualTo(AttributeType.INTEGER);
-            assertThat(params.get(0).getRequired()).isTrue();
-            assertThat(params.get(0).getPosition()).isZero();
-            assertThat(params.get(1).getName()).isEqualTo("dma");
-            assertThat(params.get(1).getPosition()).isEqualTo(1);
-        }
-
-        @Test
-        @DisplayName("assigns the position from the count of existing ports when not provided")
-        void should_defaultPosition() {
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
-            when(pieceTypeService.findInOrg(ORG_ID, PIECE_TYPE_ID)).thenReturn(pieceType);
-            when(portRepository.findByOrganizationAndName(org, "Salida tira led 1")).thenReturn(Optional.empty());
-            when(portRepository.findByOrganizationAndPin(org, 21)).thenReturn(Optional.empty());
-            when(portRepository.findByOrganizationOrderByPositionAscIdAsc(org))
-                    .thenReturn(List.of(existingPort(1, "a", 1), existingPort(2, "b", 2)));
-            when(portRepository.saveAndFlush(any(Port.class))).thenAnswer(inv -> inv.getArgument(0));
-
-            Port port = sut.create(ORG_ID, tiraLed1());
-
+            assertThat(port.getKind()).isEqualTo(OutputKind.RELAY);
+            assertThat(port.getPieceTypeId()).isEqualTo(RELAY_TYPE_ID);
+            assertThat(port.getPin()).isEqualTo(18);
             assertThat(port.getPosition()).isEqualTo(2);
+            assertThat(port.getOrganization()).isSameAs(org);
+            assertThat(sut.configOf(port)).isEmpty();
+            assertThat(sut.parametersOf(port)).isEmpty();
         }
 
         @Test
-        @DisplayName("rejects a blank name with ports.name_required")
-        void should_rejectBlankName() {
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
+        @DisplayName("persists a strip without piece type, with its config normalized")
+        void should_persistStrip() {
+            Port port = sut.create(ORG_ID, stripDto("LedStrip3", 13, 10, 1, 300));
 
-            assertThatThrownBy(() -> sut.create(ORG_ID, tiraLed1().setName("   ")))
-                    .isInstanceOfSatisfying(ApiException.class, ex -> {
-                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
-                        assertThat(ex.getCode()).isEqualTo(ErrorCodes.PORTS_NAME_REQUIRED);
-                    });
-            verify(portRepository, never()).saveAndFlush(any());
+            assertThat(port.getKind()).isEqualTo(OutputKind.LED_STRIP);
+            assertThat(port.getPieceTypeId()).isNull();
+            assertThat(port.getPin()).isEqualTo(13);
+            assertThat(sut.configOf(port)).containsExactly(
+                    Map.entry("dma", 10), Map.entry("channel", 1), Map.entry("length", 300));
+            verify(pieceTypeService, never()).findInOrg(any(), any());
         }
 
         @Test
-        @DisplayName("rejects a null piece type with ports.piece_type_required")
-        void should_rejectMissingPieceType() {
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
+        @DisplayName("persists a segment that fits inside an existing strip")
+        void should_persistSegment() {
+            existingPorts(stripPort(1, "LedStrip3", 13, 300));
 
-            assertThatThrownBy(() -> sut.create(ORG_ID, tiraLed1().setPieceTypeId(null)))
-                    .isInstanceOfSatisfying(ApiException.class, ex -> {
-                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
-                        assertThat(ex.getCode()).isEqualTo(ErrorCodes.PORTS_PIECE_TYPE_REQUIRED);
-                    });
-            verify(portRepository, never()).saveAndFlush(any());
+            Port port = sut.create(ORG_ID, segmentDto("Fondo1", "LedStrip3", 0, 148));
+
+            assertThat(port.getKind()).isEqualTo(OutputKind.LED_SEGMENT);
+            assertThat(port.getPin()).isNull();
+            assertThat(sut.configOf(port)).containsEntry("strip", "LedStrip3").containsEntry("last", 148);
         }
 
         @Test
-        @DisplayName("propagates 404 when the referenced piece type does not exist in the organization")
-        void should_rejectUnknownPieceType() {
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
-            when(pieceTypeService.findInOrg(ORG_ID, PIECE_TYPE_ID))
-                    .thenThrow(new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.PIECE_TYPES_NOT_FOUND));
+        @DisplayName("persists a motor with its three pins in the config and no Port.pin")
+        void should_persistMotor() {
+            PieceType motorType = new PieceType().setId(9).setKind(OutputKind.MOTOR).setName("Àngel");
+            when(pieceTypeService.findInOrg(ORG_ID, 9)).thenReturn(motorType);
 
-            assertThatThrownBy(() -> sut.create(ORG_ID, tiraLed1()))
-                    .isInstanceOfSatisfying(ApiException.class,
-                            ex -> assertThat(ex.getStatus()).isEqualTo(HttpStatus.NOT_FOUND));
-            verify(portRepository, never()).saveAndFlush(any());
+            Port port = sut.create(ORG_ID, new CreatePortDto().setName("Angel").setKind("motor").setPieceTypeId(9)
+                    .setConfig(motorConfig(3, 4, 7)));
+
+            assertThat(port.getPin()).isNull();
+            assertThat(sut.configOf(port)).containsEntry("pinR", 3).containsEntry("sensorPin", 7).containsEntry("downTime", 15);
         }
 
         @Test
-        @DisplayName("rejects a null pin with ports.pin_invalid")
-        void should_rejectNullPin() {
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
+        @DisplayName("persists audio and video ports with no pin and no config")
+        void should_persistAudioAndVideo() {
+            PieceType audioType = new PieceType().setId(10).setKind(OutputKind.AUDIO).setName("Altaveus");
+            when(pieceTypeService.findInOrg(ORG_ID, 10)).thenReturn(audioType);
 
-            assertThatThrownBy(() -> sut.create(ORG_ID, tiraLed1().setPin(null)))
-                    .isInstanceOfSatisfying(ApiException.class, ex -> {
-                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
-                        assertThat(ex.getCode()).isEqualTo(ErrorCodes.PORTS_PIN_INVALID);
-                    });
+            Port port = sut.create(ORG_ID, new CreatePortDto().setName("Audio").setKind("audio").setPieceTypeId(10));
+
+            assertThat(port.getKind()).isEqualTo(OutputKind.AUDIO);
+            assertThat(port.getPin()).isNull();
+            assertThat(port.getConfigJson()).isEqualTo("{}");
         }
 
         @Test
-        @DisplayName("rejects a negative pin with ports.pin_invalid")
-        void should_rejectNegativePin() {
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
-
-            assertThatThrownBy(() -> sut.create(ORG_ID, tiraLed1().setPin(-1)))
-                    .isInstanceOfSatisfying(ApiException.class,
-                            ex -> assertThat(ex.getCode()).isEqualTo(ErrorCodes.PORTS_PIN_INVALID));
-        }
-
-        @Test
-        @DisplayName("rejects a duplicate name with ports.name_conflict")
-        void should_rejectDuplicateName() {
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
-            when(pieceTypeService.findInOrg(ORG_ID, PIECE_TYPE_ID)).thenReturn(pieceType);
-            when(portRepository.findByOrganizationAndName(org, "Salida tira led 1"))
-                    .thenReturn(Optional.of(existingPort(99, "Salida tira led 1", 5)));
-
-            assertThatThrownBy(() -> sut.create(ORG_ID, tiraLed1()))
-                    .isInstanceOfSatisfying(ApiException.class, ex -> {
-                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
-                        assertThat(ex.getCode()).isEqualTo(ErrorCodes.PORTS_NAME_CONFLICT);
-                    });
-            verify(portRepository, never()).saveAndFlush(any());
-        }
-
-        @Test
-        @DisplayName("rejects a duplicate pin with ports.pin_conflict")
-        void should_rejectDuplicatePin() {
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
-            when(pieceTypeService.findInOrg(ORG_ID, PIECE_TYPE_ID)).thenReturn(pieceType);
-            when(portRepository.findByOrganizationAndName(org, "Salida tira led 1")).thenReturn(Optional.empty());
-            when(portRepository.findByOrganizationAndPin(org, 21))
-                    .thenReturn(Optional.of(existingPort(99, "Otra salida", 21)));
-
-            assertThatThrownBy(() -> sut.create(ORG_ID, tiraLed1()))
-                    .isInstanceOfSatisfying(ApiException.class, ex -> {
-                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
-                        assertThat(ex.getCode()).isEqualTo(ErrorCodes.PORTS_PIN_CONFLICT);
-                    });
-            verify(portRepository, never()).saveAndFlush(any());
-        }
-
-        @Test
-        @DisplayName("rejects duplicated parameter names")
-        void should_rejectDuplicateParameterNames() {
-            stubHappyLookups();
-
-            CreatePortDto dto = tiraLed1().setParameters(List.of(
-                    new ActionParameterDto().setName("channel").setType(AttributeType.INTEGER),
-                    new ActionParameterDto().setName("channel").setType(AttributeType.INTEGER)));
-
-            assertThatThrownBy(() -> sut.create(ORG_ID, dto))
-                    .isInstanceOf(ResponseStatusException.class);
-        }
-
-        @Test
-        @DisplayName("rejects a parameter without a type")
-        void should_rejectParameterWithoutType() {
-            stubHappyLookups();
-
-            CreatePortDto dto = tiraLed1().setParameters(List.of(
-                    new ActionParameterDto().setName("channel")));
-
-            assertThatThrownBy(() -> sut.create(ORG_ID, dto))
-                    .isInstanceOf(ResponseStatusException.class);
-        }
-
-        @Test
-        @DisplayName("rejects an invalid technical parameter name")
-        void should_rejectInvalidParameterName() {
-            stubHappyLookups();
-
-            CreatePortDto dto = tiraLed1().setParameters(List.of(
-                    new ActionParameterDto().setName("Channel").setType(AttributeType.INTEGER)));
-
-            assertThatThrownBy(() -> sut.create(ORG_ID, dto))
-                    .isInstanceOf(ResponseStatusException.class);
-        }
-
-        @Test
-        @DisplayName("defaults a parameter's required flag to true and its display name to the technical name")
-        void should_defaultParameterFields() {
-            stubHappyLookups();
-            when(portRepository.saveAndFlush(any(Port.class))).thenAnswer(inv -> inv.getArgument(0));
-
-            CreatePortDto dto = tiraLed1().setParameters(List.of(
+        @DisplayName("serializes the legacy parameter list and defaults required and display name")
+        void should_keepLegacyParameters() {
+            CreatePortDto dto = relayDto("Focos", 27).setParameters(List.of(
                     new ActionParameterDto().setName("channel").setType(AttributeType.INTEGER).setDynamic(true)));
 
             Port port = sut.create(ORG_ID, dto);
 
             List<ActionParameterDto> params = sut.parametersOf(port);
+            assertThat(params).hasSize(1);
             assertThat(params.get(0).getRequired()).isTrue();
             assertThat(params.get(0).getDisplayName()).isEqualTo("channel");
+            assertThat(params.get(0).getPosition()).isZero();
         }
 
-        private void stubHappyLookups() {
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
-            when(pieceTypeService.findInOrg(ORG_ID, PIECE_TYPE_ID)).thenReturn(pieceType);
-            when(portRepository.findByOrganizationAndName(org, "Salida tira led 1")).thenReturn(Optional.empty());
-            when(portRepository.findByOrganizationAndPin(org, 21)).thenReturn(Optional.empty());
-            when(portRepository.findByOrganizationOrderByPositionAscIdAsc(org)).thenReturn(List.of());
+        @Nested
+        @DisplayName("kind rules")
+        class KindRules {
+
+            @Test
+            @DisplayName("rejects a missing or blank kind with ports.kind_required")
+            void should_requireKind() {
+                assertApi(() -> sut.create(ORG_ID, relayDto("Focos", 27).setKind(null)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_KIND_REQUIRED);
+                assertApi(() -> sut.create(ORG_ID, relayDto("Focos", 27).setKind("  ")), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_KIND_REQUIRED);
+                verify(portRepository, never()).saveAndFlush(any());
+            }
+
+            @Test
+            @DisplayName("rejects an unknown kind with ports.kind_invalid and echoes it")
+            void should_rejectUnknownKind() {
+                assertApi(() -> sut.create(ORG_ID, relayDto("Focos", 27).setKind("laser")),
+                        HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_KIND_INVALID, "kind", "laser");
+            }
+
+            @Test
+            @DisplayName("requires a piece type for non-infrastructure kinds with ports.piece_type_required")
+            void should_requirePieceTypeForPieceKinds() {
+                assertApi(() -> sut.create(ORG_ID, relayDto("Focos", 27).setPieceTypeId(null)),
+                        HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIECE_TYPE_REQUIRED);
+                assertApi(() -> sut.create(ORG_ID, segmentDto("Fondo1", "LedStrip3", 0, 1).setPieceTypeId(null)),
+                        HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIECE_TYPE_REQUIRED);
+            }
+
+            @Test
+            @DisplayName("accepts infrastructure kinds without a piece type and with a matching one")
+            void should_allowInfrastructureWithOrWithoutType() {
+                assertThat(sut.create(ORG_ID, new CreatePortDto().setName("Pulsador").setKind("button").setPin(20)).getPieceTypeId()).isNull();
+                PieceType stripType = new PieceType().setId(11).setKind(OutputKind.LED_STRIP).setName("Tira");
+                when(pieceTypeService.findInOrg(ORG_ID, 11)).thenReturn(stripType);
+                assertThat(sut.create(ORG_ID, stripDto("LedStrip2", 12, 10, 0, 150).setPieceTypeId(11)).getPieceTypeId()).isEqualTo(11);
+            }
+
+            @Test
+            @DisplayName("rejects a piece type without kind with ports.piece_type_kind_mismatch")
+            void should_rejectUntypedPieceType() {
+                assertThatThrownBy(() -> sut.create(ORG_ID, relayDto("Focos", 27).setPieceTypeId(UNTYPED_TYPE_ID)))
+                        .isInstanceOfSatisfying(ApiException.class, ex -> {
+                            assertThat(ex.getCode()).isEqualTo(ErrorCodes.PORTS_PIECE_TYPE_KIND_MISMATCH);
+                            assertThat(ex.getParams()).containsEntry("type", "Caixa").containsEntry("typeKind", "-").containsEntry("portKind", "relay");
+                        });
+            }
+
+            @Test
+            @DisplayName("rejects a piece type of another kind with ports.piece_type_kind_mismatch")
+            void should_rejectOtherKindPieceType() {
+                assertThatThrownBy(() -> sut.create(ORG_ID, relayDto("Focos", 27).setPieceTypeId(SEGMENT_TYPE_ID)))
+                        .isInstanceOfSatisfying(ApiException.class, ex -> {
+                            assertThat(ex.getCode()).isEqualTo(ErrorCodes.PORTS_PIECE_TYPE_KIND_MISMATCH);
+                            assertThat(ex.getParams()).containsEntry("typeKind", "led_segment").containsEntry("portKind", "relay");
+                        });
+            }
+
+            @Test
+            @DisplayName("propagates 404 when the piece type does not exist in the organization")
+            void should_propagateMissingPieceType() {
+                when(pieceTypeService.findInOrg(ORG_ID, 999)).thenThrow(new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.PIECE_TYPES_NOT_FOUND));
+                assertApi(() -> sut.create(ORG_ID, relayDto("Focos", 27).setPieceTypeId(999)), HttpStatus.NOT_FOUND, ErrorCodes.PIECE_TYPES_NOT_FOUND);
+            }
+        }
+
+        @Nested
+        @DisplayName("pin rules")
+        class PinRules {
+
+            @Test
+            @DisplayName("requires a pin for kinds that have one, within the board range")
+            void should_requireValidPin() {
+                assertApi(() -> sut.create(ORG_ID, relayDto("Focos", null)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_INVALID);
+                assertApi(() -> sut.create(ORG_ID, relayDto("Focos", -1)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_INVALID);
+                assertApi(() -> sut.create(ORG_ID, relayDto("Focos", 28)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_INVALID);
+                assertApi(() -> sut.create(ORG_ID, stripDto("LedStrip3", null, 10, 1, 300)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_INVALID);
+            }
+
+            @Test
+            @DisplayName("rejects a reserved pin with ports.pin_reserved")
+            void should_rejectReservedPin() {
+                assertApi(() -> sut.create(ORG_ID, relayDto("Focos", 0)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_RESERVED, "pin", 0);
+                assertApi(() -> sut.create(ORG_ID, relayDto("Focos", 1)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_RESERVED, "pin", 1);
+            }
+
+            @Test
+            @DisplayName("rejects a pin on kinds that have none with ports.pin_not_allowed")
+            void should_rejectPinOnPinlessKinds() {
+                existingPorts(stripPort(1, "LedStrip3", 13, 300));
+                assertApi(() -> sut.create(ORG_ID, segmentDto("Fondo1", "LedStrip3", 0, 1).setPin(5)),
+                        HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_NOT_ALLOWED, "kind", "led_segment");
+                PieceType audioType = new PieceType().setId(10).setKind(OutputKind.AUDIO).setName("Altaveus");
+                when(pieceTypeService.findInOrg(ORG_ID, 10)).thenReturn(audioType);
+                assertApi(() -> sut.create(ORG_ID, new CreatePortDto().setName("Audio").setKind("audio").setPieceTypeId(10).setPin(5)),
+                        HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_NOT_ALLOWED, "kind", "audio");
+            }
+
+            @Test
+            @DisplayName("a strip needs a WS281x-capable pin and a channel that matches it")
+            void should_checkStripPinAndChannel() {
+                assertApi(() -> sut.create(ORG_ID, stripDto("LedStrip3", 17, 10, 0, 300)),
+                        HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_STRIP_PIN_UNSUPPORTED, "pin", 17);
+                assertThatThrownBy(() -> sut.create(ORG_ID, stripDto("LedStrip3", 13, 10, 0, 300)))
+                        .isInstanceOfSatisfying(ApiException.class, ex -> {
+                            assertThat(ex.getCode()).isEqualTo(ErrorCodes.PORTS_STRIP_CHANNEL_MISMATCH);
+                            assertThat(ex.getParams()).containsEntry("pin", 13).containsEntry("channel", 1);
+                        });
+                assertThat(sut.create(ORG_ID, stripDto("LedStrip3", 13, 10, 1, 300)).getPin()).isEqualTo(13);
+                assertThat(sut.create(ORG_ID, stripDto("LedStrip4", 10, 8, 0, 44)).getPin()).isEqualTo(10);
+            }
+
+            @Test
+            @DisplayName("motor pins in the config must be valid, non-reserved GPIOs")
+            void should_checkMotorConfigPins() {
+                PieceType motorType = new PieceType().setId(9).setKind(OutputKind.MOTOR).setName("Àngel");
+                when(pieceTypeService.findInOrg(ORG_ID, 9)).thenReturn(motorType);
+                CreatePortDto outOfBoard = new CreatePortDto().setName("Angel").setKind("motor").setPieceTypeId(9).setConfig(motorConfig(3, 4, 28));
+                assertApi(() -> sut.create(ORG_ID, outOfBoard), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_INVALID);
+                CreatePortDto reserved = new CreatePortDto().setName("Angel").setKind("motor").setPieceTypeId(9).setConfig(motorConfig(0, 4, 7));
+                assertApi(() -> sut.create(ORG_ID, reserved), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_RESERVED, "pin", 0);
+            }
+        }
+
+        @Nested
+        @DisplayName("pin conflicts")
+        class PinConflicts {
+
+            @Test
+            @DisplayName("rejects a pin already used by another port with ports.pin_conflict")
+            void should_rejectUsedPin() {
+                existingPorts(relayPort(1, "Focos", 27));
+                assertApi(() -> sut.create(ORG_ID, relayDto("Sembra", 27)), HttpStatus.CONFLICT, ErrorCodes.PORTS_PIN_CONFLICT);
+                verify(portRepository, never()).saveAndFlush(any());
+            }
+
+            @Test
+            @DisplayName("counts the pins a motor keeps in its config")
+            void should_rejectPinUsedByMotorConfig() {
+                existingPorts(motorPort(1, "Angel", 3, 4, 7));
+                assertApi(() -> sut.create(ORG_ID, relayDto("Sembra", 4)), HttpStatus.CONFLICT, ErrorCodes.PORTS_PIN_CONFLICT);
+            }
+
+            @Test
+            @DisplayName("rejects a motor whose config pins collide with an existing port")
+            void should_rejectMotorCollidingWithRelay() {
+                existingPorts(relayPort(1, "Focos", 27));
+                PieceType motorType = new PieceType().setId(9).setKind(OutputKind.MOTOR).setName("Àngel");
+                when(pieceTypeService.findInOrg(ORG_ID, 9)).thenReturn(motorType);
+                CreatePortDto dto = new CreatePortDto().setName("Angel").setKind("motor").setPieceTypeId(9).setConfig(motorConfig(3, 27, 7));
+                assertApi(() -> sut.create(ORG_ID, dto), HttpStatus.CONFLICT, ErrorCodes.PORTS_PIN_CONFLICT);
+            }
+
+            @Test
+            @DisplayName("accepts pins that are free")
+            void should_acceptFreePins() {
+                existingPorts(relayPort(1, "Focos", 27), motorPort(2, "Angel", 3, 4, 7), stripPort(3, "LedStrip3", 13, 300));
+                assertThat(sut.create(ORG_ID, relayDto("Sembra", 26)).getPin()).isEqualTo(26);
+            }
+        }
+
+        @Nested
+        @DisplayName("name rules")
+        class NameRules {
+
+            @Test
+            @DisplayName("rejects a blank name with ports.name_required")
+            void should_rejectBlankName() {
+                assertApi(() -> sut.create(ORG_ID, relayDto("   ", 27)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_NAME_REQUIRED);
+                assertApi(() -> sut.create(ORG_ID, relayDto(null, 27)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_NAME_REQUIRED);
+            }
+
+            @Test
+            @DisplayName("rejects a duplicate name with ports.name_conflict")
+            void should_rejectDuplicateName() {
+                existingPorts(relayPort(1, "Focos", 27));
+                assertApi(() -> sut.create(ORG_ID, relayDto("Focos", 26)), HttpStatus.CONFLICT, ErrorCodes.PORTS_NAME_CONFLICT);
+            }
+
+            @Test
+            @DisplayName("trims the name and rejects names over 160 characters")
+            void should_trimAndBoundName() {
+                assertThat(sut.create(ORG_ID, relayDto("  Focos ", 27)).getName()).isEqualTo("Focos");
+                assertThatThrownBy(() -> sut.create(ORG_ID, relayDto("x".repeat(161), 27)))
+                        .isInstanceOf(ResponseStatusException.class);
+            }
+        }
+
+        @Nested
+        @DisplayName("segment rules")
+        class SegmentRules {
+
+            @Test
+            @DisplayName("rejects a strip that does not exist with ports.segment_strip_not_found")
+            void should_rejectMissingStrip() {
+                assertApi(() -> sut.create(ORG_ID, segmentDto("Fondo1", "LedStrip9", 0, 10)),
+                        HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_SEGMENT_STRIP_NOT_FOUND, "strip", "LedStrip9");
+            }
+
+            @Test
+            @DisplayName("rejects a port that exists but is not a strip")
+            void should_rejectNonStripReference() {
+                existingPorts(relayPort(1, "Focos", 27));
+                assertApi(() -> sut.create(ORG_ID, segmentDto("Fondo1", "Focos", 0, 10)),
+                        HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_SEGMENT_STRIP_NOT_FOUND, "strip", "Focos");
+            }
+
+            @Test
+            @DisplayName("rejects a range outside the strip with ports.segment_out_of_range")
+            void should_rejectOutOfRange() {
+                existingPorts(stripPort(1, "LedStrip4", 10, 44));
+                assertThatThrownBy(() -> sut.create(ORG_ID, segmentDto("CasaDoble", "LedStrip4", 16, 44)))
+                        .isInstanceOfSatisfying(ApiException.class, ex -> {
+                            assertThat(ex.getCode()).isEqualTo(ErrorCodes.PORTS_SEGMENT_OUT_OF_RANGE);
+                            assertThat(ex.getParams()).containsEntry("first", 16).containsEntry("last", 44).containsEntry("max", 43);
+                        });
+            }
+
+            @Test
+            @DisplayName("accepts the last LED of the strip and reversed ranges")
+            void should_acceptBoundaryAndReversed() {
+                existingPorts(stripPort(1, "LedStrip3", 13, 300));
+                assertThat(sut.create(ORG_ID, segmentDto("Fondo1", "LedStrip3", 0, 299)).getName()).isEqualTo("Fondo1");
+                assertThat(sut.configOf(sut.create(ORG_ID, segmentDto("Fondo2", "LedStrip3", 298, 149)))).containsEntry("first", 298);
+            }
+        }
+
+        @Nested
+        @DisplayName("config rules")
+        class ConfigRules {
+
+            @Test
+            @DisplayName("delegates config validation to PortConfigValidator")
+            void should_delegateConfigValidation() {
+                assertApi(() -> sut.create(ORG_ID, relayDto("Focos", 27).setConfig(Map.of("activeLow", true))),
+                        HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_CONFIG_UNKNOWN_KEY, "key", "activeLow");
+                assertApi(() -> sut.create(ORG_ID, stripDto("LedStrip3", 13, 10, 1, 0)),
+                        HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_CONFIG_OUT_OF_RANGE, "key", "length");
+            }
+        }
+
+        @Nested
+        @DisplayName("legacy parameters")
+        class LegacyParameters {
+
+            @Test
+            @DisplayName("rejects duplicated parameter names")
+            void should_rejectDuplicateNames() {
+                CreatePortDto dto = relayDto("Focos", 27).setParameters(List.of(
+                        new ActionParameterDto().setName("a").setType(AttributeType.INTEGER).setDynamic(true),
+                        new ActionParameterDto().setName("a").setType(AttributeType.INTEGER).setDynamic(true)));
+                assertThatThrownBy(() -> sut.create(ORG_ID, dto)).isInstanceOf(ResponseStatusException.class);
+            }
+
+            @Test
+            @DisplayName("rejects a parameter without type and an invalid technical name")
+            void should_rejectBadParameters() {
+                assertThatThrownBy(() -> sut.create(ORG_ID, relayDto("Focos", 27).setParameters(List.of(
+                        new ActionParameterDto().setName("a"))))).isInstanceOf(ResponseStatusException.class);
+                assertThatThrownBy(() -> sut.create(ORG_ID, relayDto("Focos", 27).setParameters(List.of(
+                        new ActionParameterDto().setName("Bad Name").setType(AttributeType.INTEGER))))).isInstanceOf(ResponseStatusException.class);
+            }
+
+            @Test
+            @DisplayName("requires a static value for a required static parameter")
+            void should_requireStaticValue() {
+                assertThatThrownBy(() -> sut.create(ORG_ID, relayDto("Focos", 27).setParameters(List.of(
+                        new ActionParameterDto().setName("a").setType(AttributeType.INTEGER).setRequired(true)))))
+                        .isInstanceOf(ResponseStatusException.class);
+            }
         }
     }
+
+    // ================================================================== update
 
     @Nested
     @DisplayName("update")
     class Update {
 
         @Test
-        @DisplayName("renames the port, freeing the old name slot")
+        @DisplayName("renames the port after checking the new name is free")
         void should_rename() {
-            Port port = existingPort(7, "Salida tira led 1", 21);
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
-            when(portRepository.findById(7)).thenReturn(Optional.of(port));
-            when(portRepository.findByOrganizationAndName(org, "Salida tira led 2")).thenReturn(Optional.empty());
-            when(portRepository.saveAndFlush(any(Port.class))).thenAnswer(inv -> inv.getArgument(0));
-
-            Port updated = sut.update(ORG_ID, 7, new UpdatePortDto().setName("Salida tira led 2"));
-
-            assertThat(updated.getName()).isEqualTo("Salida tira led 2");
+            existingPorts(relayPort(1, "Focos", 27));
+            Port updated = sut.update(ORG_ID, 1, new UpdatePortDto().setName("Focus"));
+            assertThat(updated.getName()).isEqualTo("Focus");
         }
 
         @Test
-        @DisplayName("changes the related piece type when provided")
-        void should_changePieceType() {
-            Port port = existingPort(7, "Salida tira led 1", 21);
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
-            when(portRepository.findById(7)).thenReturn(Optional.of(port));
-            when(pieceTypeService.findInOrg(ORG_ID, 9)).thenReturn(new PieceType().setId(9).setName("Relé"));
-            when(portRepository.saveAndFlush(any(Port.class))).thenAnswer(inv -> inv.getArgument(0));
-
-            Port updated = sut.update(ORG_ID, 7, new UpdatePortDto().setPieceTypeId(9));
-
-            assertThat(updated.getPieceTypeId()).isEqualTo(9);
+        @DisplayName("rejects a name held by another port with ports.name_conflict")
+        void should_rejectTakenName() {
+            existingPorts(relayPort(1, "Focos", 27), relayPort(2, "Sembra", 26));
+            assertApi(() -> sut.update(ORG_ID, 1, new UpdatePortDto().setName("Sembra")), HttpStatus.CONFLICT, ErrorCodes.PORTS_NAME_CONFLICT);
         }
 
         @Test
-        @DisplayName("changes the pin when there is no conflict")
+        @DisplayName("accepts the current kind and rejects any other with ports.kind_immutable")
+        void should_keepKindImmutable() {
+            existingPorts(relayPort(1, "Focos", 27));
+            assertThat(sut.update(ORG_ID, 1, new UpdatePortDto().setKind("relay")).getKind()).isEqualTo(OutputKind.RELAY);
+            assertApi(() -> sut.update(ORG_ID, 1, new UpdatePortDto().setKind("led_strip")), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_KIND_IMMUTABLE);
+            assertApi(() -> sut.update(ORG_ID, 1, new UpdatePortDto().setKind("laser")), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_KIND_INVALID);
+        }
+
+        @Test
+        @DisplayName("renaming a strip rewrites the strip reference of its segments")
+        void should_cascadeStripRename() {
+            Port strip = stripPort(1, "LedStrip3", 13, 300);
+            Port fondo1 = segmentPort(2, "Fondo1", "LedStrip3", 0, 148);
+            Port other = segmentPort(3, "CasaSimple", "LedStrip4", 0, 15);
+            existingPorts(strip, fondo1, other);
+
+            sut.update(ORG_ID, 1, new UpdatePortDto().setName("TiraFons"));
+
+            assertThat(sut.configOf(fondo1)).containsEntry("strip", "TiraFons");
+            assertThat(sut.configOf(other)).containsEntry("strip", "LedStrip4");
+            verify(portRepository).save(fondo1);
+            verify(portRepository, never()).save(other);
+        }
+
+        @Test
+        @DisplayName("changes the piece type only to one of the same kind")
+        void should_checkPieceTypeKindOnChange() {
+            existingPorts(relayPort(1, "Focos", 27));
+            PieceType otherRelayType = new PieceType().setId(12).setKind(OutputKind.RELAY).setName("Llum");
+            when(pieceTypeService.findInOrg(ORG_ID, 12)).thenReturn(otherRelayType);
+            assertThat(sut.update(ORG_ID, 1, new UpdatePortDto().setPieceTypeId(12)).getPieceTypeId()).isEqualTo(12);
+            assertApi(() -> sut.update(ORG_ID, 1, new UpdatePortDto().setPieceTypeId(SEGMENT_TYPE_ID)),
+                    HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIECE_TYPE_KIND_MISMATCH);
+        }
+
+        @Test
+        @DisplayName("changes the pin when free and rejects a used, reserved or invalid one")
         void should_changePin() {
-            Port port = existingPort(7, "Salida tira led 1", 21);
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
-            when(portRepository.findById(7)).thenReturn(Optional.of(port));
-            when(portRepository.findByOrganizationAndPin(org, 22)).thenReturn(Optional.empty());
-            when(portRepository.saveAndFlush(any(Port.class))).thenAnswer(inv -> inv.getArgument(0));
-
-            Port updated = sut.update(ORG_ID, 7, new UpdatePortDto().setPin(22));
-
-            assertThat(updated.getPin()).isEqualTo(22);
+            existingPorts(relayPort(1, "Focos", 27), relayPort(2, "Sembra", 26), motorPort(3, "Angel", 3, 4, 7));
+            assertThat(sut.update(ORG_ID, 1, new UpdatePortDto().setPin(22)).getPin()).isEqualTo(22);
+            assertApi(() -> sut.update(ORG_ID, 1, new UpdatePortDto().setPin(26)), HttpStatus.CONFLICT, ErrorCodes.PORTS_PIN_CONFLICT);
+            assertApi(() -> sut.update(ORG_ID, 1, new UpdatePortDto().setPin(4)), HttpStatus.CONFLICT, ErrorCodes.PORTS_PIN_CONFLICT);
+            assertApi(() -> sut.update(ORG_ID, 1, new UpdatePortDto().setPin(0)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_RESERVED);
+            assertApi(() -> sut.update(ORG_ID, 1, new UpdatePortDto().setPin(40)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_INVALID);
         }
 
         @Test
-        @DisplayName("rejects a pin already used by another port with ports.pin_conflict")
-        void should_rejectPinConflict() {
-            Port port = existingPort(7, "Salida tira led 1", 21);
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
-            when(portRepository.findById(7)).thenReturn(Optional.of(port));
-            when(portRepository.findByOrganizationAndPin(org, 22))
-                    .thenReturn(Optional.of(existingPort(8, "Otra salida", 22)));
-
-            assertThatThrownBy(() -> sut.update(ORG_ID, 7, new UpdatePortDto().setPin(22)))
-                    .isInstanceOfSatisfying(ApiException.class,
-                            ex -> assertThat(ex.getCode()).isEqualTo(ErrorCodes.PORTS_PIN_CONFLICT));
+        @DisplayName("keeping the same pin is not a conflict with itself")
+        void should_allowSamePin() {
+            existingPorts(relayPort(1, "Focos", 27));
+            assertThat(sut.update(ORG_ID, 1, new UpdatePortDto().setPin(27)).getPin()).isEqualTo(27);
         }
 
         @Test
-        @DisplayName("rejects a name already used by another port with ports.name_conflict")
-        void should_rejectNameConflict() {
-            Port port = existingPort(7, "Salida tira led 1", 21);
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
-            when(portRepository.findById(7)).thenReturn(Optional.of(port));
-            when(portRepository.findByOrganizationAndName(org, "Otra salida"))
-                    .thenReturn(Optional.of(existingPort(8, "Otra salida", 30)));
-
-            assertThatThrownBy(() -> sut.update(ORG_ID, 7, new UpdatePortDto().setName("Otra salida")))
-                    .isInstanceOfSatisfying(ApiException.class,
-                            ex -> assertThat(ex.getCode()).isEqualTo(ErrorCodes.PORTS_NAME_CONFLICT));
+        @DisplayName("rejects a pin on a pinless kind")
+        void should_rejectPinOnSegment() {
+            existingPorts(stripPort(1, "LedStrip3", 13, 300), segmentPort(2, "Fondo1", "LedStrip3", 0, 148));
+            assertApi(() -> sut.update(ORG_ID, 2, new UpdatePortDto().setPin(5)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_NOT_ALLOWED);
         }
 
         @Test
-        @DisplayName("replaces the parameter list when provided")
+        @DisplayName("replaces and re-validates the config")
+        void should_replaceConfig() {
+            existingPorts(stripPort(1, "LedStrip3", 13, 300), segmentPort(2, "Fondo1", "LedStrip3", 0, 148));
+            Map<String, Object> cfg = new LinkedHashMap<>(Map.of("strip", "LedStrip3", "first", 10, "last", 20));
+            assertThat(sut.configOf(sut.update(ORG_ID, 2, new UpdatePortDto().setConfig(cfg)))).containsEntry("first", 10);
+            Map<String, Object> outOfRange = new LinkedHashMap<>(Map.of("strip", "LedStrip3", "first", 10, "last", 300));
+            assertApi(() -> sut.update(ORG_ID, 2, new UpdatePortDto().setConfig(outOfRange)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_SEGMENT_OUT_OF_RANGE);
+            Map<String, Object> badKey = new LinkedHashMap<>(Map.of("strip", "LedStrip3", "first", 10, "last", 20, "color", "red"));
+            assertApi(() -> sut.update(ORG_ID, 2, new UpdatePortDto().setConfig(badKey)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_CONFIG_UNKNOWN_KEY);
+        }
+
+        @Test
+        @DisplayName("a strip can grow but cannot shrink below one of its segments")
+        void should_guardStripLength() {
+            existingPorts(stripPort(1, "LedStrip3", 13, 300), segmentPort(2, "Fondo2", "LedStrip3", 298, 149));
+            Map<String, Object> grow = new LinkedHashMap<>(Map.of("dma", 10, "channel", 1, "length", 400));
+            assertThat(sut.configOf(sut.update(ORG_ID, 1, new UpdatePortDto().setConfig(grow)))).containsEntry("length", 400);
+            Map<String, Object> shrink = new LinkedHashMap<>(Map.of("dma", 10, "channel", 1, "length", 200));
+            assertThatThrownBy(() -> sut.update(ORG_ID, 1, new UpdatePortDto().setConfig(shrink)))
+                    .isInstanceOfSatisfying(ApiException.class, ex -> {
+                        assertThat(ex.getCode()).isEqualTo(ErrorCodes.PORTS_STRIP_SHRINK_BREAKS_SEGMENT);
+                        assertThat(ex.getParams()).containsEntry("segment", "Fondo2").containsEntry("first", 298).containsEntry("last", 149);
+                    });
+        }
+
+        @Test
+        @DisplayName("re-checks the strip channel when the pin or the config change")
+        void should_recheckStripChannel() {
+            existingPorts(stripPort(1, "LedStrip3", 13, 300));
+            assertApi(() -> sut.update(ORG_ID, 1, new UpdatePortDto().setPin(12)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_STRIP_CHANNEL_MISMATCH);
+            Map<String, Object> cfg = new LinkedHashMap<>(Map.of("dma", 10, "channel", 0, "length", 300));
+            assertApi(() -> sut.update(ORG_ID, 1, new UpdatePortDto().setConfig(cfg)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_STRIP_CHANNEL_MISMATCH);
+            Map<String, Object> ok = new LinkedHashMap<>(Map.of("dma", 10, "channel", 0, "length", 300));
+            assertThat(sut.update(ORG_ID, 1, new UpdatePortDto().setPin(12).setConfig(ok)).getPin()).isEqualTo(12);
+        }
+
+        @Test
+        @DisplayName("a motor config change re-checks pin collisions")
+        void should_recheckMotorPins() {
+            existingPorts(relayPort(1, "Focos", 27), motorPort(2, "Angel", 3, 4, 7));
+            assertApi(() -> sut.update(ORG_ID, 2, new UpdatePortDto().setConfig(motorConfig(3, 27, 7))), HttpStatus.CONFLICT, ErrorCodes.PORTS_PIN_CONFLICT);
+            assertThat(sut.configOf(sut.update(ORG_ID, 2, new UpdatePortDto().setConfig(motorConfig(3, 5, 7))))).containsEntry("pinL", 5);
+        }
+
+        @Test
+        @DisplayName("replaces the legacy parameter list when provided")
         void should_replaceParameters() {
-            Port port = existingPort(7, "Salida tira led 1", 21);
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
-            when(portRepository.findById(7)).thenReturn(Optional.of(port));
-            when(portRepository.saveAndFlush(any(Port.class))).thenAnswer(inv -> inv.getArgument(0));
-
-            Port updated = sut.update(ORG_ID, 7, new UpdatePortDto().setParameters(List.of(
-                    new ActionParameterDto().setName("brightness").setType(AttributeType.DECIMAL).setDynamic(true))));
-
-            List<ActionParameterDto> params = sut.parametersOf(updated);
-            assertThat(params).hasSize(1);
-            assertThat(params.get(0).getName()).isEqualTo("brightness");
-            assertThat(params.get(0).getType()).isEqualTo(AttributeType.DECIMAL);
+            existingPorts(relayPort(1, "Focos", 27));
+            Port updated = sut.update(ORG_ID, 1, new UpdatePortDto().setParameters(List.of(
+                    new ActionParameterDto().setName("hold").setType(AttributeType.DECIMAL).setDynamic(true))));
+            assertThat(sut.parametersOf(updated)).extracting(ActionParameterDto::getName).containsExactly("hold");
         }
 
         @Test
-        @DisplayName("leaves all fields unchanged when the payload is empty")
-        void should_noopOnEmptyPayload() {
-            Port port = existingPort(7, "Salida tira led 1", 21);
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
-            when(portRepository.findById(7)).thenReturn(Optional.of(port));
-            when(portRepository.saveAndFlush(any(Port.class))).thenAnswer(inv -> inv.getArgument(0));
-
-            Port updated = sut.update(ORG_ID, 7, new UpdatePortDto());
-
-            assertThat(updated.getName()).isEqualTo("Salida tira led 1");
-            assertThat(updated.getPin()).isEqualTo(21);
-            assertThat(updated.getPieceTypeId()).isEqualTo(PIECE_TYPE_ID);
+        @DisplayName("leaves everything unchanged with an empty payload")
+        void should_keepUnchanged() {
+            Port port = relayPort(1, "Focos", 27);
+            existingPorts(port);
+            Port updated = sut.update(ORG_ID, 1, new UpdatePortDto());
+            assertThat(updated.getName()).isEqualTo("Focos");
+            assertThat(updated.getPin()).isEqualTo(27);
+            assertThat(updated.getKind()).isEqualTo(OutputKind.RELAY);
         }
 
         @Test
-        @DisplayName("throws 404 when the port does not exist")
-        void should_throw404() {
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
-            when(portRepository.findById(7)).thenReturn(Optional.empty());
-
-            assertThatThrownBy(() -> sut.update(ORG_ID, 7, new UpdatePortDto().setName("x")))
-                    .isInstanceOfSatisfying(ApiException.class,
-                            ex -> assertThat(ex.getStatus()).isEqualTo(HttpStatus.NOT_FOUND));
+        @DisplayName("throws 404 when the port is missing or belongs to another organization")
+        void should_throwNotFound() {
+            when(portRepository.findById(99)).thenReturn(Optional.empty());
+            assertApi(() -> sut.update(ORG_ID, 99, new UpdatePortDto()), HttpStatus.NOT_FOUND, ErrorCodes.PORTS_NOT_FOUND);
+            Port foreign = relayPort(5, "X", 5).setOrganization(new Organization().setId(2));
+            when(portRepository.findById(5)).thenReturn(Optional.of(foreign));
+            assertApi(() -> sut.update(ORG_ID, 5, new UpdatePortDto()), HttpStatus.NOT_FOUND, ErrorCodes.PORTS_NOT_FOUND);
         }
     }
+
+    // ================================================================== softDelete
 
     @Nested
     @DisplayName("softDelete")
@@ -404,276 +696,135 @@ class PortServiceTest {
 
         @Test
         @DisplayName("mangles the name, nulls the pin and stamps deletedAt to free both slots")
-        void should_mangleNameNullPinStampDeletedAt() {
-            Port port = existingPort(7, "Salida tira led 1", 21);
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
-            when(portRepository.findById(7)).thenReturn(Optional.of(port));
-            when(portRepository.save(any(Port.class))).thenAnswer(inv -> inv.getArgument(0));
+        void should_freeSlots() {
+            Port port = relayPort(1, "Focos", 27);
+            existingPorts(port);
 
-            sut.softDelete(ORG_ID, 7);
+            sut.softDelete(ORG_ID, 1);
 
-            assertThat(port.getName()).isEqualTo("Salida tira led 1::deleted::7");
+            assertThat(port.getName()).isEqualTo("Focos::deleted::1");
             assertThat(port.getPin()).isNull();
             assertThat(port.getDeletedAt()).isNotNull();
+            verify(portRepository).save(port);
+        }
+
+        @Test
+        @DisplayName("refuses to delete a strip that still has segments with ports.strip_in_use")
+        void should_refuseStripInUse() {
+            Port strip = stripPort(1, "LedStrip3", 13, 300);
+            existingPorts(strip, segmentPort(2, "Fondo1", "LedStrip3", 0, 148), segmentPort(3, "Fondo2", "LedStrip3", 298, 149));
+
+            assertThatThrownBy(() -> sut.softDelete(ORG_ID, 1))
+                    .isInstanceOfSatisfying(ApiException.class, ex -> {
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                        assertThat(ex.getCode()).isEqualTo(ErrorCodes.PORTS_STRIP_IN_USE);
+                        assertThat(ex.getParams()).containsEntry("segments", "Fondo1, Fondo2");
+                    });
+            assertThat(strip.getDeletedAt()).isNull();
+            verify(portRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("deletes a strip without segments")
+        void should_deleteUnusedStrip() {
+            Port strip = stripPort(1, "LedStrip3", 13, 300);
+            existingPorts(strip, segmentPort(2, "CasaSimple", "LedStrip4", 0, 15));
+            sut.softDelete(ORG_ID, 1);
+            assertThat(strip.getDeletedAt()).isNotNull();
         }
 
         @Test
         @DisplayName("throws 404 when the port does not exist")
-        void should_throw404() {
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
-            when(portRepository.findById(7)).thenReturn(Optional.empty());
-
-            assertThatThrownBy(() -> sut.softDelete(ORG_ID, 7))
-                    .isInstanceOfSatisfying(ApiException.class,
-                            ex -> assertThat(ex.getStatus()).isEqualTo(HttpStatus.NOT_FOUND));
-            verify(portRepository, never()).save(any());
+        void should_throwNotFound() {
+            when(portRepository.findById(99)).thenReturn(Optional.empty());
+            assertApi(() -> sut.softDelete(ORG_ID, 99), HttpStatus.NOT_FOUND, ErrorCodes.PORTS_NOT_FOUND);
         }
     }
 
+    // ================================================================== findInOrg / listAll / responses
+
     @Nested
-    @DisplayName("findInOrg")
-    class FindInOrg {
+    @DisplayName("findInOrg and listAll")
+    class FindAndList {
 
         @Test
         @DisplayName("returns the port when it belongs to the organization")
-        void should_returnPort() {
-            Port port = existingPort(7, "Salida tira led 1", 21);
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
-            when(portRepository.findById(7)).thenReturn(Optional.of(port));
-
-            assertThat(sut.findInOrg(ORG_ID, 7)).isSameAs(port);
+        void should_returnOwnPort() {
+            Port port = relayPort(1, "Focos", 27);
+            existingPorts(port);
+            assertThat(sut.findInOrg(ORG_ID, 1)).isSameAs(port);
         }
 
         @Test
-        @DisplayName("throws 404 when the port belongs to another organization")
-        void should_throw404_when_otherOrg() {
-            Organization other = new Organization().setId(999);
-            Port port = new Port().setId(7).setName("x").setPin(1).setPieceTypeId(PIECE_TYPE_ID).setOrganization(other);
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
-            when(portRepository.findById(7)).thenReturn(Optional.of(port));
-
-            assertThatThrownBy(() -> sut.findInOrg(ORG_ID, 7))
-                    .isInstanceOfSatisfying(ApiException.class, ex -> {
-                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.NOT_FOUND);
-                        assertThat(ex.getCode()).isEqualTo(ErrorCodes.PORTS_NOT_FOUND);
-                    });
+        @DisplayName("throws 404 for another organization's port or a missing one")
+        void should_throwNotFound() {
+            when(portRepository.findById(5)).thenReturn(Optional.of(relayPort(5, "X", 5).setOrganization(new Organization().setId(2))));
+            assertApi(() -> sut.findInOrg(ORG_ID, 5), HttpStatus.NOT_FOUND, ErrorCodes.PORTS_NOT_FOUND);
+            when(portRepository.findById(99)).thenReturn(Optional.empty());
+            assertApi(() -> sut.findInOrg(ORG_ID, 99), HttpStatus.NOT_FOUND, ErrorCodes.PORTS_NOT_FOUND);
         }
 
         @Test
-        @DisplayName("throws 404 when the port is missing")
-        void should_throw404_when_missing() {
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
-            when(portRepository.findById(7)).thenReturn(Optional.empty());
+        @DisplayName("lists the organization's ports in repository order")
+        void should_listPorts() {
+            Port a = relayPort(1, "Focos", 27);
+            Port b = stripPort(2, "LedStrip3", 13, 300);
+            existingPorts(a, b);
+            assertThat(sut.listAll(ORG_ID)).containsExactly(a, b);
+        }
 
-            assertThatThrownBy(() -> sut.findInOrg(ORG_ID, 7))
-                    .isInstanceOf(ApiException.class);
+        @Test
+        @DisplayName("lists the segments that depend on a strip")
+        void should_listSegmentsOfStrip() {
+            List<Port> ports = new ArrayList<>(List.of(stripPort(1, "LedStrip3", 13, 300),
+                    segmentPort(2, "Fondo1", "LedStrip3", 0, 148), segmentPort(3, "CasaSimple", "LedStrip4", 0, 15), relayPort(4, "Focos", 27)));
+            existingPorts(ports.toArray(Port[]::new));
+            assertThat(sut.segmentsOfStrip(org, "LedStrip3")).extracting(Port::getName).containsExactly("Fondo1");
+            assertThat(sut.segmentsOfStrip(org, "LedStrip9")).isEmpty();
         }
     }
 
     @Nested
-    @DisplayName("listAll and response mapping")
-    class ListAndResponse {
+    @DisplayName("responses")
+    class Responses {
 
         @Test
-        @DisplayName("listAll returns the organization's ports")
-        void should_listAll() {
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
-            when(portRepository.findByOrganizationOrderByPositionAscIdAsc(org))
-                    .thenReturn(List.of(existingPort(1, "a", 1), existingPort(2, "b", 2)));
-
-            assertThat(sut.listAll(ORG_ID)).hasSize(2);
+        @DisplayName("exposes the kind id, the config without pin and a null piece type for infrastructure")
+        void should_buildResponse() {
+            Port strip = stripPort(1, "LedStrip3", 13, 300);
+            PortResponseDto dto = PortResponseDto.from(strip, sut.configOf(strip), sut.parametersOf(strip), null);
+            assertThat(dto.kind()).isEqualTo("led_strip");
+            assertThat(dto.pin()).isEqualTo(13);
+            assertThat(dto.config()).containsEntry("length", 300).doesNotContainKey("pin");
+            assertThat(dto.pieceTypeId()).isNull();
+            assertThat(dto.pieceTypeName()).isNull();
+            assertThat(dto.parameters()).isEmpty();
         }
 
         @Test
-        @DisplayName("pieceTypeNameOf resolves the related piece type name, null when missing")
-        void pieceTypeNameOf_resolvesName() {
-            when(pieceTypeRepository.findById(PIECE_TYPE_ID)).thenReturn(Optional.of(pieceType));
-            assertThat(sut.pieceTypeNameOf(PIECE_TYPE_ID)).isEqualTo("Tira Led");
+        @DisplayName("resolves the piece type name, or null when absent or deleted")
+        void should_resolvePieceTypeName() {
+            when(pieceTypeRepository.findById(RELAY_TYPE_ID)).thenReturn(Optional.of(relayType));
+            when(pieceTypeRepository.findById(99)).thenReturn(Optional.empty());
+            assertThat(sut.pieceTypeNameOf(RELAY_TYPE_ID)).isEqualTo("Figura amb relé");
+            assertThat(sut.pieceTypeNameOf(99)).isNull();
             assertThat(sut.pieceTypeNameOf(null)).isNull();
         }
 
         @Test
-        @DisplayName("PortResponseDto.from carries pin, piece type and the deserialized parameters")
-        void responseDto_should_carryFields() {
-            ActionParametersJsonCodec codec = new ActionParametersJsonCodec();
-            Port port = existingPort(7, "Salida tira led 1", 21)
-                    .setParametersJson(codec.serialize(List.of(
-                            new ActionParameterDto().setName("channel").setType(AttributeType.INTEGER))));
-
-            PortResponseDto dto = PortResponseDto.from(port, sut.parametersOf(port), "Tira Led");
-
-            assertThat(dto.id()).isEqualTo(7);
-            assertThat(dto.name()).isEqualTo("Salida tira led 1");
-            assertThat(dto.pieceTypeId()).isEqualTo(PIECE_TYPE_ID);
-            assertThat(dto.pieceTypeName()).isEqualTo("Tira Led");
-            assertThat(dto.pin()).isEqualTo(21);
-            assertThat(dto.parameters()).hasSize(1);
-            assertThat(dto.parameters().get(0).getName()).isEqualTo("channel");
-        }
-    }
-
-    @Nested
-    @DisplayName("parameter value persistence (dynamic / staticValue / isDuration)")
-    class ParameterValues {
-
-        /** Stubs the lookups create() performs before normalizeParameters; rejection paths stop here. */
-        private void stubLookups() {
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
-            when(pieceTypeService.findInOrg(ORG_ID, PIECE_TYPE_ID)).thenReturn(pieceType);
-            when(portRepository.findByOrganizationAndName(org, "Salida tira led 1")).thenReturn(Optional.empty());
-            when(portRepository.findByOrganizationAndPin(org, 21)).thenReturn(Optional.empty());
-            when(portRepository.findByOrganizationOrderByPositionAscIdAsc(org)).thenReturn(List.of());
-        }
-
-        /** Adds the persistence stub on top of {@link #stubLookups()} for the happy paths. */
-        private void stubHappyLookups() {
-            stubLookups();
-            when(portRepository.saveAndFlush(any(Port.class))).thenAnswer(inv -> inv.getArgument(0));
+        @DisplayName("configOf tolerates a null blob")
+        void should_tolerateNullConfig() {
+            assertThat(sut.configOf(new Port())).isEmpty();
         }
 
         @Test
-        @DisplayName("persists the static fixed value of a static parameter (round-trip through serialization)")
-        void should_persistStaticValue() {
-            stubHappyLookups();
-
-            CreatePortDto dto = tiraLed1().setParameters(List.of(
-                    new ActionParameterDto().setName("channel").setType(AttributeType.INTEGER)
-                            .setRequired(true).setDynamic(false).setStaticValue("7")));
-
-            Port port = sut.create(ORG_ID, dto);
-
-            List<ActionParameterDto> params = sut.parametersOf(port);
-            assertThat(params).hasSize(1);
-            assertThat(params.get(0).getDynamic()).isFalse();
-            assertThat(params.get(0).getStaticValue()).isEqualTo("7");
-        }
-
-        @Test
-        @DisplayName("trims the static value and keeps it through serialization")
-        void should_trimStaticValue() {
-            stubHappyLookups();
-
-            CreatePortDto dto = tiraLed1().setParameters(List.of(
-                    new ActionParameterDto().setName("channel").setType(AttributeType.TEXT)
-                            .setRequired(true).setDynamic(false).setStaticValue("  rojo  ")));
-
-            Port port = sut.create(ORG_ID, dto);
-
-            assertThat(sut.parametersOf(port).get(0).getStaticValue()).isEqualTo("rojo");
-        }
-
-        @Test
-        @DisplayName("nulls the static value of a dynamic parameter")
-        void should_nullStaticValueWhenDynamic() {
-            stubHappyLookups();
-
-            CreatePortDto dto = tiraLed1().setParameters(List.of(
-                    new ActionParameterDto().setName("channel").setType(AttributeType.INTEGER)
-                            .setDynamic(true).setStaticValue("7")));
-
-            Port port = sut.create(ORG_ID, dto);
-
-            List<ActionParameterDto> params = sut.parametersOf(port);
-            assertThat(params.get(0).getDynamic()).isTrue();
-            assertThat(params.get(0).getStaticValue()).isNull();
-        }
-
-        @Test
-        @DisplayName("persists the isDuration flag of a numeric duration parameter")
-        void should_persistIsDuration() {
-            stubHappyLookups();
-
-            CreatePortDto dto = tiraLed1().setParameters(List.of(
-                    new ActionParameterDto().setName("seconds").setType(AttributeType.INTEGER)
-                            .setIsDuration(true).setDynamic(true)));
-
-            Port port = sut.create(ORG_ID, dto);
-
-            assertThat(sut.parametersOf(port).get(0).getIsDuration()).isTrue();
-        }
-
-        @Test
-        @DisplayName("rejects a static required parameter without a fixed value")
-        void should_rejectStaticRequiredWithoutValue() {
-            stubLookups();
-
-            CreatePortDto dto = tiraLed1().setParameters(List.of(
-                    new ActionParameterDto().setName("channel").setType(AttributeType.INTEGER)
-                            .setRequired(true).setDynamic(false)));
-
-            assertThatThrownBy(() -> sut.create(ORG_ID, dto))
-                    .isInstanceOfSatisfying(ResponseStatusException.class,
-                            ex -> assertThat(ex.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST));
-        }
-
-        @Test
-        @DisplayName("allows a static optional parameter without a fixed value")
-        void should_allowStaticOptionalWithoutValue() {
-            stubHappyLookups();
-
-            CreatePortDto dto = tiraLed1().setParameters(List.of(
-                    new ActionParameterDto().setName("channel").setType(AttributeType.INTEGER)
-                            .setRequired(false).setDynamic(false)));
-
-            Port port = sut.create(ORG_ID, dto);
-
-            assertThat(sut.parametersOf(port).get(0).getStaticValue()).isNull();
-        }
-
-        @Test
-        @DisplayName("rejects a duration parameter that is not numeric")
-        void should_rejectNonNumericDuration() {
-            stubLookups();
-
-            CreatePortDto dto = tiraLed1().setParameters(List.of(
-                    new ActionParameterDto().setName("label").setType(AttributeType.TEXT)
-                            .setIsDuration(true).setDynamic(true)));
-
-            assertThatThrownBy(() -> sut.create(ORG_ID, dto))
-                    .isInstanceOf(ResponseStatusException.class);
-        }
-
-        @Test
-        @DisplayName("rejects more than one duration parameter")
-        void should_rejectMultipleDurations() {
-            stubLookups();
-
-            CreatePortDto dto = tiraLed1().setParameters(List.of(
-                    new ActionParameterDto().setName("a").setType(AttributeType.INTEGER)
-                            .setIsDuration(true).setDynamic(true),
-                    new ActionParameterDto().setName("b").setType(AttributeType.INTEGER)
-                            .setIsDuration(true).setDynamic(true)));
-
-            assertThatThrownBy(() -> sut.create(ORG_ID, dto))
-                    .isInstanceOf(ResponseStatusException.class);
-        }
-
-        @Test
-        @DisplayName("rejects a static duration parameter without a fixed value")
-        void should_rejectStaticDurationWithoutValue() {
-            stubLookups();
-
-            CreatePortDto dto = tiraLed1().setParameters(List.of(
-                    new ActionParameterDto().setName("seconds").setType(AttributeType.INTEGER)
-                            .setIsDuration(true).setDynamic(false)));
-
-            assertThatThrownBy(() -> sut.create(ORG_ID, dto))
-                    .isInstanceOf(ResponseStatusException.class);
-        }
-
-        @Test
-        @DisplayName("update replaces parameters preserving the static fixed value")
-        void update_should_preserveStaticValue() {
-            Port port = existingPort(7, "Salida tira led 1", 21);
-            when(organizationService.findById(ORG_ID)).thenReturn(org);
-            when(portRepository.findById(7)).thenReturn(Optional.of(port));
-            when(portRepository.saveAndFlush(any(Port.class))).thenAnswer(inv -> inv.getArgument(0));
-
-            Port updated = sut.update(ORG_ID, 7, new UpdatePortDto().setParameters(List.of(
-                    new ActionParameterDto().setName("brightness").setType(AttributeType.DECIMAL)
-                            .setRequired(true).setDynamic(false).setStaticValue("0.5"))));
-
-            assertThat(sut.parametersOf(updated).get(0).getStaticValue()).isEqualTo("0.5");
+        @DisplayName("the saved entity carries the serialized config, captured on save")
+        void should_serializeConfigOnSave() {
+            existingPorts(stripPort(1, "LedStrip3", 13, 300));
+            sut.create(ORG_ID, segmentDto("Fondo1", "LedStrip3", 0, 148));
+            ArgumentCaptor<Port> captor = ArgumentCaptor.forClass(Port.class);
+            verify(portRepository).saveAndFlush(captor.capture());
+            assertThat(captor.getValue().getConfigJson()).isEqualTo("{\"strip\":\"LedStrip3\",\"first\":0,\"last\":148}");
         }
     }
 }

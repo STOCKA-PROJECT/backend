@@ -3,7 +3,9 @@ package com.stocka.backend.modules.ports.service;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -15,6 +17,10 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
+import com.stocka.backend.modules.contract.BoardSpec;
+import com.stocka.backend.modules.contract.CatalogKind;
+import com.stocka.backend.modules.contract.OutputCatalog;
+import com.stocka.backend.modules.contract.OutputKind;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.service.OrganizationService;
 import com.stocka.backend.modules.piecetypes.dto.ActionParameterDto;
@@ -29,44 +35,63 @@ import com.stocka.backend.modules.ports.entity.Port;
 import com.stocka.backend.modules.ports.repository.PortRepository;
 
 /**
- * CRUD for {@link Port} definitions (per-organization Raspberry Pi GPIO outputs with typed
- * parameters). Ports are a private, organization-gated feature: the authorization gate lives in
- * {@code @orgSecurity.canReadPorts} / {@code canManagePorts}. Definitions only: there is no runtime
- * hardware execution.
+ * CRUD for {@link Port} definitions: the outputs and inputs of an organization's belén controller,
+ * typed by the output catalog ({@link OutputCatalog}).
  *
- * <p>Parameter names follow the same technical-identifier rules as attributes
- * ({@link PieceTypeService#validateAttributeName(String)}) and parameter validators reuse
- * {@link PieceTypeService#validateValidators}. The ordered parameter list is persisted as a JSON
- * blob through {@link ActionParametersJsonCodec}, exactly like a piece-type action.
- *
- * <p>The port {@code name} is a human label ("Salida tira led 1"), not a technical identifier, so it
- * is only trimmed and length-checked. The {@code pin} is the Raspberry Pi GPIO number and is unique
- * per organization; on soft-delete the name is mangled and the pin nulled to free both UNIQUE slots.
+ * <p>Write rules, in the order {@link #create} applies them:
+ * <ol>
+ *   <li>{@code kind} is required and must exist in the catalog; it is immutable afterwards.</li>
+ *   <li>A port of a non-infrastructure kind needs a piece type of the same organization whose own
+ *       kind equals the port's; infrastructure kinds (strips, button) carry no piece type.</li>
+ *   <li>Kinds with a pin need a valid, non-reserved GPIO in {@code Port.pin}; the others must not
+ *       send one. A strip's pin must be a WS281x-capable pin and its config channel must match.</li>
+ *   <li>Name unique per organization; every pin (including the three motor pins kept in config)
+ *       unique across the organization's ports.</li>
+ *   <li>Config validated by {@link PortConfigValidator}; a segment must name an existing strip of
+ *       the organization and fit inside its length.</li>
+ * </ol>
+ * Renaming a strip cascades to the segments that reference it; shortening a strip below one of
+ * its segments, or deleting a strip with segments, is refused. The legacy typed-parameter list is
+ * kept untouched for compatibility.
  */
 @Service
 public class PortService {
     private static final int MAX_NAME_LENGTH = 160;
     private static final int MAX_DISPLAY_NAME_LENGTH = 160;
     private static final String SOFT_DELETE_SUFFIX = "::deleted::";
+    private static final String STRIP_KEY = "strip";
+    private static final String FIRST_KEY = "first";
+    private static final String LAST_KEY = "last";
+    private static final String LENGTH_KEY = "length";
+    private static final String CHANNEL_KEY = "channel";
 
     private final OrganizationService organizationService;
     private final PortRepository portRepository;
     private final ActionParametersJsonCodec parametersCodec;
     private final PieceTypeService pieceTypeService;
     private final PieceTypeRepository pieceTypeRepository;
+    private final OutputCatalog catalog;
+    private final PortConfigValidator configValidator;
+    private final PortConfigJsonCodec configCodec;
 
     public PortService(
             OrganizationService organizationService,
             PortRepository portRepository,
             ActionParametersJsonCodec parametersCodec,
             PieceTypeService pieceTypeService,
-            PieceTypeRepository pieceTypeRepository
+            PieceTypeRepository pieceTypeRepository,
+            OutputCatalog catalog,
+            PortConfigValidator configValidator,
+            PortConfigJsonCodec configCodec
     ) {
         this.organizationService = organizationService;
         this.portRepository = portRepository;
         this.parametersCodec = parametersCodec;
         this.pieceTypeService = pieceTypeService;
         this.pieceTypeRepository = pieceTypeRepository;
+        this.catalog = catalog;
+        this.configValidator = configValidator;
+        this.configCodec = configCodec;
     }
 
     /**
@@ -81,14 +106,23 @@ public class PortService {
     }
 
     /**
-     * Deserializes the parameter blob of a port, so controllers can build responses without
-     * depending on the codec bean directly.
+     * Deserializes the legacy parameter blob of a port.
      *
      * @param port port whose parameters must be read
      * @return the deserialized parameter list (never {@code null})
      */
     public List<ActionParameterDto> parametersOf(Port port) {
         return parametersCodec.deserialize(port.getParametersJson());
+    }
+
+    /**
+     * Deserializes the kind-specific config of a port.
+     *
+     * @param port port whose config must be read
+     * @return the config map (never {@code null}; empty for kinds without config)
+     */
+    public Map<String, Object> configOf(Port port) {
+        return configCodec.deserialize(port.getConfigJson());
     }
 
     /**
@@ -110,6 +144,23 @@ public class PortService {
     }
 
     /**
+     * Segments of the organization that reference the strip named {@code stripName}.
+     *
+     * @param org       owning organization
+     * @param stripName name of a {@code led_strip} port
+     * @return the dependent segment ports, in position order
+     */
+    public List<Port> segmentsOfStrip(Organization org, String stripName) {
+        List<Port> out = new ArrayList<>();
+        for (Port p : portRepository.findByOrganizationOrderByPositionAscIdAsc(org)) {
+            if (p.getKind() == OutputKind.LED_SEGMENT && stripName.equals(configOf(p).get(STRIP_KEY))) {
+                out.add(p);
+            }
+        }
+        return out;
+    }
+
+    /**
      * Creates a new port in the organization.
      *
      * @param orgId organization id
@@ -120,10 +171,15 @@ public class PortService {
     public Port create(Integer orgId, CreatePortDto dto) {
         Organization org = organizationService.findById(orgId);
         String name = sanitizeName(dto.getName());
-        Integer pin = validatePin(dto.getPin());
-        PieceType pieceType = resolvePieceType(orgId, dto.getPieceTypeId());
+        OutputKind kind = parseRequiredKind(dto.getKind());
+        CatalogKind spec = catalog.kind(kind);
+        PieceType pieceType = resolvePieceTypeForKind(orgId, dto.getPieceTypeId(), kind, spec);
+        Integer pin = validatePinForKind(spec, dto.getPin());
         ensureUniqueName(org, name, null);
-        ensureUniquePin(org, pin, null);
+        Map<String, Object> config = configValidator.normalize(kind, dto.getConfig());
+        validateStripPin(kind, pin, config);
+        ensurePinsFree(org, ownPins(kind, pin, config), null);
+        validateSegment(org, kind, config);
 
         int defaultPosition = portRepository.findByOrganizationOrderByPositionAscIdAsc(org).size();
         List<ActionParameterDto> parameters = normalizeParameters(dto.getParameters());
@@ -131,16 +187,19 @@ public class PortService {
         Port port = new Port()
                 .setOrganization(org)
                 .setName(name)
-                .setPieceTypeId(pieceType.getId())
+                .setKind(kind)
+                .setPieceTypeId(pieceType == null ? null : pieceType.getId())
                 .setPin(pin)
+                .setConfigJson(configCodec.serialize(config))
                 .setPosition(defaultPosition)
                 .setParametersJson(parametersCodec.serialize(parameters));
         return saveAndFlush(port);
     }
 
     /**
-     * Applies a partial update to a port. {@code null} fields are left unchanged; a non-null
-     * {@code parameters} list replaces the existing parameter set.
+     * Applies a partial update to a port. {@code null} fields are left unchanged. The kind cannot
+     * change; a new {@code config} replaces the old one and is re-validated together with the pin
+     * rules; renaming a strip cascades to its segments.
      *
      * @param orgId  organization id
      * @param portId port id
@@ -150,27 +209,54 @@ public class PortService {
     @Transactional
     public Port update(Integer orgId, Integer portId, UpdatePortDto dto) {
         Port port = findInOrg(orgId, portId);
+        Organization org = port.getOrganization();
+        OutputKind kind = port.getKind();
+        CatalogKind spec = catalog.kind(kind);
 
+        // Validate everything first, mutate the entity only once every rule has passed.
+        if (dto.getKind() != null && parseRequiredKind(dto.getKind()) != kind) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_KIND_IMMUTABLE);
+        }
+        String newName = port.getName();
         if (dto.getName() != null) {
-            String newName = sanitizeName(dto.getName());
+            newName = sanitizeName(dto.getName());
             if (!newName.equals(port.getName())) {
-                ensureUniqueName(port.getOrganization(), newName, port.getId());
-                port.setName(newName);
+                ensureUniqueName(org, newName, port.getId());
             }
         }
+        Integer newPieceTypeId = port.getPieceTypeId();
         if (dto.getPieceTypeId() != null) {
-            PieceType pieceType = resolvePieceType(orgId, dto.getPieceTypeId());
-            port.setPieceTypeId(pieceType.getId());
+            PieceType pieceType = resolvePieceTypeForKind(orgId, dto.getPieceTypeId(), kind, spec);
+            newPieceTypeId = pieceType == null ? null : pieceType.getId();
         }
-        if (dto.getPin() != null) {
-            Integer newPin = validatePin(dto.getPin());
-            if (!newPin.equals(port.getPin())) {
-                ensureUniquePin(port.getOrganization(), newPin, port.getId());
-                port.setPin(newPin);
+        Integer newPin = dto.getPin() != null ? validatePinForKind(spec, dto.getPin()) : port.getPin();
+        Map<String, Object> config = dto.getConfig() != null
+                ? configValidator.normalize(kind, dto.getConfig())
+                : configOf(port);
+        if (dto.getConfig() != null || dto.getPin() != null) {
+            validateStripPin(kind, newPin, config);
+            ensurePinsFree(org, ownPins(kind, newPin, config), port.getId());
+        }
+        if (dto.getConfig() != null) {
+            validateSegment(org, kind, config);
+            if (kind == OutputKind.LED_STRIP) {
+                ensureStripKeepsSegments(org, port.getName(), ((Number) config.get(LENGTH_KEY)).intValue());
             }
         }
-        if (dto.getParameters() != null) {
-            List<ActionParameterDto> parameters = normalizeParameters(dto.getParameters());
+        List<ActionParameterDto> parameters = dto.getParameters() != null ? normalizeParameters(dto.getParameters()) : null;
+
+        if (!newName.equals(port.getName())) {
+            if (kind == OutputKind.LED_STRIP) {
+                cascadeStripRename(org, port.getName(), newName);
+            }
+            port.setName(newName);
+        }
+        port.setPieceTypeId(newPieceTypeId);
+        port.setPin(newPin);
+        if (dto.getConfig() != null) {
+            port.setConfigJson(configCodec.serialize(config));
+        }
+        if (parameters != null) {
             port.setParametersJson(parametersCodec.serialize(parameters));
         }
         return saveAndFlush(port);
@@ -178,15 +264,22 @@ public class PortService {
 
     /**
      * Soft-deletes a port, freeing both UNIQUE slots: the name is mangled with a "::deleted::ID"
-     * suffix and the pin is nulled (InnoDB treats multiple NULLs as distinct), so a fresh active
-     * port with the same name and/or pin can be created later.
+     * suffix and the pin is nulled. A strip that still has segments cannot be deleted.
      *
      * @param orgId  organization id
      * @param portId port id
+     * @throws ApiException 409 ({@link ErrorCodes#PORTS_STRIP_IN_USE}) when segments depend on it
      */
     @Transactional
     public void softDelete(Integer orgId, Integer portId) {
         Port port = findInOrg(orgId, portId);
+        if (port.getKind() == OutputKind.LED_STRIP) {
+            List<Port> segments = segmentsOfStrip(port.getOrganization(), port.getName());
+            if (!segments.isEmpty()) {
+                throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PORTS_STRIP_IN_USE,
+                        params("segments", String.join(", ", segments.stream().map(Port::getName).toList())));
+            }
+        }
         port.setName(buildSoftDeletedName(port.getName(), port.getId(), MAX_NAME_LENGTH));
         port.setPin(null);
         port.setDeletedAt(LocalDateTime.now());
@@ -194,9 +287,195 @@ public class PortService {
     }
 
     /**
-     * Validates and normalizes the inbound parameter list: each parameter gets a valid technical
-     * name, a non-null type, validated type-specific rules, a defaulted {@code required} flag, a
-     * sequential position and a display name. Parameter names must be unique within the port.
+     * Resolves the display name of a port's related piece type for responses.
+     *
+     * @param pieceTypeId referenced piece-type id (may be {@code null})
+     * @return the piece-type name, or {@code null} when the id is null or the type was soft-deleted
+     */
+    public String pieceTypeNameOf(Integer pieceTypeId) {
+        if (pieceTypeId == null) {
+            return null;
+        }
+        return pieceTypeRepository.findById(pieceTypeId).map(PieceType::getName).orElse(null);
+    }
+
+    // ------------------------------------------------------------------ kind / piece type / pin
+
+    private static OutputKind parseRequiredKind(String raw) {
+        if (raw == null || raw.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_KIND_REQUIRED);
+        }
+        return OutputKind.parse(raw)
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_KIND_INVALID,
+                        params("kind", raw.trim())));
+    }
+
+    /**
+     * Resolves the piece type a port of {@code kind} must reference, or {@code null} for
+     * infrastructure kinds.
+     *
+     * @throws ApiException 400 ({@link ErrorCodes#PORTS_PIECE_TYPE_REQUIRED}) when a non-infrastructure
+     *                      kind comes without a type, 404 when the type does not exist in the org, or 400
+     *                      ({@link ErrorCodes#PORTS_PIECE_TYPE_KIND_MISMATCH}) when the type has no kind
+     *                      or another kind
+     */
+    private PieceType resolvePieceTypeForKind(Integer orgId, Integer pieceTypeId, OutputKind kind, CatalogKind spec) {
+        if (pieceTypeId == null) {
+            if (spec.infrastructure()) {
+                return null;
+            }
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIECE_TYPE_REQUIRED);
+        }
+        PieceType type = pieceTypeService.findInOrg(orgId, pieceTypeId);
+        if (type.getKind() != kind) {
+            Map<String, Object> p = new LinkedHashMap<>();
+            p.put("type", type.getName());
+            p.put("typeKind", type.getKind() == null ? "-" : type.getKind().catalogId());
+            p.put("portKind", kind.catalogId());
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIECE_TYPE_KIND_MISMATCH, p);
+        }
+        return type;
+    }
+
+    private Integer validatePinForKind(CatalogKind spec, Integer pin) {
+        if (!spec.pin()) {
+            if (pin != null) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_NOT_ALLOWED,
+                        params("kind", spec.kind().catalogId()));
+            }
+            return null;
+        }
+        if (pin == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_INVALID);
+        }
+        validateGpio(pin);
+        return pin;
+    }
+
+    private void validateGpio(int pin) {
+        BoardSpec board = board();
+        if (!board.isValidGpio(pin)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_INVALID);
+        }
+        if (board.isReserved(pin)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_RESERVED, params("pin", pin));
+        }
+    }
+
+    private void validateStripPin(OutputKind kind, Integer pin, Map<String, Object> config) {
+        if (kind != OutputKind.LED_STRIP || pin == null) {
+            return;
+        }
+        Integer channel = board().ws281xChannel().get(pin);
+        if (channel == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_STRIP_PIN_UNSUPPORTED, params("pin", pin));
+        }
+        Object declared = config.get(CHANNEL_KEY);
+        if (declared instanceof Number n && n.intValue() != channel) {
+            Map<String, Object> p = new LinkedHashMap<>();
+            p.put("pin", pin);
+            p.put("channel", channel);
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_STRIP_CHANNEL_MISMATCH, p);
+        }
+    }
+
+    /** Pins a port occupies: its own pin plus any pins declared in its config (motor). */
+    private List<Integer> ownPins(OutputKind kind, Integer pin, Map<String, Object> config) {
+        List<Integer> pins = new ArrayList<>();
+        if (pin != null) {
+            pins.add(pin);
+        }
+        for (Integer p : configValidator.configPins(kind, config)) {
+            validateGpio(p);
+            pins.add(p);
+        }
+        return pins;
+    }
+
+    private void ensurePinsFree(Organization org, List<Integer> pins, Integer excludeId) {
+        if (pins.isEmpty()) {
+            return;
+        }
+        Set<Integer> used = pinsInUse(org, excludeId);
+        for (Integer pin : pins) {
+            if (used.contains(pin)) {
+                throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PORTS_PIN_CONFLICT);
+            }
+        }
+    }
+
+    private Set<Integer> pinsInUse(Organization org, Integer excludeId) {
+        Set<Integer> used = new HashSet<>();
+        for (Port p : portRepository.findByOrganizationOrderByPositionAscIdAsc(org)) {
+            if (excludeId != null && excludeId.equals(p.getId())) {
+                continue;
+            }
+            if (p.getPin() != null) {
+                used.add(p.getPin());
+            }
+            used.addAll(configValidator.configPins(p.getKind(), configOf(p)));
+        }
+        return used;
+    }
+
+    // ------------------------------------------------------------------ strips and segments
+
+    private void validateSegment(Organization org, OutputKind kind, Map<String, Object> config) {
+        if (kind != OutputKind.LED_SEGMENT) {
+            return;
+        }
+        String stripName = String.valueOf(config.get(STRIP_KEY));
+        Port strip = portRepository.findByOrganizationAndName(org, stripName)
+                .filter(p -> p.getKind() == OutputKind.LED_STRIP)
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_SEGMENT_STRIP_NOT_FOUND,
+                        params(STRIP_KEY, stripName)));
+        int length = ((Number) configOf(strip).get(LENGTH_KEY)).intValue();
+        int first = ((Number) config.get(FIRST_KEY)).intValue();
+        int last = ((Number) config.get(LAST_KEY)).intValue();
+        if (Math.min(first, last) < 0 || Math.max(first, last) > length - 1) {
+            Map<String, Object> p = new LinkedHashMap<>();
+            p.put(FIRST_KEY, first);
+            p.put(LAST_KEY, last);
+            p.put("max", length - 1);
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_SEGMENT_OUT_OF_RANGE, p);
+        }
+    }
+
+    private void ensureStripKeepsSegments(Organization org, String stripName, int newLength) {
+        for (Port segment : segmentsOfStrip(org, stripName)) {
+            Map<String, Object> cfg = configOf(segment);
+            int first = ((Number) cfg.get(FIRST_KEY)).intValue();
+            int last = ((Number) cfg.get(LAST_KEY)).intValue();
+            if (Math.max(first, last) > newLength - 1) {
+                Map<String, Object> p = new LinkedHashMap<>();
+                p.put("segment", segment.getName());
+                p.put(FIRST_KEY, first);
+                p.put(LAST_KEY, last);
+                throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_STRIP_SHRINK_BREAKS_SEGMENT, p);
+            }
+        }
+    }
+
+    private void cascadeStripRename(Organization org, String oldName, String newName) {
+        for (Port segment : segmentsOfStrip(org, oldName)) {
+            Map<String, Object> cfg = configOf(segment);
+            cfg.put(STRIP_KEY, newName);
+            segment.setConfigJson(configCodec.serialize(cfg));
+            portRepository.save(segment);
+        }
+    }
+
+    private BoardSpec board() {
+        return catalog.board(OutputCatalog.DEFAULT_BOARD)
+                .orElseThrow(() -> new IllegalStateException("El catálogo no describe la placa " + OutputCatalog.DEFAULT_BOARD));
+    }
+
+    // ------------------------------------------------------------------ legacy parameters
+
+    /**
+     * Validates and normalizes the legacy inbound parameter list, with the same rules as a piece-type
+     * action: valid technical names, non-null types, validated rules, defaulted {@code required},
+     * sequential positions and at most one duration parameter.
      *
      * @param raw inbound parameters; may be {@code null}
      * @return a normalized list ready to be serialized (empty when {@code raw} is {@code null})
@@ -278,13 +557,6 @@ public class PortService {
         }
     }
 
-    private void ensureUniquePin(Organization org, Integer pin, Integer excludeId) {
-        Optional<Port> existing = portRepository.findByOrganizationAndPin(org, pin);
-        if (existing.isPresent() && (excludeId == null || !existing.get().getId().equals(excludeId))) {
-            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PORTS_PIN_CONFLICT);
-        }
-    }
-
     private String sanitizeName(String raw) {
         if (raw == null || raw.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_NAME_REQUIRED);
@@ -295,43 +567,6 @@ public class PortService {
                     "El nombre del puerto no puede superar " + MAX_NAME_LENGTH + " caracteres");
         }
         return trimmed;
-    }
-
-    /**
-     * Resolves the related piece type, validating it exists and belongs to the same organization.
-     *
-     * @param orgId       organization id
-     * @param pieceTypeId referenced piece-type id; must be non-null
-     * @return the resolved piece type
-     * @throws ApiException 400 ({@link ErrorCodes#PORTS_PIECE_TYPE_REQUIRED}) when {@code pieceTypeId}
-     *                      is null, or 404 ({@code piece_types.not_found}) when it does not exist in
-     *                      the organization
-     */
-    private PieceType resolvePieceType(Integer orgId, Integer pieceTypeId) {
-        if (pieceTypeId == null) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIECE_TYPE_REQUIRED);
-        }
-        return pieceTypeService.findInOrg(orgId, pieceTypeId);
-    }
-
-    /**
-     * Resolves the display name of a port's related piece type for responses.
-     *
-     * @param pieceTypeId referenced piece-type id (may be {@code null})
-     * @return the piece-type name, or {@code null} when the id is null or the type was soft-deleted
-     */
-    public String pieceTypeNameOf(Integer pieceTypeId) {
-        if (pieceTypeId == null) {
-            return null;
-        }
-        return pieceTypeRepository.findById(pieceTypeId).map(PieceType::getName).orElse(null);
-    }
-
-    private Integer validatePin(Integer pin) {
-        if (pin == null || pin < 0) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_INVALID);
-        }
-        return pin;
     }
 
     private String sanitizeDisplayName(String raw, String fallback) {
@@ -356,6 +591,12 @@ public class PortService {
             base = base.substring(0, maxBaseLen);
         }
         return base + suffix;
+    }
+
+    private static Map<String, Object> params(String key, Object value) {
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put(key, value);
+        return p;
     }
 
     private Port saveAndFlush(Port port) {

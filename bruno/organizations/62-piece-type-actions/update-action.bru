@@ -1,0 +1,29 @@
+meta {
+  name: Update Action
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{baseUrl}}/organizations/{{orgId}}/piece-types/{{pieceTypeId}}/actions/{{actionId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "displayName": "Fos lent"
+  }
+}
+
+docs {
+  Cambiar `name` o `parameters` re-valida contra el catálogo si el tipo tiene kind.
+}

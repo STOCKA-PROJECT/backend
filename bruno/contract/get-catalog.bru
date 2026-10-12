@@ -1,0 +1,22 @@
+meta {
+  name: Get Output Catalog
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/contract/catalog
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  Catálogo de tipos de salida (kinds), acciones, parámetros y perfil de placa rpi4b.
+  Es el mismo fichero que el backend usa para validar puertos y acciones
+  (src/main/resources/contract/catalog.json, copia literal de rpi4-system/contract/catalog.json).
+  Cualquier usuario autenticado puede leerlo.
+}

@@ -1,0 +1,250 @@
+{
+  "format": "stocka-catalog",
+  "version": 1,
+  "types": ["int", "number", "bool", "string", "rgb", "enum"],
+  "kinds": {
+    "relay": {
+      "controller": "RelayController",
+      "infrastructure": false,
+      "pin": true,
+      "legacy": { "addressing": "name", "pinType": "Relé", "module": "output" },
+      "config": {},
+      "actions": {
+        "turn_on": {
+          "params": { "time": { "type": "number", "min": 0, "duration": true } }
+        },
+        "turn_off": {
+          "params": { "time": { "type": "number", "min": 0, "duration": true } }
+        },
+        "focoOn": {
+          "params": { "hold_time": { "type": "number", "min": 0, "default": 5 } }
+        },
+        "focoOff": {
+          "params": {
+            "hold_time": { "type": "number", "min": 0, "default": 5 },
+            "pulse_delay": { "type": "number", "min": 0, "default": 0.2 }
+          }
+        }
+      }
+    },
+    "led_strip": {
+      "controller": "LedsController",
+      "infrastructure": true,
+      "pin": true,
+      "legacy": { "addressing": "name", "pinType": "Tira LED", "module": "output" },
+      "config": {
+        "dma": { "type": "int", "required": true, "min": 0, "max": 14 },
+        "channel": { "type": "int", "required": true, "min": 0, "max": 1 },
+        "length": { "type": "int", "required": true, "min": 1 },
+        "brightness": { "type": "int", "min": 0, "max": 255, "default": 255 },
+        "freq_hz": { "type": "int", "min": 1, "default": 800000 },
+        "invert": { "type": "bool", "default": false }
+      },
+      "actions": {
+        "setBrightness": {
+          "params": { "brightness": { "type": "int", "required": true, "min": 0, "max": 255 } }
+        },
+        "clear": { "params": {} }
+      }
+    },
+    "led_segment": {
+      "controller": "LedsController",
+      "infrastructure": false,
+      "pin": false,
+      "legacy": { "addressing": "name" },
+      "config": {
+        "strip": { "type": "string", "required": true, "ref": "led_strip" },
+        "first": { "type": "int", "required": true, "min": 0 },
+        "last": { "type": "int", "required": true, "min": 0 }
+      },
+      "actions": {
+        "fill": {
+          "params": {
+            "color": { "type": "rgb", "required": true },
+            "first": { "type": "int", "min": 0 },
+            "last": { "type": "int", "min": 0 }
+          }
+        },
+        "clear": { "params": {} },
+        "animate": {
+          "continuous": true,
+          "params": {
+            "animation_type": {
+              "type": "enum",
+              "required": true,
+              "values": ["stars", "fire", "window_light", "candle", "moonlight", "clouds", "shooting_star", "aurora", "snow", "fade", "sunrise", "sunset"]
+            },
+            "first": { "type": "int", "min": 0 },
+            "last": { "type": "int", "min": 0 },
+            "duration": { "type": "number", "min": 0, "duration": true }
+          },
+          "animations": {
+            "fade": {
+              "params": {
+                "color": { "type": "rgb", "required": true },
+                "from_color": { "type": "rgb" }
+              },
+              "unsupported": ["waypoints"],
+              "transition": true,
+              "notes": "duration per defecte 1.0 s. Sense from_color comença des del color del fade anterior o des de negre."
+            },
+            "stars": {
+              "params": {
+                "density": { "type": "number", "min": 0, "max": 1, "default": 0.1 },
+                "speed": { "type": "number", "min": 0, "default": 0.5, "recommended": [0.1, 2.0] },
+                "color": { "type": "rgb", "default": [255, 255, 255] },
+                "background": { "type": "rgb", "default": [0, 0, 0] }
+              }
+            },
+            "fire": {
+              "params": {
+                "intensity": { "type": "number", "min": 0, "default": 1.0, "recommended": [0.5, 2.0] },
+                "speed": { "type": "number", "min": 0, "default": 1.0, "recommended": [0.5, 2.0] }
+              }
+            },
+            "window_light": {
+              "params": {
+                "color": { "type": "rgb", "default": [255, 180, 50] },
+                "flicker_speed": { "type": "number", "min": 0, "default": 0.3, "recommended": [0.1, 1.0] }
+              }
+            },
+            "candle": {
+              "params": {
+                "intensity": { "type": "number", "min": 0, "default": 1.0, "recommended": [0.5, 1.5] },
+                "speed": { "type": "number", "min": 0, "default": 1.0, "recommended": [0.5, 2.0] }
+              }
+            },
+            "sunrise": { "params": {}, "transition": true, "notes": "duration per defecte 10.0 s." },
+            "sunset": { "params": {}, "transition": true, "notes": "duration per defecte 15.0 s." },
+            "moonlight": {
+              "params": {
+                "brightness": { "type": "number", "min": 0, "max": 1, "default": 0.3, "recommended": [0.1, 0.5] },
+                "flicker": { "type": "number", "min": 0, "default": 0.05, "recommended": [0.0, 0.1] }
+              }
+            },
+            "clouds": {
+              "params": {
+                "speed": { "type": "number", "min": 0, "default": 0.5, "recommended": [0.1, 2.0] },
+                "color": { "type": "rgb", "default": [200, 200, 220] }
+              }
+            },
+            "shooting_star": {
+              "params": {
+                "color": { "type": "rgb", "default": [255, 255, 255] },
+                "speed": { "type": "number", "min": 0, "default": 2.0, "recommended": [1.0, 5.0] },
+                "interval": { "type": "number", "min": 0, "default": 30.0, "recommended": [10.0, 60.0] }
+              }
+            },
+            "aurora": {
+              "params": {
+                "speed": { "type": "number", "min": 0, "default": 0.3, "recommended": [0.1, 1.0] },
+                "intensity": { "type": "number", "min": 0, "default": 0.6, "recommended": [0.3, 1.0] }
+              }
+            },
+            "snow": {
+              "params": {
+                "density": { "type": "number", "min": 0, "max": 1, "default": 0.05, "recommended": [0.01, 0.2] },
+                "speed": { "type": "number", "min": 0, "default": 1.0, "recommended": [0.5, 3.0] },
+                "background": { "type": "rgb", "default": [10, 20, 50] }
+              }
+            }
+          }
+        }
+      }
+    },
+    "motor": {
+      "controller": "AngelController",
+      "infrastructure": false,
+      "pin": false,
+      "legacy": { "addressing": "controller", "name": "Angel" },
+      "config": {
+        "pinR": { "type": "int", "required": true },
+        "pinL": { "type": "int", "required": true },
+        "sensorPin": { "type": "int", "required": true },
+        "downTime": { "type": "number", "required": true, "min": 0 }
+      },
+      "actions": {
+        "start_up": {
+          "params": { "time": { "type": "number", "min": 0, "duration": true } },
+          "unsupported": ["up_time"]
+        },
+        "start_down": {
+          "params": { "time": { "type": "number", "min": 0, "duration": true } }
+        },
+        "stop": { "params": {} }
+      }
+    },
+    "audio": {
+      "controller": "AudioController",
+      "infrastructure": false,
+      "pin": false,
+      "legacy": { "addressing": "controller" },
+      "config": {},
+      "actions": {
+        "play": {
+          "params": {
+            "audio_name": { "type": "string", "required": true, "asset": "audio" },
+            "time": { "type": "number", "min": 0, "duration": true }
+          }
+        },
+        "stop": { "params": {}, "unsupported": ["player_id"] }
+      }
+    },
+    "video": {
+      "controller": "VideoController",
+      "infrastructure": false,
+      "pin": false,
+      "legacy": { "addressing": "controller" },
+      "config": {},
+      "actions": {
+        "play": {
+          "params": { "video_name": { "type": "string", "required": true, "asset": "video" } }
+        },
+        "stop": { "params": {} }
+      }
+    },
+    "button": {
+      "controller": "ButtonController",
+      "infrastructure": true,
+      "pin": true,
+      "legacy": { "addressing": "name", "pinType": "Pulsador", "module": "input" },
+      "config": {},
+      "actions": {}
+    }
+  },
+  "excludedMethods": {
+    "RelayController": ["stop", "is_process_running", "wait_for_process_completion", "get_relay_state"],
+    "LedsController": ["add_segment", "setPixel", "show", "getBrightness", "getLength", "getStripNames", "getSegmentNames", "getAllNames", "getSegmentInfo", "getStripInfo", "fade", "stop_fade", "is_fading", "getCurrentColor", "stop_animation", "is_animating", "stars", "fire", "window_light", "candle", "sunrise", "sunset", "moonlight", "clouds", "shooting_star", "aurora", "snow"],
+    "AngelController": ["is_process_running", "wait_for_process_completion"],
+    "AudioController": ["is_playing", "get_active_players", "wait_for_completion"],
+    "VideoController": ["is_process_running", "wait_for_process_completion"],
+    "ButtonController": ["should_continue_timeline", "notify_cycle_completed", "get_button_state", "stop"]
+  },
+  "boards": {
+    "rpi4b": {
+      "name": "Raspberry Pi 4 Model B",
+      "numbering": "BCM",
+      "gpios": { "min": 0, "max": 27 },
+      "reserved": { "0": "ID_SD (EEPROM HAT)", "1": "ID_SC (EEPROM HAT)" },
+      "warnings": {
+        "2": "I2C SDA, pull-up fix",
+        "3": "I2C SCL, pull-up fix",
+        "4": "pull-up en arrencar",
+        "5": "pull-up en arrencar",
+        "6": "pull-up en arrencar",
+        "7": "pull-up en arrencar (SPI CE1)",
+        "8": "pull-up en arrencar (SPI CE0)"
+      },
+      "ws281x": {
+        "12": { "channel": 0, "via": "PWM0" },
+        "18": { "channel": 0, "via": "PWM0" },
+        "13": { "channel": 1, "via": "PWM1" },
+        "19": { "channel": 1, "via": "PWM1" },
+        "10": { "channel": 0, "via": "SPI" },
+        "21": { "channel": 0, "via": "PCM", "warning": "pot interferir amb l'àudio" }
+      },
+      "dma": { "min": 0, "max": 14, "avoid": [2, 3, 6, 7] },
+      "capabilities": ["relay", "led_strip", "led_segment", "motor", "audio", "video", "button"]
+    }
+  }
+}

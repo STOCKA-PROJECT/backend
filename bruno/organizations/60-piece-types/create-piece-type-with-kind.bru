@@ -1,0 +1,32 @@
+meta {
+  name: Create Piece Type (with output kind)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/piece-types
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Edifici amb llum",
+    "kind": "led_segment"
+  }
+}
+
+docs {
+  `kind` es opcional: relay | led_strip | led_segment | motor | audio | video | button.
+  Con kind, las acciones del tipo deben existir en el catálogo de ese kind y los puertos
+  del tipo deben ser del mismo kind. Captura `pieceTypeId` de la respuesta.
+}

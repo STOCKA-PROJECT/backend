@@ -44,6 +44,15 @@ public interface PortRepository extends JpaRepository<Port, Integer> {
     Optional<Port> findByOrganizationAndPin(Organization organization, Integer pin);
 
     /**
+     * Lists the active ports of {@code organization} that reference the given piece type.
+     *
+     * @param organization owning organization
+     * @param pieceTypeId  referenced piece-type id
+     * @return the matching ports
+     */
+    List<Port> findByOrganizationAndPieceTypeId(Organization organization, Integer pieceTypeId);
+
+    /**
      * Bulk soft-delete every still-active port of {@code organization}, also releasing its pin slot
      * by nulling {@code pin} (the {@code uk_port_org_pin} UNIQUE covers all rows regardless of
      * {@code deleted_at}). Used by the organization cascade so ports do not dangle when their

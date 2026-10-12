@@ -1,0 +1,31 @@
+meta {
+  name: Update Piece Type (set output kind)
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{baseUrl}}/organizations/{{orgId}}/piece-types/{{pieceTypeId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "kind": "relay"
+  }
+}
+
+docs {
+  Cambiar el kind re-valida todas las acciones del tipo contra el catálogo nuevo
+  (400 piece_types.kind_change_invalid) y falla si hay puertos de otro kind
+  (409 piece_types.kind_in_use). Quitar el kind no está soportado.
+}

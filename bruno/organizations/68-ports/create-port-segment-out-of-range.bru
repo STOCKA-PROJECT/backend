@@ -1,0 +1,36 @@
+meta {
+  name: Create Port (rejected: segment out of range)
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/ports
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Fora",
+    "kind": "led_segment",
+    "pieceTypeId": {{pieceTypeId}},
+    "config": {
+      "strip": "LedStrip3",
+      "first": 0,
+      "last": 300
+    }
+  }
+}
+
+docs {
+  400 ports.segment_out_of_range (LedStrip3 tiene 300 LEDs: 0..299).
+}

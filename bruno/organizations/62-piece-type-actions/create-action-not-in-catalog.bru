@@ -1,0 +1,32 @@
+meta {
+  name: Create Action (rejected: not in catalog)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/piece-types/{{pieceTypeId}}/actions
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "encender",
+    "displayName": "Encender",
+    "parameters": []
+  }
+}
+
+docs {
+  Sobre un tipo con kind responde 400 piece_types.action_not_in_catalog.
+  Sobre un tipo sin kind (solo inventario) se acepta cualquier nombre.
+}

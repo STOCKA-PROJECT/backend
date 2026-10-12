@@ -22,7 +22,8 @@ import com.stocka.backend.modules.ports.entity.Port;
 import com.stocka.backend.modules.ports.service.PortService;
 
 /**
- * REST resource exposing an organization's ports (Raspberry Pi GPIO outputs with typed parameters).
+ * REST resource exposing an organization's ports: the outputs and inputs of its belén controller,
+ * typed by the output catalog ({@code kind}) and carrying a kind-specific {@code config}.
  *
  * <p>This is a private, organization-gated feature: only organizations whose owner is a global admin
  * expose ports. Reading is allowed to any member of such an organization (and to global admins);
@@ -86,7 +87,7 @@ public class PortController {
     }
 
     private PortResponseDto toResponse(Port port) {
-        return PortResponseDto.from(port, portService.parametersOf(port),
+        return PortResponseDto.from(port, portService.configOf(port), portService.parametersOf(port),
                 portService.pieceTypeNameOf(port.getPieceTypeId()));
     }
 }

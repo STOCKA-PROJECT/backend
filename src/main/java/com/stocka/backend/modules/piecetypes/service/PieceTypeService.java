@@ -3,6 +3,7 @@ package com.stocka.backend.modules.piecetypes.service;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -18,6 +19,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
+import com.stocka.backend.modules.contract.OutputKind;
+import com.stocka.backend.modules.ports.entity.Port;
+import com.stocka.backend.modules.ports.repository.PortRepository;
 import com.stocka.backend.modules.notifications.events.ResourceKind;
 import com.stocka.backend.modules.notifications.events.ResourceLifecycleEvent;
 import com.stocka.backend.modules.notifications.preferences.entity.LifecycleAction;
@@ -29,6 +33,7 @@ import com.stocka.backend.modules.piecetypes.dto.CreatePieceTypeDto;
 import com.stocka.backend.modules.piecetypes.dto.UpdatePieceTypeDto;
 import com.stocka.backend.modules.piecetypes.entity.AttributeType;
 import com.stocka.backend.modules.piecetypes.entity.PieceType;
+import com.stocka.backend.modules.piecetypes.entity.PieceTypeAction;
 import com.stocka.backend.modules.piecetypes.entity.PieceTypeAttribute;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeActionRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeAttributeRepository;
@@ -54,6 +59,9 @@ public class PieceTypeService {
     private final ValidatorsJsonCodec validatorsCodec;
     private final Optional<PieceTypeUsage> usage;
     private final ApplicationEventPublisher events;
+    private final ActionCatalogValidator catalogValidator;
+    private final ActionParametersJsonCodec parametersCodec;
+    private final PortRepository portRepository;
 
     public PieceTypeService(
             PieceTypeRepository pieceTypeRepository,
@@ -62,7 +70,10 @@ public class PieceTypeService {
             OrganizationService organizationService,
             ValidatorsJsonCodec validatorsCodec,
             Optional<PieceTypeUsage> usage,
-            ApplicationEventPublisher events
+            ApplicationEventPublisher events,
+            ActionCatalogValidator catalogValidator,
+            ActionParametersJsonCodec parametersCodec,
+            PortRepository portRepository
     ) {
         this.pieceTypeRepository = pieceTypeRepository;
         this.attributeRepository = attributeRepository;
@@ -71,6 +82,9 @@ public class PieceTypeService {
         this.validatorsCodec = validatorsCodec;
         this.usage = usage;
         this.events = events;
+        this.catalogValidator = catalogValidator;
+        this.parametersCodec = parametersCodec;
+        this.portRepository = portRepository;
     }
 
     @Transactional
@@ -81,7 +95,8 @@ public class PieceTypeService {
 
         PieceType type = new PieceType()
                 .setOrganization(org)
-                .setName(name);
+                .setName(name)
+                .setKind(dto.getKind() == null ? null : parseKind(dto.getKind()));
         type = saveTypeAndFlush(type);
 
         if (dto.getAttributes() != null) {
@@ -124,6 +139,14 @@ public class PieceTypeService {
             if (!newName.equals(type.getName())) {
                 ensureUniqueTypeName(type.getOrganization(), newName, type.getId());
                 type.setName(newName);
+                changed = true;
+            }
+        }
+        if (dto.getKind() != null) {
+            OutputKind newKind = parseKind(dto.getKind());
+            if (newKind != type.getKind()) {
+                ensureKindChangeAllowed(type, newKind);
+                type.setKind(newKind);
                 changed = true;
             }
         }
@@ -259,6 +282,44 @@ public class PieceTypeService {
             base = base.substring(0, maxBaseLen);
         }
         return base + suffix;
+    }
+
+    private static OutputKind parseKind(String raw) {
+        return OutputKind.parse(raw)
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PIECE_TYPES_KIND_INVALID,
+                        kindParams("kind", raw == null ? "" : raw.trim())));
+    }
+
+    /**
+     * A type can switch kind only if every action it already has is valid for the new kind and no
+     * active port of another kind references it.
+     *
+     * @throws ApiException 400 ({@link ErrorCodes#PIECE_TYPES_KIND_CHANGE_INVALID}) or 409
+     *                      ({@link ErrorCodes#PIECE_TYPES_KIND_IN_USE})
+     */
+    private void ensureKindChangeAllowed(PieceType type, OutputKind newKind) {
+        for (PieceTypeAction action : actionRepository.findByPieceTypeOrderByPositionAscIdAsc(type)) {
+            try {
+                catalogValidator.validate(newKind, action.getName(), parametersCodec.deserialize(action.getParametersJson()));
+            } catch (ApiException ex) {
+                Map<String, Object> p = kindParams("action", action.getName());
+                p.put("kind", newKind.catalogId());
+                throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PIECE_TYPES_KIND_CHANGE_INVALID, p, ex);
+            }
+        }
+        for (Port port : portRepository.findByOrganizationAndPieceTypeId(type.getOrganization(), type.getId())) {
+            if (port.getKind() != newKind) {
+                Map<String, Object> p = kindParams("port", port.getName());
+                p.put("kind", port.getKind().catalogId());
+                throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PIECE_TYPES_KIND_IN_USE, p);
+            }
+        }
+    }
+
+    private static Map<String, Object> kindParams(String key, Object value) {
+        Map<String, Object> p = new java.util.LinkedHashMap<>();
+        p.put(key, value);
+        return p;
     }
 
     /**

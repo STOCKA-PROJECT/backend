@@ -3,6 +3,7 @@ package com.stocka.backend.modules.piecetypes.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -25,6 +26,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
+import com.stocka.backend.modules.contract.OutputKind;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.service.OrganizationService;
 import com.stocka.backend.modules.piecetypes.dto.CreatePieceTypeAttributeDto;
@@ -32,10 +34,13 @@ import com.stocka.backend.modules.piecetypes.dto.CreatePieceTypeDto;
 import com.stocka.backend.modules.piecetypes.dto.UpdatePieceTypeDto;
 import com.stocka.backend.modules.piecetypes.entity.AttributeType;
 import com.stocka.backend.modules.piecetypes.entity.PieceType;
+import com.stocka.backend.modules.piecetypes.entity.PieceTypeAction;
 import com.stocka.backend.modules.piecetypes.entity.PieceTypeAttribute;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeActionRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeAttributeRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeRepository;
+import com.stocka.backend.modules.ports.entity.Port;
+import com.stocka.backend.modules.ports.repository.PortRepository;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("PieceTypeService")
@@ -48,6 +53,8 @@ class PieceTypeServiceTest {
     @Mock ValidatorsJsonCodec validatorsCodec;
     @Mock PieceTypeUsage usage;
     @Mock ApplicationEventPublisher events;
+    @Mock ActionCatalogValidator catalogValidator;
+    @Mock PortRepository portRepository;
 
     private PieceTypeService sut;
 
@@ -58,7 +65,8 @@ class PieceTypeServiceTest {
         org.setId(1);
         sut = new PieceTypeService(
                 pieceTypeRepository, attributeRepository, actionRepository, organizationService,
-                validatorsCodec, Optional.of(usage), events);
+                validatorsCodec, Optional.of(usage), events, catalogValidator, new ActionParametersJsonCodec(),
+                portRepository);
         // Lenient because the static-helper tests don't go through the service layer.
         lenient().when(organizationService.findById(1)).thenReturn(org);
     }
@@ -377,4 +385,111 @@ class PieceTypeServiceTest {
         }
     }
 
+
+    @Nested
+    @DisplayName("kind (output catalog)")
+    class Kind {
+
+        private PieceType current;
+
+        @BeforeEach
+        void setUpCurrent() {
+            current = existingType(7, "Figura");
+            lenient().when(pieceTypeRepository.findById(7)).thenReturn(Optional.of(current));
+            lenient().when(pieceTypeRepository.saveAndFlush(any(PieceType.class))).thenAnswer(inv -> inv.getArgument(0));
+            lenient().when(actionRepository.findByPieceTypeOrderByPositionAscIdAsc(current)).thenReturn(List.of());
+            lenient().when(portRepository.findByOrganizationAndPieceTypeId(org, 7)).thenReturn(List.of());
+        }
+
+        @Test
+        @DisplayName("create stores the kind when given and leaves it null otherwise")
+        void create_should_storeKind() {
+            when(pieceTypeRepository.findByOrganizationAndName(org, "Figura")).thenReturn(Optional.empty());
+            assertThat(sut.create(1, new CreatePieceTypeDto().setName("Figura").setKind("relay")).getKind()).isEqualTo(OutputKind.RELAY);
+            assertThat(sut.create(1, new CreatePieceTypeDto().setName("Figura")).getKind()).isNull();
+        }
+
+        @Test
+        @DisplayName("create rejects an unknown kind with piece_types.kind_invalid")
+        void create_should_rejectUnknownKind() {
+            assertThatThrownBy(() -> sut.create(1, new CreatePieceTypeDto().setName("Figura").setKind("laser")))
+                    .isInstanceOfSatisfying(ApiException.class, ex -> {
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                        assertThat(ex.getCode()).isEqualTo(ErrorCodes.PIECE_TYPES_KIND_INVALID);
+                        assertThat(ex.getParams()).containsEntry("kind", "laser");
+                    });
+            verify(pieceTypeRepository, never()).saveAndFlush(any());
+        }
+
+        @Test
+        @DisplayName("update to the same kind checks nothing")
+        void update_should_skipWhenSameKind() {
+            current.setKind(OutputKind.RELAY);
+            sut.update(1, 7, new UpdatePieceTypeDto().setKind("relay"));
+            verify(catalogValidator, never()).validate(any(), any(), any());
+            verify(portRepository, never()).findByOrganizationAndPieceTypeId(any(), any());
+        }
+
+        @Test
+        @DisplayName("update sets a new kind when every action fits and no port disagrees")
+        void update_should_changeKind() {
+            PieceTypeAction action = new PieceTypeAction().setId(3).setName("turn_on").setPieceType(current).setParametersJson("[]");
+            when(actionRepository.findByPieceTypeOrderByPositionAscIdAsc(current)).thenReturn(List.of(action));
+            when(portRepository.findByOrganizationAndPieceTypeId(org, 7))
+                    .thenReturn(List.of(new Port().setName("Focos").setKind(OutputKind.RELAY)));
+
+            PieceType saved = sut.update(1, 7, new UpdatePieceTypeDto().setKind("relay"));
+
+            assertThat(saved.getKind()).isEqualTo(OutputKind.RELAY);
+            verify(catalogValidator).validate(OutputKind.RELAY, "turn_on", List.of());
+        }
+
+        @Test
+        @DisplayName("update is rejected with piece_types.kind_change_invalid when an action does not fit the new kind")
+        void update_should_rejectIncompatibleAction() {
+            PieceTypeAction action = new PieceTypeAction().setId(3).setName("encender").setPieceType(current).setParametersJson("[]");
+            when(actionRepository.findByPieceTypeOrderByPositionAscIdAsc(current)).thenReturn(List.of(action));
+            doThrow(new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PIECE_TYPES_ACTION_NOT_IN_CATALOG))
+                    .when(catalogValidator).validate(OutputKind.RELAY, "encender", List.of());
+
+            assertThatThrownBy(() -> sut.update(1, 7, new UpdatePieceTypeDto().setKind("relay")))
+                    .isInstanceOfSatisfying(ApiException.class, ex -> {
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                        assertThat(ex.getCode()).isEqualTo(ErrorCodes.PIECE_TYPES_KIND_CHANGE_INVALID);
+                        assertThat(ex.getParams()).containsEntry("action", "encender").containsEntry("kind", "relay");
+                        assertThat(ex.getCause()).isInstanceOf(ApiException.class);
+                    });
+            verify(pieceTypeRepository, never()).saveAndFlush(any());
+        }
+
+        @Test
+        @DisplayName("update is rejected with piece_types.kind_in_use when a port of another kind references the type")
+        void update_should_rejectWhenPortsDisagree() {
+            when(portRepository.findByOrganizationAndPieceTypeId(org, 7))
+                    .thenReturn(List.of(new Port().setName("LedStrip3").setKind(OutputKind.LED_STRIP)));
+
+            assertThatThrownBy(() -> sut.update(1, 7, new UpdatePieceTypeDto().setKind("relay")))
+                    .isInstanceOfSatisfying(ApiException.class, ex -> {
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                        assertThat(ex.getCode()).isEqualTo(ErrorCodes.PIECE_TYPES_KIND_IN_USE);
+                        assertThat(ex.getParams()).containsEntry("port", "LedStrip3").containsEntry("kind", "led_strip");
+                    });
+        }
+
+        @Test
+        @DisplayName("update rejects an unknown kind with piece_types.kind_invalid")
+        void update_should_rejectUnknownKind() {
+            assertThatThrownBy(() -> sut.update(1, 7, new UpdatePieceTypeDto().setKind("laser")))
+                    .isInstanceOfSatisfying(ApiException.class, ex ->
+                            assertThat(ex.getCode()).isEqualTo(ErrorCodes.PIECE_TYPES_KIND_INVALID));
+        }
+
+        @Test
+        @DisplayName("update without kind leaves it untouched")
+        void update_should_keepKindWhenAbsent() {
+            current.setKind(OutputKind.MOTOR);
+            when(pieceTypeRepository.findByOrganizationAndName(org, "Àngel")).thenReturn(Optional.empty());
+            assertThat(sut.update(1, 7, new UpdatePieceTypeDto().setName("Àngel")).getKind()).isEqualTo(OutputKind.MOTOR);
+        }
+    }
 }

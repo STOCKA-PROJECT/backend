@@ -1,7 +1,7 @@
 meta {
-  name: Create Port (duplicate pin -> 409)
+  name: Create Port (rejected: pin conflict)
   type: http
-  seq: 5
+  seq: 10
 }
 
 post {
@@ -20,8 +20,13 @@ auth:bearer {
 
 body:json {
   {
-    "name": "Salida tira led 2",
+    "name": "Sembra bis",
+    "kind": "relay",
     "pieceTypeId": {{pieceTypeId}},
-    "pin": 21
+    "pin": 26
   }
+}
+
+docs {
+  409 ports.pin_conflict: el pin 26 ya lo usa "Sembra" (create-port). Los pines de un motor en config también cuentan.
 }

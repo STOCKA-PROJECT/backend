@@ -28,6 +28,10 @@ import com.stocka.backend.modules.piecetypes.repository.PieceTypeActionRepositor
  * ({@link PieceTypeService#validateAttributeName(String)}) and parameter validators reuse
  * {@link PieceTypeService#validateValidators}. The ordered parameter list is persisted as a JSON
  * blob through {@link ActionParametersJsonCodec}. Definitions only: there is no runtime execution.
+ *
+ * <p>When the owning piece type has an output kind, the action name and its parameters must match
+ * the output catalog for that kind ({@link ActionCatalogValidator}); inventory-only types accept any
+ * action.
  */
 @Service
 public class PieceTypeActionService {
@@ -38,15 +42,18 @@ public class PieceTypeActionService {
     private final PieceTypeService pieceTypeService;
     private final PieceTypeActionRepository actionRepository;
     private final ActionParametersJsonCodec parametersCodec;
+    private final ActionCatalogValidator catalogValidator;
 
     public PieceTypeActionService(
             PieceTypeService pieceTypeService,
             PieceTypeActionRepository actionRepository,
-            ActionParametersJsonCodec parametersCodec
+            ActionParametersJsonCodec parametersCodec,
+            ActionCatalogValidator catalogValidator
     ) {
         this.pieceTypeService = pieceTypeService;
         this.actionRepository = actionRepository;
         this.parametersCodec = parametersCodec;
+        this.catalogValidator = catalogValidator;
     }
 
     /**
@@ -88,6 +95,7 @@ public class PieceTypeActionService {
 
         int defaultPosition = actionRepository.findByPieceTypeOrderByPositionAscIdAsc(type).size();
         List<ActionParameterDto> parameters = normalizeParameters(dto.getParameters());
+        catalogValidator.validate(type.getKind(), dto.getName(), parameters);
 
         PieceTypeAction action = new PieceTypeAction()
                 .setPieceType(type)
@@ -102,6 +110,7 @@ public class PieceTypeActionService {
     @Transactional
     public PieceTypeAction update(Integer orgId, Integer typeId, Integer actionId, UpdatePieceTypeActionDto dto) {
         PieceTypeAction action = findInOrg(orgId, typeId, actionId);
+        boolean revalidate = false;
 
         if (dto.getName() != null) {
             String trimmed = dto.getName().trim();
@@ -109,6 +118,7 @@ public class PieceTypeActionService {
                 PieceTypeService.validateAttributeName(trimmed);
                 ensureUniqueActionName(action.getPieceType(), trimmed, action.getId());
                 action.setName(trimmed);
+                revalidate = true;
             }
         }
         if (dto.getDisplayName() != null) {
@@ -127,6 +137,10 @@ public class PieceTypeActionService {
         if (dto.getParameters() != null) {
             List<ActionParameterDto> parameters = normalizeParameters(dto.getParameters());
             action.setParametersJson(parametersCodec.serialize(parameters));
+            revalidate = true;
+        }
+        if (revalidate) {
+            catalogValidator.validate(action.getPieceType().getKind(), action.getName(), parametersOf(action));
         }
         return saveAndFlush(action);
     }

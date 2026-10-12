@@ -1,0 +1,37 @@
+meta {
+  name: Create Port (led_segment)
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/ports
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Fondo1",
+    "kind": "led_segment",
+    "pieceTypeId": {{pieceTypeId}},
+    "config": {
+      "strip": "LedStrip3",
+      "first": 0,
+      "last": 148
+    }
+  }
+}
+
+docs {
+  Sin pin. `strip` es el nombre de un puerto led_strip de la organización y first/last deben
+  caber en 0..length-1 (se admite orden inverso, p. ej. 298..149). Requiere un tipo con kind=led_segment.
+}

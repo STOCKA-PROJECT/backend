@@ -36,6 +36,21 @@ Timeline Editor (ventana nueva):
 - `auth/handoff` (con `JWTtoken`) → devuelve un `ticket`; cópialo a la var `handoffTicket`.
 - `auth/handoff-exchange` → canjea el `ticket` por una sesión (igual que login).
 
+Puertos, catálogo y acciones (contrato con el reproductor del belén; función privada: solo en
+organizaciones cuyo owner es ADMIN global):
+
+1. `contract/get-catalog` — kinds, acciones, parámetros y placa `rpi4b`. Cualquier usuario autenticado.
+2. `organizations/60-piece-types/create-piece-type-with-kind` — tipo con `kind` (p. ej. `led_segment`); captura `pieceTypeId`.
+3. `organizations/68-ports/create-port-led-strip` — tira (infraestructura, sin tipo): pin WS281x + `config.dma/channel/length`.
+4. `organizations/68-ports/create-port-led-segment` — segmento sobre la tira por nombre, `first/last` dentro de la tira.
+5. `organizations/68-ports/create-port` (relé), `create-port-motor`, `create-port-audio`, `create-port-button` — un ejemplo por kind.
+6. `organizations/62-piece-type-actions/create-action` — acción `animate` validada contra el catálogo del kind del tipo.
+7. Rechazos: `create-port-kind-mismatch`, `create-port-segment-out-of-range`, `create-port-pin-conflict`,
+   `create-action-not-in-catalog`, `create-action-duration-mismatch`, `update-piece-type-kind` sobre un tipo con acciones incompatibles.
+
+El catálogo (`src/main/resources/contract/catalog.json`) es una copia literal de `rpi4-system/contract/catalog.json`;
+si cambia allí, hay que copiarlo aquí y al editor (`timeline-editor/app/data/catalog.json`).
+
 Notas:
 
 - `owner@stocka.local / 123456` lo crea el `AdminSeeder` al arrancar la app.
@@ -94,6 +109,14 @@ Campos:
 | `pieces.not_found`                            | 404    |                                |
 | `piece_types.not_found`                       | 404    |                                |
 | `piece_types.attribute_invalid`               | 400    |                                |
+| `piece_types.kind_invalid` / `kind_change_invalid` / `kind_in_use` | 400 / 400 / 409 | `kind` fuera del catálogo; cambio de kind con acciones o puertos incompatibles |
+| `piece_types.action_not_in_catalog` / `action_param_unknown` / `action_param_missing` / `action_param_type_mismatch` / `action_param_options_invalid` / `action_param_static_invalid` / `action_duration_param_mismatch` | 400 | acción de un tipo con kind validada contra el catálogo |
+| `ports.kind_required` / `kind_invalid` / `kind_immutable` | 400 | el kind es obligatorio e inmutable |
+| `ports.piece_type_required` / `piece_type_kind_mismatch` | 400 | tipo obligatorio salvo infraestructura; su kind debe coincidir |
+| `ports.pin_invalid` / `pin_reserved` / `pin_not_allowed` / `pin_conflict` | 400 / 400 / 400 / 409 | GPIO fuera de rango, reservado (0, 1), kind sin pin, pin ya usado (incluidos los del motor) |
+| `ports.config_unknown_key` / `config_missing_key` / `config_type_mismatch` / `config_out_of_range` / `motor_pins_not_distinct` | 400 | config validada por kind contra el catálogo |
+| `ports.strip_pin_unsupported` / `strip_channel_mismatch` | 400 | tira en pin no WS281x o canal incoherente |
+| `ports.segment_strip_not_found` / `segment_out_of_range` / `strip_shrink_breaks_segment` / `strip_in_use` | 400 / 400 / 400 / 409 | segmentos y tiras |
 | `locations.not_found`                         | 404    |                                |
 | `organizations.not_found`                     | 404    |                                |
 | `organizations.invitation_limit_reached`      | 400    | usa `params.max`               |

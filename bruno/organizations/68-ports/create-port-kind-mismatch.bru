@@ -1,0 +1,32 @@
+meta {
+  name: Create Port (rejected: piece type of another kind)
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/ports
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Focos",
+    "kind": "relay",
+    "pieceTypeId": {{pieceTypeId}},
+    "pin": 27
+  }
+}
+
+docs {
+  Con un pieceTypeId cuyo kind no sea relay (o sin kind) responde 400 ports.piece_type_kind_mismatch.
+}
