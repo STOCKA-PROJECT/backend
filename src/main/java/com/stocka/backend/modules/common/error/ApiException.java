@@ -1,6 +1,7 @@
 package com.stocka.backend.modules.common.error;
 
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.springframework.http.HttpStatus;
@@ -57,7 +58,8 @@ public class ApiException extends RuntimeException {
         super(code, cause);
         this.status = status;
         this.code = code;
-        this.params = params == null ? Collections.emptyMap() : Map.copyOf(params);
+        // LinkedHashMap keeps the declaration order: messages bind {0}, {1}... by position.
+        this.params = params == null ? Collections.emptyMap() : Collections.unmodifiableMap(new LinkedHashMap<>(params));
     }
 
     /**
