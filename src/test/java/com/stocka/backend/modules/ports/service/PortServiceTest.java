@@ -517,7 +517,18 @@ class PortServiceTest {
                 assertThatThrownBy(() -> sut.create(ORG_ID, relayDto("Focos", 27).setParameters(List.of(
                         new ActionParameterDto().setName("a"))))).isInstanceOf(ResponseStatusException.class);
                 assertThatThrownBy(() -> sut.create(ORG_ID, relayDto("Focos", 27).setParameters(List.of(
-                        new ActionParameterDto().setName("Bad Name").setType(AttributeType.INTEGER))))).isInstanceOf(ResponseStatusException.class);
+                        new ActionParameterDto().setName("Bad Name").setType(AttributeType.INTEGER)))))
+                        .isInstanceOf(ApiException.class)
+                        .extracting(e -> ((ApiException) e).getCode())
+                        .isEqualTo(ErrorCodes.PIECE_TYPES_ACTION_NAME_INVALID);
+            }
+
+            @Test
+            @DisplayName("accepts controller-style parameter names with inner capitals")
+            void should_acceptCamelCaseParameterName() {
+                Port port = sut.create(ORG_ID, relayDto("Focos", 27).setParameters(List.of(
+                        new ActionParameterDto().setName("holdTime").setType(AttributeType.INTEGER).setDynamic(true))));
+                assertThat(port.getParametersJson()).contains("holdTime");
             }
 
             @Test

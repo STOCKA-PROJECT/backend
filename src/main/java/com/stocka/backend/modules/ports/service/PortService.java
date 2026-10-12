@@ -490,7 +490,7 @@ public class PortService {
         boolean durationSeen = false;
         int idx = 0;
         for (ActionParameterDto param : raw) {
-            PieceTypeService.validateAttributeName(param.getName());
+            PieceTypeService.validateActionName(param.getName());
             if (!seen.add(param.getName())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "Hay nombres de parámetro duplicados en el puerto: " + param.getName());

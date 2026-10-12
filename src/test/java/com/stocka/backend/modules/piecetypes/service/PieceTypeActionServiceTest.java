@@ -1,6 +1,7 @@
 package com.stocka.backend.modules.piecetypes.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
@@ -10,8 +11,12 @@ import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.server.ResponseStatusException;
@@ -87,13 +92,64 @@ class PieceTypeActionServiceTest {
     }
 
     @Test
-    @DisplayName("create should reject an invalid technical action name")
+    @DisplayName("create should reject an invalid technical action name with its own error code")
     void create_should_rejectInvalidName() {
         when(pieceTypeService.findInOrg(ORG_ID, TYPE_ID)).thenReturn(type);
         CreatePieceTypeActionDto dto = encenderWithTiempo().setName("Encender");
 
         assertThatThrownBy(() -> sut.create(ORG_ID, TYPE_ID, dto))
-                .isInstanceOf(ResponseStatusException.class);
+                .isInstanceOf(ApiException.class)
+                .extracting(e -> ((ApiException) e).getCode())
+                .isEqualTo(ErrorCodes.PIECE_TYPES_ACTION_NAME_INVALID);
+    }
+
+    @Test
+    @DisplayName("create should reject an invalid parameter name with the same error code")
+    void create_should_rejectInvalidParameterName() {
+        when(pieceTypeService.findInOrg(ORG_ID, TYPE_ID)).thenReturn(type);
+        CreatePieceTypeActionDto dto = encenderWithTiempo();
+        dto.getParameters().get(0).setName("Tiempo");
+
+        assertThatThrownBy(() -> sut.create(ORG_ID, TYPE_ID, dto))
+                .isInstanceOf(ApiException.class)
+                .extracting(e -> ((ApiException) e).getCode())
+                .isEqualTo(ErrorCodes.PIECE_TYPES_ACTION_NAME_INVALID);
+    }
+
+    @Nested
+    @DisplayName("technical names of actions and parameters")
+    class ActionNames {
+
+        @ParameterizedTest(name = "accepts \"{0}\"")
+        @ValueSource(strings = {"focoOn", "focoOff", "setBrightness", "hold_time", "animation_type", "a", "a1_B2"})
+        void should_acceptControllerStyleNames(String name) {
+            assertThatCode(() -> PieceTypeService.validateActionName(name)).doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("accepts the 80-character maximum and rejects 81")
+        void should_enforceMaxLength() {
+            String max = "a" + "B".repeat(79);
+            assertThatCode(() -> PieceTypeService.validateActionName(max)).doesNotThrowAnyException();
+            assertThatThrownBy(() -> PieceTypeService.validateActionName(max + "c")).isInstanceOf(ApiException.class);
+        }
+
+        @ParameterizedTest(name = "rejects \"{0}\"")
+        @NullAndEmptySource
+        @ValueSource(strings = {" ", "Encender", "1abc", "_abc", "a-b", "foco On", "focoOn ", "ñandu", "set.brightness"})
+        void should_rejectMalformedNames(String name) {
+            assertThatThrownBy(() -> PieceTypeService.validateActionName(name))
+                    .isInstanceOf(ApiException.class)
+                    .extracting(e -> ((ApiException) e).getCode())
+                    .isEqualTo(ErrorCodes.PIECE_TYPES_ACTION_NAME_INVALID);
+        }
+
+        @Test
+        @DisplayName("attribute names keep the strict lowercase rule")
+        void should_keepAttributeRuleStrict() {
+            assertThatThrownBy(() -> PieceTypeService.validateAttributeName("focoOn"))
+                    .isInstanceOf(ResponseStatusException.class);
+        }
     }
 
     @Test

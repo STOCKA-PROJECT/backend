@@ -75,6 +75,7 @@ public final class ErrorCodes {
     public static final String PIECE_TYPES_ACTION_PARAM_OPTIONS_INVALID = "piece_types.action_param_options_invalid";
     public static final String PIECE_TYPES_ACTION_PARAM_STATIC_INVALID = "piece_types.action_param_static_invalid";
     public static final String PIECE_TYPES_ACTION_DURATION_PARAM_MISMATCH = "piece_types.action_duration_param_mismatch";
+    public static final String PIECE_TYPES_ACTION_NAME_INVALID = "piece_types.action_name_invalid";
     public static final String LOCATIONS_NOT_FOUND = "locations.not_found";
 
     // ---- timelines ------------------------------------------------------

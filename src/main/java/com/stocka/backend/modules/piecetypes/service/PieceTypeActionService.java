@@ -24,8 +24,8 @@ import com.stocka.backend.modules.piecetypes.repository.PieceTypeActionRepositor
 /**
  * CRUD for {@link PieceTypeAction} definitions (functions with typed parameters) of a piece type.
  *
- * <p>Action and parameter names follow the same technical-identifier rules as attributes
- * ({@link PieceTypeService#validateAttributeName(String)}) and parameter validators reuse
+ * <p>Action and parameter names follow the controller-method shape (lowercase start, inner
+ * capitals allowed, {@link PieceTypeService#validateActionName(String)}) and parameter validators reuse
  * {@link PieceTypeService#validateValidators}. The ordered parameter list is persisted as a JSON
  * blob through {@link ActionParametersJsonCodec}. Definitions only: there is no runtime execution.
  *
@@ -90,7 +90,7 @@ public class PieceTypeActionService {
     @Transactional
     public PieceTypeAction create(Integer orgId, Integer typeId, CreatePieceTypeActionDto dto) {
         PieceType type = pieceTypeService.findInOrg(orgId, typeId);
-        PieceTypeService.validateAttributeName(dto.getName());
+        PieceTypeService.validateActionName(dto.getName());
         ensureUniqueActionName(type, dto.getName(), null);
 
         int defaultPosition = actionRepository.findByPieceTypeOrderByPositionAscIdAsc(type).size();
@@ -115,7 +115,7 @@ public class PieceTypeActionService {
         if (dto.getName() != null) {
             String trimmed = dto.getName().trim();
             if (!trimmed.equals(action.getName())) {
-                PieceTypeService.validateAttributeName(trimmed);
+                PieceTypeService.validateActionName(trimmed);
                 ensureUniqueActionName(action.getPieceType(), trimmed, action.getId());
                 action.setName(trimmed);
                 revalidate = true;
@@ -185,7 +185,7 @@ public class PieceTypeActionService {
         boolean durationSeen = false;
         int idx = 0;
         for (ActionParameterDto param : raw) {
-            PieceTypeService.validateAttributeName(param.getName());
+            PieceTypeService.validateActionName(param.getName());
             if (!seen.add(param.getName())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "Hay nombres de parámetro duplicados en la acción: " + param.getName());

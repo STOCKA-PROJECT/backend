@@ -47,6 +47,8 @@ import com.stocka.backend.modules.users.entity.User;
 @Service
 public class PieceTypeService {
     static final Pattern ATTR_NAME_PATTERN = Pattern.compile("^[a-z][a-z0-9_]{0,79}$");
+    /** Actions and their parameters follow the controller method names, so inner capitals are allowed. */
+    static final Pattern ACTION_NAME_PATTERN = Pattern.compile("^[a-z][A-Za-z0-9_]{0,79}$");
     static final int MAX_TYPE_NAME_LENGTH = 120;
     static final int MAX_ATTR_NAME_LENGTH = 80;
     private static final int MAX_DISPLAY_NAME_LENGTH = 160;
@@ -338,6 +340,23 @@ public class PieceTypeService {
         if (!ATTR_NAME_PATTERN.matcher(name).matches()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "El nombre del atributo debe empezar por una letra minúscula y solo contener letras, dígitos y _");
+        }
+    }
+
+    /**
+     * Validates the technical name of an action or of an action/port parameter: a lowercase letter
+     * followed by up to 79 letters (any case), digits or underscores. Looser than
+     * {@link #validateAttributeName(String)} because catalog actions are the real controller
+     * methods of the player ({@code focoOn}, {@code setBrightness}).
+     *
+     * @param name technical name proposed by the caller
+     * @throws ApiException with status 400 and code {@code piece_types.action_name_invalid} when
+     *         the name is missing or malformed
+     */
+    public static void validateActionName(String name) {
+        if (name == null || name.isBlank() || !ACTION_NAME_PATTERN.matcher(name).matches()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PIECE_TYPES_ACTION_NAME_INVALID,
+                    Map.of("name", name == null ? "" : name));
         }
     }
 
