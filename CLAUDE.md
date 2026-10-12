@@ -39,6 +39,7 @@ modules/
 ├── auth/          Controller + service for signup/login
 ├── bootstrap/     RoleSeeder (order=1) and AdminSeeder (order=2) run on startup
 ├── health/        GET /health (public)
+├── contract/      OutputKind + OutputCatalog (copy of rpi4-system/contract/catalog.json) + GET /contract/catalog
 ├── roles/         Role entity (USER, ADMIN) + repository
 ├── security/      SecurityConfiguration, JwtAuthenticationFilter, JwtService
 └── users/         User entity, UserController, AdminController, UserService
@@ -77,6 +78,7 @@ On startup, `RoleSeeder` creates USER/ADMIN roles, then `AdminSeeder` creates a 
 | GET    | `/users`       | ADMIN         | List all users           |
 | POST   | `/admins`      | ADMIN         | Create admin user        |
 | POST   | `/webhooks/resend` | Public (Svix-signed) | Resend webhook events (only when `EMAIL_PROVIDER=resend`) |
+| GET    | `/contract/catalog` | Authenticated | Output catalog (kinds, actions, board rules) shared with the belén player |
 
 ### Domain endpoints (under `/organizations/{orgId}/...`)
 
@@ -104,6 +106,13 @@ Org membership roles: `OWNER`, `MANAGER`, `USER`, `SPECTATOR` (read-only).
 | GET    | `/pieces/export(?format=csv\|xlsx&filters)`   | any member                | Bulk export (CSV/XLSX), filtered |
 | GET    | `/pieces/import/template(?format=)`           | OWNER, MANAGER, USER      | Empty header-only template       |
 | POST   | `/pieces/import(?format=&mode=&dryRun=)`      | OWNER, MANAGER, USER      | Bulk import; dry-run preview then all-or-nothing commit |
+
+Ports (`/organizations/{orgId}/ports`, gated to admin-owned orgs) carry a closed `kind` from the
+output catalog (`relay`, `led_strip`, `led_segment`, `motor`, `audio`, `video`, `button`) plus a
+per-kind `config` validated by `PortConfigValidator`; piece types may declare a `kind`, in which
+case their actions are validated against the catalog by `ActionCatalogValidator`. The catalog JSON
+is a byte-identical copy of `rpi4-system/contract/catalog.json` (also copied to
+`timeline-editor/app/data/catalog.json`): change it there first.
 
 Import/export share the piece column schema (fixed columns + one column per
 attribute, named `"<Type> / <DisplayName>"` or `"Org / <DisplayName>"`).
