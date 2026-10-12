@@ -163,6 +163,21 @@ class OutputCatalogTest {
         }
 
         @Test
+        @DisplayName("a strip is a whole-strip target: it shares the LED actions of a segment plus setBrightness")
+        void should_exposeStripActions() {
+            assertThat(catalog.kind(OutputKind.LED_STRIP).actions().keySet())
+                    .containsExactlyInAnyOrder("fill", "clear", "animate", "setBrightness");
+            CatalogAction stripFill = catalog.action(OutputKind.LED_STRIP, "fill").orElseThrow();
+            CatalogAction segmentFill = catalog.action(OutputKind.LED_SEGMENT, "fill").orElseThrow();
+            assertThat(stripFill.params().keySet()).isEqualTo(segmentFill.params().keySet());
+            CatalogAction stripAnimate = catalog.action(OutputKind.LED_STRIP, "animate").orElseThrow();
+            CatalogAction segmentAnimate = catalog.action(OutputKind.LED_SEGMENT, "animate").orElseThrow();
+            assertThat(stripAnimate.continuous()).isTrue();
+            assertThat(stripAnimate.animations().keySet()).isEqualTo(segmentAnimate.animations().keySet());
+            assertThat(catalog.action(OutputKind.LED_SEGMENT, "setBrightness")).isEmpty();
+        }
+
+        @Test
         @DisplayName("marks asset parameters and unsupported controller parameters")
         void should_exposeAssetsAndUnsupported() {
             CatalogAction play = catalog.action(OutputKind.AUDIO, "play").orElseThrow();
