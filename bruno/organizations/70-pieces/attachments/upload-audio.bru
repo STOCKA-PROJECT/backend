@@ -1,0 +1,28 @@
+meta {
+  name: Upload Audio (mp3/wav/ogg/flac/m4a, max 50 MB, durationMs optional)
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces/{{pieceId}}/attachments
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:multipart-form {
+  kind: AUDIO
+  durationMs: 61000
+  file: @file()
+}
+
+docs {
+  Adjunt d'àudio d'una peça (tipus de kind `audio`). El backend detecta el format pels bytes
+  (Tika) i només accepta el que VLC reprodueix a la Raspberry. `durationMs` és la durada que el
+  client ha mesurat (el backend no descodifica àudio) i serveix perquè l'editor dimensioni el clip.
+  L'editor usa el nom d'asset `<attachmentId>-<fitxer>` com a `audio_name` de l'acció `play`.
+}

@@ -55,6 +55,18 @@ public interface R2Service {
     PresignedDownload presign(String key, Duration ttl, String contentDisposition);
 
     /**
+     * Opens the object's bytes for reading, so the backend can serve them itself when the client
+     * cannot fetch a presigned URL directly (cross-origin browsers such as the timeline editor).
+     * The caller must close the returned stream.
+     *
+     * @param key object key
+     * @return a stream positioned at the first byte of the object
+     * @throws R2ObjectNotFoundException if no object exists under {@code key}
+     * @throws R2UnavailableException    if the underlying store cannot be read
+     */
+    InputStream open(String key);
+
+    /**
      * Removes the object from R2. Best-effort: callers may swallow exceptions and log.
      *
      * @param key object key to delete

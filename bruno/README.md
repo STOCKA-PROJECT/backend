@@ -22,6 +22,7 @@ Orden recomendado para probar:
 7. `organizations/70-pieces/attachments/upload-image` — sube una imagen (jpg/png/webp/gif, max 25 MB). En dev queda en `/tmp/stocka-r2/`.
 8. `organizations/70-pieces/attachments/upload-document` — sube un documento (cualquier formato, max 100 MB).
 9. `organizations/70-pieces/attachments/download-attachment` — devuelve `302` a la presigned URL.
+9b. `organizations/70-pieces/attachments/upload-audio` — sube un audio (mp3/wav/ogg/flac/m4a, max 50 MB) con `durationMs` opcional; `get-attachment-content` devuelve los bytes a través del backend (lo usa el editor de timeline).
 10. `organizations/70-pieces/get-piece-history` — entradas: `PIECE_CREATED`, `ATTRIBUTE_VALUE_CHANGED`, `STATUS_CHANGED`, `ATTACHMENT_ADDED`, etc.
 
 Timelines (líneas de tiempo, mismos permisos que pieces):

@@ -88,6 +88,20 @@ public class R2StorageServiceImpl implements R2Service {
     }
 
     @Override
+    public InputStream open(String key) {
+        try {
+            return client().getObject(GetObjectRequest.builder()
+                    .bucket(properties.getBucket())
+                    .key(key)
+                    .build());
+        } catch (NoSuchKeyException e) {
+            throw new R2ObjectNotFoundException("Objeto no encontrado en R2: " + key, e);
+        } catch (S3Exception e) {
+            throw new R2UnavailableException("Fallo al leer objeto de R2: " + key, e);
+        }
+    }
+
+    @Override
     public void delete(String key) {
         try {
             client().deleteObject(DeleteObjectRequest.builder()

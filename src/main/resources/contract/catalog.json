@@ -1,6 +1,6 @@
 {
   "format": "stocka-catalog",
-  "version": 1,
+  "version": 2,
   "types": ["int", "number", "bool", "string", "rgb", "rgb_list", "enum"],
   "kinds": {
     "relay": {
@@ -275,8 +275,9 @@
       "actions": {
         "play": {
           "params": {
-            "audio_name": { "type": "string", "required": true, "asset": "audio" },
-            "time": { "type": "number", "min": 0, "duration": true }
+            "audio_name": { "type": "string", "required": true, "asset": "audio", "notes": "Nom d'asset «<attachmentId>-<fitxer>» d'un adjunt AUDIO de la peça (vegeu README)." },
+            "start": { "type": "number", "min": 0, "default": 0, "notes": "Segon del fitxer on comença la reproducció (retalla el principi)." },
+            "time": { "type": "number", "min": 0, "duration": true, "notes": "Segons que sona a partir de start; sense valor, fins al final del fitxer." }
           }
         },
         "stop": { "params": {}, "unsupported": ["player_id"] }

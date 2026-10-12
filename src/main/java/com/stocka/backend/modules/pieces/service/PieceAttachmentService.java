@@ -42,8 +42,8 @@ import com.stocka.backend.modules.storage.UploadedObject;
 import com.stocka.backend.modules.users.entity.User;
 
 /**
- * Upload, list, presign-download and delete piece attachments. Validates per-{@code kind} MIME
- * and size limits, talks to R2 through {@link R2Service}, and records every change in piece
+ * Upload, list, presign-download, stream and delete piece attachments. Validates per-{@code kind}
+ * MIME and size limits, talks to R2 through {@link R2Service}, and records every change in piece
  * history.
  *
  * <p>Upload validation pipeline (issue #14):
@@ -102,11 +102,35 @@ public class PieceAttachmentService {
 
     @Transactional
     public PieceAttachment upload(Integer orgId, Integer pieceId, PieceAttachmentKind kind, MultipartFile file) {
+        return upload(orgId, pieceId, kind, file, null);
+    }
+
+    /**
+     * Uploads an attachment. {@code durationMs} is the length of an {@link PieceAttachmentKind#AUDIO}
+     * file as measured by the client (the backend does not decode audio); it is ignored for the
+     * other kinds and may be {@code null}.
+     *
+     * @param orgId      organization the piece belongs to
+     * @param pieceId    piece receiving the attachment
+     * @param kind       section of the piece the file goes to
+     * @param file       uploaded bytes; the MIME type is detected from them, not from the client
+     * @param durationMs audio length in milliseconds, or {@code null} when unknown
+     * @return the persisted attachment
+     * @throws ApiException on a missing kind or file, a MIME, size or count limit, a negative
+     *                      duration, or an exhausted organization quota
+     */
+    @Transactional
+    public PieceAttachment upload(Integer orgId, Integer pieceId, PieceAttachmentKind kind, MultipartFile file,
+                                  Long durationMs) {
         if (kind == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.UPLOAD_INVALID_KIND);
         }
         if (file == null || file.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_REQUIRED, Map.of("field", "file"));
+        }
+        if (durationMs != null && durationMs < 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.UPLOAD_INVALID_DURATION,
+                    Map.of("durationMs", durationMs));
         }
         Piece piece = pieceService.findInOrg(orgId, pieceId);
 
@@ -145,6 +169,7 @@ public class PieceAttachmentService {
                 .setOriginalFilename(safeName)
                 .setMimeType(detectedMime)
                 .setSizeBytes(stored.sizeBytes())
+                .setDurationMs(kind == PieceAttachmentKind.AUDIO ? durationMs : null)
                 .setUploadedBy(currentUser());
         PieceAttachment saved = attachmentRepository.save(attachment);
         historyService.recordAttachmentAdded(piece, currentUser(), safeName);
@@ -173,6 +198,23 @@ public class PieceAttachmentService {
                 attachment.getR2Key(),
                 Duration.ofMinutes(r2Properties.getPresignedTtlMinutes()),
                 disposition);
+    }
+
+    /**
+     * Opens an attachment's bytes so the controller can stream them to the client. Used by the
+     * timeline editor, whose origin is not allowed to read the R2 bucket directly.
+     *
+     * @param orgId        organization the piece belongs to
+     * @param pieceId      piece the attachment belongs to
+     * @param attachmentId the attachment
+     * @return the attachment metadata and an open stream of its content
+     * @throws org.springframework.web.server.ResponseStatusException 404 when the attachment is not
+     *                                                                 in the piece
+     * @throws com.stocka.backend.modules.storage.R2ObjectNotFoundException when the bytes are gone
+     */
+    public AttachmentContent openContent(Integer orgId, Integer pieceId, Integer attachmentId) {
+        PieceAttachment attachment = findInPiece(orgId, pieceId, attachmentId);
+        return new AttachmentContent(attachment, r2Service.open(attachment.getR2Key()));
     }
 
     @Transactional
@@ -236,6 +278,26 @@ public class PieceAttachmentService {
                         HttpStatus.BAD_REQUEST,
                         ErrorCodes.UPLOAD_TOO_LARGE,
                         Map.of("max", limits.getMaxImagesPerPiece()));
+            }
+        } else if (kind == PieceAttachmentKind.AUDIO) {
+            if (!limits.getAllowedAudioMimes().contains(mime)) {
+                throw new ApiException(
+                        HttpStatus.BAD_REQUEST,
+                        ErrorCodes.UPLOAD_INVALID_KIND,
+                        Map.of("mime", mime));
+            }
+            if (size > limits.getMaxAudioBytes()) {
+                throw new ApiException(
+                        HttpStatus.BAD_REQUEST,
+                        ErrorCodes.UPLOAD_TOO_LARGE,
+                        Map.of("max", limits.getMaxAudioBytes()));
+            }
+            long current = attachmentRepository.countByPieceAndKind(piece, PieceAttachmentKind.AUDIO);
+            if (current >= limits.getMaxAudiosPerPiece()) {
+                throw new ApiException(
+                        HttpStatus.BAD_REQUEST,
+                        ErrorCodes.UPLOAD_TOO_LARGE,
+                        Map.of("max", limits.getMaxAudiosPerPiece()));
             }
         } else {
             if (size > limits.getMaxDocumentBytes()) {
@@ -316,10 +378,25 @@ public class PieceAttachmentService {
      * the round trip through R2.
      */
     private static String attachmentDispositionFor(String originalFilename) {
+        return dispositionFor("attachment", originalFilename);
+    }
+
+    /**
+     * Same as {@link #attachmentDispositionFor(String)} with {@code inline} disposition, for the
+     * content endpoint (the browser plays or shows the file instead of saving it).
+     *
+     * @param originalFilename the name to announce; {@code null} becomes {@code "file"}
+     * @return the header value
+     */
+    public static String inlineDispositionFor(String originalFilename) {
+        return dispositionFor("inline", originalFilename);
+    }
+
+    private static String dispositionFor(String type, String originalFilename) {
         String filename = originalFilename == null ? "file" : originalFilename;
         String safe = filename.replaceAll("[\\r\\n\"\\\\]", "_");
         String encoded = URLEncoder.encode(filename, StandardCharsets.UTF_8).replace("+", "%20");
-        return "attachment; filename=\"" + safe + "\"; filename*=UTF-8''" + encoded;
+        return type + "; filename=\"" + safe + "\"; filename*=UTF-8''" + encoded;
     }
 
     private User currentUser() {

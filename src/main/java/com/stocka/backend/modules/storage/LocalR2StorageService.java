@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
@@ -69,6 +70,18 @@ public class LocalR2StorageService implements R2Service {
         }
         Instant expiresAt = Instant.now().plus(ttl);
         return new PresignedDownload(url.toString(), expiresAt);
+    }
+
+    @Override
+    public InputStream open(String key) {
+        Path file = resolve(key);
+        try {
+            return Files.newInputStream(file);
+        } catch (NoSuchFileException e) {
+            throw new R2ObjectNotFoundException("Archivo local no encontrado: " + key, e);
+        } catch (IOException e) {
+            throw new R2UnavailableException("No se pudo leer el archivo local: " + key, e);
+        }
     }
 
     @Override

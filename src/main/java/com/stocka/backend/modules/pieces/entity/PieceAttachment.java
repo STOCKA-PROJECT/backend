@@ -21,8 +21,10 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 /**
- * Image or document attached to a piece. Binary content lives in R2 (or its local fallback);
- * this entity stores only metadata and the {@code r2Key} pointing to the object.
+ * Image, document or audio file attached to a piece. Binary content lives in R2 (or its local
+ * fallback); this entity stores only metadata and the {@code r2Key} pointing to the object.
+ * {@code durationMs} is set for {@link PieceAttachmentKind#AUDIO} only: the length the client
+ * measured when uploading, so the timeline editor can size a clip before decoding the file.
  */
 @Entity
 @Table(name = "piece_attachments")
@@ -51,6 +53,9 @@ public class PieceAttachment {
 
     @Column(name = "size_bytes", nullable = false)
     private long sizeBytes;
+
+    @Column(name = "duration_ms")
+    private Long durationMs;
 
     @ManyToOne
     @JoinColumn(name = "uploaded_by_user_id", referencedColumnName = "id")
@@ -84,6 +89,9 @@ public class PieceAttachment {
 
     public long getSizeBytes() { return sizeBytes; }
     public PieceAttachment setSizeBytes(long sizeBytes) { this.sizeBytes = sizeBytes; return this; }
+
+    public Long getDurationMs() { return durationMs; }
+    public PieceAttachment setDurationMs(Long durationMs) { this.durationMs = durationMs; return this; }
 
     public User getUploadedBy() { return uploadedBy; }
     public PieceAttachment setUploadedBy(User uploadedBy) { this.uploadedBy = uploadedBy; return this; }

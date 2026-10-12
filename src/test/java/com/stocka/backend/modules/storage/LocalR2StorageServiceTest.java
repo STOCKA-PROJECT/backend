@@ -55,6 +55,34 @@ class LocalR2StorageServiceTest {
     }
 
     @Nested
+    @DisplayName("open")
+    class Open {
+        @Test
+        @DisplayName("should stream back the stored bytes")
+        void should_readStoredBytes() throws IOException {
+            byte[] payload = {1, 2, 3, 4};
+            sut.upload("org/1/piece/2/x.mp3", new ByteArrayInputStream(payload), payload.length, "audio/mpeg");
+            try (var in = sut.open("org/1/piece/2/x.mp3")) {
+                assertThat(in.readAllBytes()).containsExactly(1, 2, 3, 4);
+            }
+        }
+
+        @Test
+        @DisplayName("should throw R2ObjectNotFoundException for a missing key")
+        void should_throwNotFound_whenMissing() {
+            assertThatThrownBy(() -> sut.open("org/1/piece/2/missing.mp3"))
+                    .isInstanceOf(R2ObjectNotFoundException.class);
+        }
+
+        @Test
+        @DisplayName("should refuse keys that escape the local dir")
+        void should_refuseTraversalKeys() {
+            assertThatThrownBy(() -> sut.open("../../etc/passwd"))
+                    .isInstanceOf(R2UnavailableException.class);
+        }
+    }
+
+    @Nested
     @DisplayName("presign")
     class Presign {
         @Test

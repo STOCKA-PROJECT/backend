@@ -1,0 +1,22 @@
+meta {
+  name: Get Attachment Content (bytes through the backend)
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces/{{pieceId}}/attachments/{{attachmentId}}/content
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  Serveix els bytes de l'adjunt amb `Content-Type`, `Content-Length` i `Content-Disposition: inline`.
+  A diferència de `/download` (302 a una URL signada de R2, que només poden llegir els orígens
+  permesos pel CORS del bucket), aquest endpoint el pot consumir qualsevol client autenticat: és el
+  que usa l'editor de línia de temps per descodificar l'àudio i dibuixar-ne l'ona.
+}

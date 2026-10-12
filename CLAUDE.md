@@ -99,9 +99,10 @@ Org membership roles: `OWNER`, `MANAGER`, `USER`, `SPECTATOR` (read-only).
 | PATCH  | `/pieces/{id}`                                | OWNER, MANAGER, USER      | Update fields/values            |
 | DELETE | `/pieces/{id}`                                | OWNER, MANAGER, USER      | Soft-delete                     |
 | GET    | `/pieces/{id}/history`                        | any member                | Diff-based history              |
-| POST   | `/pieces/{id}/attachments`                    | OWNER, MANAGER, USER      | Upload IMAGE or DOCUMENT        |
+| POST   | `/pieces/{id}/attachments`                    | OWNER, MANAGER, USER      | Upload IMAGE, DOCUMENT or AUDIO (`durationMs` optional) |
 | GET    | `/pieces/{id}/attachments(?kind=)`            | any member                | List                            |
 | GET    | `/pieces/{id}/attachments/{aid}/download`     | any member                | 302 to presigned URL            |
+| GET    | `/pieces/{id}/attachments/{aid}/content`      | any member                | Streams the bytes through the backend (same-origin for the editor) |
 | DELETE | `/pieces/{id}/attachments/{aid}`              | OWNER, MANAGER, USER      | Soft-delete + best-effort R2 rm |
 | GET    | `/pieces/export(?format=csv\|xlsx&filters)`   | any member                | Bulk export (CSV/XLSX), filtered |
 | GET    | `/pieces/import/template(?format=)`           | OWNER, MANAGER, USER      | Empty header-only template       |
@@ -165,6 +166,9 @@ silently written to ephemeral container storage in production (issue #17).
 Per-piece attachment limits (configurable via `stocka.pieces.attachment.*`):
 - IMAGE: jpg/png/webp/gif, max 25 MB, max 50 per piece.
 - DOCUMENT: any MIME (incl. images), max 100 MB, max 50 per piece.
+- AUDIO: mp3/wav/ogg/flac/m4a (what VLC plays on the belén RPi), max 50 MB, max 50 per piece;
+  carries `durationMs` measured by the client. The timeline editor names the asset
+  `<attachmentId>-<filename>` and reads the bytes from `/content`.
 
 ## API Testing
 

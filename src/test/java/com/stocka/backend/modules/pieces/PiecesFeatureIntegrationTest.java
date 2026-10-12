@@ -189,6 +189,17 @@ class PiecesFeatureIntegrationTest {
         return imageBytes("png", width, height, BufferedImage.TYPE_INT_ARGB);
     }
 
+    /** An MP3 with an ID3v2 tag header: Tika detects {@code audio/mpeg} from the first bytes. */
+    private static byte[] mp3Bytes() {
+        byte[] out = new byte[48];
+        byte[] id3 = {'I', 'D', '3', 4, 0, 0, 0, 0, 0, 0};
+        System.arraycopy(id3, 0, out, 0, id3.length);
+        for (int i = id3.length; i < out.length; i++) {
+            out[i] = (byte) i;
+        }
+        return out;
+    }
+
     private static byte[] jpegBytes(int width, int height) {
         return imageBytes("jpeg", width, height, BufferedImage.TYPE_INT_RGB);
     }
@@ -890,6 +901,88 @@ class PiecesFeatureIntegrationTest {
     @Nested
     @DisplayName("Attachments")
     class Attachments {
+
+        @Test
+        @DisplayName("upload AUDIO: mp3 accepted with its duration, image bytes rejected")
+        void uploadAudio_mimeRulesAndDuration() throws Exception {
+            Integer typeId = createSimpleTypeAs(ownerToken, "Altaveu", false);
+            Integer attrId = firstAttributeIdOfType(typeId);
+            Integer pieceId = createPieceAs(ownerToken, typeId, "Audio", attrId, "red");
+
+            MockMultipartFile mp3 = new MockMultipartFile("file", "nature.mp3", "audio/mpeg", mp3Bytes());
+            mockMvc.perform(multipart("/organizations/" + orgSlug + "/pieces/" + pieceId + "/attachments")
+                            .file(mp3)
+                            .param("kind", "AUDIO")
+                            .param("durationMs", "61000")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.kind").value("AUDIO"))
+                    .andExpect(jsonPath("$.mimeType").value("audio/mpeg"))
+                    .andExpect(jsonPath("$.durationMs").value(61000))
+                    .andExpect(jsonPath("$.originalFilename").value("nature.mp3"));
+
+            MockMultipartFile jpgAsAudio = new MockMultipartFile("file", "p.mp3", "audio/mpeg", jpegBytes(1, 1));
+            mockMvc.perform(multipart("/organizations/" + orgSlug + "/pieces/" + pieceId + "/attachments")
+                            .file(jpgAsAudio)
+                            .param("kind", "AUDIO")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("upload.invalid_kind"));
+
+            mockMvc.perform(multipart("/organizations/" + orgSlug + "/pieces/" + pieceId + "/attachments")
+                            .file(mp3)
+                            .param("kind", "AUDIO")
+                            .param("durationMs", "-5")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("upload.invalid_duration"));
+
+            mockMvc.perform(get("/organizations/" + orgSlug + "/pieces/" + pieceId + "/attachments")
+                            .param("kind", "AUDIO")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.length()").value(1))
+                    .andExpect(jsonPath("$[0].durationMs").value(61000));
+        }
+
+        @Test
+        @DisplayName("content endpoint streams the bytes inline with type, length and private cache")
+        void attachmentContent_streamsBytes() throws Exception {
+            Integer typeId = createSimpleTypeAs(ownerToken, "Altaveu", false);
+            Integer attrId = firstAttributeIdOfType(typeId);
+            Integer pieceId = createPieceAs(ownerToken, typeId, "Audio", attrId, "red");
+
+            byte[] bytes = mp3Bytes();
+            MockMultipartFile mp3 = new MockMultipartFile("file", "nit d'estels.mp3", "audio/mpeg", bytes);
+            MvcResult r = mockMvc.perform(multipart("/organizations/" + orgSlug + "/pieces/" + pieceId + "/attachments")
+                            .file(mp3)
+                            .param("kind", "AUDIO")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isCreated())
+                    .andReturn();
+            Integer attachmentId = (Integer) om.readValue(r.getResponse().getContentAsString(), Map.class).get("id");
+
+            MvcResult content = mockMvc.perform(get("/organizations/" + orgSlug + "/pieces/" + pieceId
+                            + "/attachments/" + attachmentId + "/content")
+                            .header("Authorization", "Bearer " + spectatorToken))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Content-Type", "audio/mpeg"))
+                    .andExpect(header().longValue("Content-Length", bytes.length))
+                    .andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("private")))
+                    .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.startsWith("inline; filename=\"nit d'estels.mp3\"")))
+                    .andReturn();
+            org.assertj.core.api.Assertions.assertThat(content.getResponse().getContentAsByteArray()).isEqualTo(bytes);
+
+            mockMvc.perform(get("/organizations/" + orgSlug + "/pieces/" + pieceId
+                            + "/attachments/" + attachmentId + "/content")
+                            .header("Authorization", "Bearer " + outsiderToken))
+                    .andExpect(status().isForbidden());
+
+            mockMvc.perform(get("/organizations/" + orgSlug + "/pieces/" + pieceId
+                            + "/attachments/" + (attachmentId + 1000) + "/content")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isNotFound());
+        }
 
         @Test
         @DisplayName("upload IMAGE: jpg ok, pdf rejected")

@@ -52,7 +52,7 @@ class CatalogControllerIntegrationTest {
         mockMvc.perform(get("/contract/catalog").header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.format").value("stocka-catalog"))
-                .andExpect(jsonPath("$.version").value(1))
+                .andExpect(jsonPath("$.version").value(2))
                 .andExpect(jsonPath("$.kinds.relay.controller").value("RelayController"))
                 .andExpect(jsonPath("$.kinds.led_strip.infrastructure").value(true))
                 .andExpect(jsonPath("$.kinds.led_segment.actions.animate.animations.fade.params.color.required").value(true))

@@ -36,7 +36,7 @@ class OutputCatalogTest {
         @Test
         @DisplayName("reads the bundled catalog with its version")
         void should_loadBundledCatalog() {
-            assertThat(catalog.version()).isEqualTo(1);
+            assertThat(catalog.version()).isEqualTo(2);
             assertThat(catalog.raw().path("format").asText()).isEqualTo("stocka-catalog");
         }
 

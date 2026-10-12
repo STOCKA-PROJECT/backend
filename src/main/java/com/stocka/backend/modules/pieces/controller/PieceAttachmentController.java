@@ -1,9 +1,16 @@
 package com.stocka.backend.modules.pieces.controller;
 
 import java.net.URI;
+import java.time.Duration;
 import java.util.List;
 
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.InvalidMediaTypeException;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -20,6 +27,7 @@ import com.stocka.backend.modules.organizations.service.OrganizationResolver;
 import com.stocka.backend.modules.pieces.dto.PieceAttachmentResponseDto;
 import com.stocka.backend.modules.pieces.entity.PieceAttachment;
 import com.stocka.backend.modules.pieces.entity.PieceAttachmentKind;
+import com.stocka.backend.modules.pieces.service.AttachmentContent;
 import com.stocka.backend.modules.pieces.service.PieceAttachmentService;
 import com.stocka.backend.modules.storage.PresignedDownload;
 
@@ -40,10 +48,11 @@ public class PieceAttachmentController {
             @PathVariable String orgSlug,
             @PathVariable Integer pieceId,
             @RequestParam("kind") PieceAttachmentKind kind,
+            @RequestParam(value = "durationMs", required = false) Long durationMs,
             @RequestPart("file") MultipartFile file
     ) {
         Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
-        PieceAttachment attachment = attachmentService.upload(orgId, pieceId, kind, file);
+        PieceAttachment attachment = attachmentService.upload(orgId, pieceId, kind, file, durationMs);
         return ResponseEntity.status(HttpStatus.CREATED).body(PieceAttachmentResponseDto.from(attachment));
     }
 
@@ -71,6 +80,37 @@ public class PieceAttachmentController {
         Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         PresignedDownload presigned = attachmentService.presign(orgId, pieceId, attachmentId);
         return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(presigned.url())).build();
+    }
+
+    /**
+     * Streams the attachment bytes through the backend. The download endpoint redirects to a
+     * presigned R2 URL, which only the origins allowed by the bucket's CORS can fetch; the timeline
+     * editor (another origin) reads audio from here instead. Attachments are immutable, so the
+     * response may be cached privately.
+     */
+    @GetMapping("/{attachmentId}/content")
+    @PreAuthorize("@orgSecurity.canReadOrgContent(#orgSlug, principal)")
+    public ResponseEntity<Resource> content(
+            @PathVariable String orgSlug,
+            @PathVariable Integer pieceId,
+            @PathVariable Integer attachmentId
+    ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
+        AttachmentContent content = attachmentService.openContent(orgId, pieceId, attachmentId);
+        PieceAttachment attachment = content.attachment();
+        MediaType mediaType;
+        try {
+            mediaType = MediaType.parseMediaType(attachment.getMimeType());
+        } catch (InvalidMediaTypeException e) {
+            mediaType = MediaType.APPLICATION_OCTET_STREAM;
+        }
+        return ResponseEntity.ok()
+                .contentType(mediaType)
+                .contentLength(attachment.getSizeBytes())
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        PieceAttachmentService.inlineDispositionFor(attachment.getOriginalFilename()))
+                .cacheControl(CacheControl.maxAge(Duration.ofHours(24)).cachePrivate())
+                .body(new InputStreamResource(content.stream()));
     }
 
     @DeleteMapping("/{attachmentId}")
