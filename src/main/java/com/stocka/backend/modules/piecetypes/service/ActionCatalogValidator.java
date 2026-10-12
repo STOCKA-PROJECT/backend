@@ -1,6 +1,7 @@
 package com.stocka.backend.modules.piecetypes.service;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -11,6 +12,11 @@ import java.util.regex.Pattern;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
+
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
@@ -32,6 +38,7 @@ public class ActionCatalogValidator {
     private static final String ANIMATION_TYPE = "animation_type";
     private static final Pattern HEX = Pattern.compile("^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$");
     private static final Pattern TRIPLE = Pattern.compile("^\\[?\\s*(\\d{1,3})\\s*,\\s*(\\d{1,3})\\s*,\\s*(\\d{1,3})\\s*\\]?$");
+    private static final ObjectMapper JSON = JsonMapper.builder().build();
 
     private final OutputCatalog catalog;
 
@@ -115,7 +122,37 @@ public class ActionCatalogValidator {
             case ENUM -> spec.values().contains(v);
             case STRING -> !v.isEmpty();
             case RGB -> parseRgb(v) != null;
+            case RGB_LIST -> parseRgbList(v) != null;
         };
+    }
+
+    /**
+     * Parses a JSON array of colours, each written as a {@code [r,g,b]} array or as a string in
+     * any notation {@link #parseRgb(String)} accepts (e.g. {@code [[255,0,0], "#00ff00"]}).
+     *
+     * @param value raw text
+     * @return the colours (possibly none), or {@code null} when it is not such a list
+     */
+    static List<int[]> parseRgbList(String value) {
+        JsonNode node;
+        try {
+            node = JSON.readTree(value.trim());
+        } catch (JacksonException e) {
+            return null;
+        }
+        if (node == null || !node.isArray()) {
+            return null;
+        }
+        List<int[]> out = new ArrayList<>();
+        for (JsonNode element : node) {
+            int[] rgb = element.isArray() ? parseRgb(element.toString())
+                    : element.isValueNode() ? parseRgb(element.asText("")) : null;
+            if (rgb == null) {
+                return null;
+            }
+            out.add(rgb);
+        }
+        return out;
     }
 
     /**

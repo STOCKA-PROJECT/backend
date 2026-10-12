@@ -4,10 +4,11 @@ import com.stocka.backend.modules.piecetypes.entity.AttributeType;
 
 /**
  * Parameter and config value types used by the output catalog, and their compatibility with the
- * {@link AttributeType}s a piece-type action parameter can declare.
+ * {@link AttributeType}s a piece-type action parameter can declare. {@code RGB_LIST} is a JSON
+ * array of colours (each in any notation {@code RGB} accepts), used by the fade waypoints.
  */
 public enum CatalogType {
-    INT, NUMBER, BOOL, STRING, RGB, ENUM;
+    INT, NUMBER, BOOL, STRING, RGB, RGB_LIST, ENUM;
 
     /**
      * Parses the lowercase identifier used in {@code catalog.json}.
@@ -36,6 +37,7 @@ public enum CatalogType {
             case NUMBER -> attributeType == AttributeType.DECIMAL || attributeType == AttributeType.INTEGER;
             case BOOL -> attributeType == AttributeType.BOOLEAN;
             case STRING, RGB -> attributeType == AttributeType.TEXT;
+            case RGB_LIST -> attributeType == AttributeType.TEXT || attributeType == AttributeType.LONGTEXT;
             case ENUM -> attributeType == AttributeType.SELECT;
         };
     }
@@ -51,6 +53,7 @@ public enum CatalogType {
             case NUMBER -> "DECIMAL, INTEGER";
             case BOOL -> "BOOLEAN";
             case STRING, RGB -> "TEXT";
+            case RGB_LIST -> "TEXT, LONGTEXT";
             case ENUM -> "SELECT";
         };
     }

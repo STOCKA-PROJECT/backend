@@ -292,6 +292,48 @@ class ActionCatalogValidatorTest {
     @DisplayName("static values")
     class StaticValues {
 
+        @Nested
+        @DisplayName("colour lists (fade waypoints)")
+        class ColourLists {
+
+            private List<ActionParameterDto> fadeWith(ActionParameterDto waypoints) {
+                return List.of(select("animation_type", false, "fade", "fade"), dynamic("color", AttributeType.TEXT), waypoints);
+            }
+
+            @ParameterizedTest
+            @ValueSource(strings = {"[[255,0,0],[0,255,0]]", "[\"#ff0000\", \"0,255,0\", [1, 2, 3]]", "[ [1,2,3] ]", "[]"})
+            @DisplayName("accepts a JSON array of colours in any supported notation, even empty")
+            void should_acceptColourLists(String value) {
+                assertThatCode(() -> sut.validate(OutputKind.LED_SEGMENT, "animate", fadeWith(fixed("waypoints", AttributeType.TEXT, value))))
+                        .doesNotThrowAnyException();
+            }
+
+            @ParameterizedTest
+            @ValueSource(strings = {"#ff0000", "[255,0,0]", "[[255,0,300]]", "[[1,2]]", "[\"blau\"]", "[1,2,3]", "{}", "no json"})
+            @DisplayName("rejects values that are not a list of colours")
+            void should_rejectNonLists(String value) {
+                assertCode(() -> sut.validate(OutputKind.LED_SEGMENT, "animate", fadeWith(fixed("waypoints", AttributeType.TEXT, value))),
+                        ErrorCodes.PIECE_TYPES_ACTION_PARAM_STATIC_INVALID);
+            }
+
+            @Test
+            @DisplayName("a dynamic colour list may be TEXT or LONGTEXT but not a number")
+            void should_checkAttributeType() {
+                assertThatCode(() -> sut.validate(OutputKind.LED_SEGMENT, "animate", fadeWith(dynamic("waypoints", AttributeType.TEXT)))).doesNotThrowAnyException();
+                assertThatCode(() -> sut.validate(OutputKind.LED_SEGMENT, "animate", fadeWith(dynamic("waypoints", AttributeType.LONGTEXT)))).doesNotThrowAnyException();
+                assertCode(() -> sut.validate(OutputKind.LED_SEGMENT, "animate", fadeWith(dynamic("waypoints", AttributeType.INTEGER))),
+                        ErrorCodes.PIECE_TYPES_ACTION_PARAM_TYPE_MISMATCH);
+            }
+
+            @Test
+            @DisplayName("waypoints belong to fade only")
+            void should_rejectWaypointsOnOtherAnimations() {
+                assertCode(() -> sut.validate(OutputKind.LED_SEGMENT, "animate",
+                        List.of(select("animation_type", false, "fire", "fire"), dynamic("waypoints", AttributeType.TEXT))),
+                        ErrorCodes.PIECE_TYPES_ACTION_PARAM_UNKNOWN);
+            }
+        }
+
         @ParameterizedTest
         @ValueSource(strings = {"[255,50,0]", "[255, 50, 0]", "255,50,0", "255, 50 , 0", "#ff3200", "#F30", "#fff"})
         @DisplayName("accepts every supported colour notation")

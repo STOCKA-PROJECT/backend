@@ -1,7 +1,7 @@
 {
   "format": "stocka-catalog",
   "version": 1,
-  "types": ["int", "number", "bool", "string", "rgb", "enum"],
+  "types": ["int", "number", "bool", "string", "rgb", "rgb_list", "enum"],
   "kinds": {
     "relay": {
       "controller": "RelayController",
@@ -66,9 +66,9 @@
             "fade": {
               "params": {
                 "color": { "type": "rgb", "required": true },
-                "from_color": { "type": "rgb" }
+                "from_color": { "type": "rgb" },
+                "waypoints": { "type": "rgb_list", "notes": "Colors intermedis entre from_color i color; la durada es reparteix a parts iguals entre trams." }
               },
-              "unsupported": ["waypoints"],
               "transition": true,
               "notes": "duration per defecte 1.0 s. Sense from_color comença des del color del fade anterior o des de negre."
             },
@@ -174,9 +174,9 @@
             "fade": {
               "params": {
                 "color": { "type": "rgb", "required": true },
-                "from_color": { "type": "rgb" }
+                "from_color": { "type": "rgb" },
+                "waypoints": { "type": "rgb_list", "notes": "Colors intermedis entre from_color i color; la durada es reparteix a parts iguals entre trams." }
               },
-              "unsupported": ["waypoints"],
               "transition": true,
               "notes": "duration per defecte 1.0 s. Sense from_color comença des del color del fade anterior o des de negre."
             },

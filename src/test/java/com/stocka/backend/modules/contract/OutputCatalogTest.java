@@ -218,7 +218,7 @@ class OutputCatalogTest {
         @DisplayName("paramsFor restricts to one animation and falls back to the common ones")
         void should_restrictPerAnimation() {
             Map<String, CatalogParam> fade = animate().paramsFor("fade");
-            assertThat(fade.keySet()).containsExactlyInAnyOrder("animation_type", "first", "last", "duration", "color", "from_color");
+            assertThat(fade.keySet()).containsExactlyInAnyOrder("animation_type", "first", "last", "duration", "color", "from_color", "waypoints");
             assertThat(fade.get("color").required()).isTrue();
             assertThat(animate().paramsFor("nope").keySet()).containsExactlyInAnyOrder("animation_type", "first", "last", "duration");
             assertThat(animate().paramsFor(null).keySet()).containsExactlyInAnyOrder("animation_type", "first", "last", "duration");
@@ -228,9 +228,12 @@ class OutputCatalogTest {
         }
 
         @Test
-        @DisplayName("fade does not expose waypoints")
-        void should_markFadeUnsupported() {
-            assertThat(animate().animations().get("fade").unsupported()).containsExactly("waypoints");
+        @DisplayName("fade exposes waypoints as a colour list")
+        void should_exposeFadeWaypoints() {
+            CatalogAnimation fade = animate().animations().get("fade");
+            assertThat(fade.unsupported()).isEmpty();
+            assertThat(fade.params().get("waypoints").type()).isEqualTo(CatalogType.RGB_LIST);
+            assertThat(fade.params().get("waypoints").required()).isFalse();
         }
     }
 
@@ -296,6 +299,7 @@ class OutputCatalogTest {
                 "BOOL,BOOLEAN,true", "BOOL,TEXT,false",
                 "STRING,TEXT,true", "STRING,LONGTEXT,false", "STRING,URL,false",
                 "RGB,TEXT,true", "RGB,INTEGER,false",
+                "RGB_LIST,TEXT,true", "RGB_LIST,LONGTEXT,true", "RGB_LIST,INTEGER,false", "RGB_LIST,MULTI_SELECT,false",
                 "ENUM,SELECT,true", "ENUM,MULTI_SELECT,false", "ENUM,TEXT,false"})
         @DisplayName("accepts only the attribute types of the mapping table")
         void should_acceptMappedTypes(CatalogType catalogType, AttributeType attributeType, boolean expected) {
@@ -307,6 +311,8 @@ class OutputCatalogTest {
         void should_handleNullAndParse() {
             assertThat(CatalogType.INT.accepts(null)).isFalse();
             assertThat(CatalogType.fromCatalogId("rgb")).isEqualTo(CatalogType.RGB);
+            assertThat(CatalogType.fromCatalogId("rgb_list")).isEqualTo(CatalogType.RGB_LIST);
+            assertThat(CatalogType.RGB_LIST.acceptedAttributeTypes()).isEqualTo("TEXT, LONGTEXT");
             assertThat(CatalogType.NUMBER.acceptedAttributeTypes()).isEqualTo("DECIMAL, INTEGER");
             assertThat(CatalogType.ENUM.acceptedAttributeTypes()).isEqualTo("SELECT");
         }
