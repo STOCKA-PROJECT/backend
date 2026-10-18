@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:fragment="page(title, content)" lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <title th:text="${title} + ' · Stocka'">Stocka</title>
+    <style>
+        /* Stocka brandbook tokens (light theme), mirrored from the dashboard. */
+        :root {
+            --c-bg: #f4f6f7; --c-bg-card: #ffffff; --c-bg-soft: #eef3f4; --c-selected: #ddeef0;
+            --c-ink: #16212b; --c-ink-soft: #46535f; --c-ink-muted: #5f6c78;
+            --c-line: #e1e5e8; --c-line-strong: #c5ccd2; --c-line-control: #77838e;
+            --c-accent: #0b5a66; --c-accent-ink: #084752; --c-accent-soft: #ddeef0; --c-on-accent: #ffffff;
+            --c-highlight: #f0a63a; --c-danger: #a8281d; --c-danger-soft: #fbe3df;
+            --c-warn-ink: #8a4b00; --c-warn-soft: #fcebd0; --c-ok: #0f6b4f; --c-ok-soft: #ddf2e9;
+        }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; padding: 0; background: var(--c-bg); color: var(--c-ink);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-size: 15px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+        .wrap { min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: 48px 16px; }
+        .card { width: 100%; max-width: 520px; background: var(--c-bg-card); border: 1px solid var(--c-line);
+            border-radius: 14px; box-shadow: 0 1px 3px rgba(22, 33, 43, 0.06); overflow: hidden; }
+        .brand { display: flex; align-items: center; gap: 10px; padding: 18px 24px; border-bottom: 1px solid var(--c-line);
+            font-weight: 700; letter-spacing: -0.01em; color: var(--c-accent); }
+        .brand .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--c-highlight); }
+        .content { padding: 24px; }
+        h1 { font-size: 22px; margin: 0 0 6px; letter-spacing: -0.02em; }
+        p { margin: 0 0 14px; color: var(--c-ink-soft); }
+        label { display: block; font-size: 13px; font-weight: 600; margin: 14px 0 6px; color: var(--c-ink); }
+        input[type=text], input[type=email], input[type=password] { width: 100%; padding: 10px 12px; font-size: 15px;
+            border: 1px solid var(--c-line-strong); border-radius: 10px; background: #fff; color: var(--c-ink); }
+        input:focus { outline: 2px solid var(--c-accent-soft); border-color: var(--c-accent); }
+        .btn { display: inline-flex; align-items: center; justify-content: center; padding: 10px 18px; font-size: 15px;
+            font-weight: 600; border-radius: 10px; border: 1px solid transparent; cursor: pointer; }
+        .btn-primary { background: var(--c-accent); color: var(--c-on-accent); }
+        .btn-primary:hover { background: var(--c-accent-ink); }
+        .btn-ghost { background: transparent; color: var(--c-ink-soft); border-color: var(--c-line-strong); }
+        .btn-ghost:hover { background: var(--c-bg-soft); }
+        .actions { display: flex; gap: 10px; margin-top: 22px; }
+        .actions form { margin: 0; }
+        .alert { padding: 10px 12px; border-radius: 10px; font-size: 14px; margin: 0 0 14px; }
+        .alert-error { background: var(--c-danger-soft); color: var(--c-danger); }
+        .alert-warn { background: var(--c-warn-soft); color: var(--c-warn-ink); }
+        .app { display: flex; gap: 14px; align-items: center; padding: 14px; border: 1px solid var(--c-line);
+            border-radius: 12px; background: var(--c-bg-soft); margin-bottom: 16px; }
+        .app img { width: 44px; height: 44px; border-radius: 10px; object-fit: cover; background: #fff; }
+        .app .placeholder { width: 44px; height: 44px; border-radius: 10px; background: var(--c-accent-soft);
+            color: var(--c-accent); display: flex; align-items: center; justify-content: center; font-weight: 700; }
+        .app .name { font-weight: 700; }
+        .app .meta { font-size: 13px; color: var(--c-ink-muted); }
+        .badge { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+        .badge-ok { background: var(--c-ok-soft); color: var(--c-ok); }
+        .badge-warn { background: var(--c-warn-soft); color: var(--c-warn-ink); }
+        .scopes { list-style: none; padding: 0; margin: 0 0 8px; border: 1px solid var(--c-line); border-radius: 12px; }
+        .scopes li { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border-top: 1px solid var(--c-line); }
+        .scopes li:first-child { border-top: 0; }
+        .scopes input { margin-top: 4px; accent-color: var(--c-accent); }
+        .scopes .code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--c-ink-muted); }
+        .orgs { margin: 0 0 8px; padding: 0; list-style: none; font-size: 14px; }
+        .orgs li { padding: 6px 0; border-bottom: 1px dashed var(--c-line); display: flex; justify-content: space-between; gap: 12px; }
+        .orgs li:last-child { border-bottom: 0; }
+        .muted { color: var(--c-ink-muted); font-size: 13px; }
+        h2 { font-size: 14px; margin: 18px 0 8px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--c-ink-muted); }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <div class="card">
+        <div class="brand"><span class="dot"></span><span th:text="#{oauth.ui.brand}">Stocka</span></div>
+        <div class="content" th:replace="${content}"></div>
+    </div>
+</div>
+</body>
+</html>

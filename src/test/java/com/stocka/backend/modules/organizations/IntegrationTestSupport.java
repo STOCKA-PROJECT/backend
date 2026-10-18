@@ -57,6 +57,10 @@ public final class IntegrationTestSupport {
         jdbc.execute("DELETE FROM refresh_tokens");
         jdbc.execute("DELETE FROM password_reset_tokens");
         jdbc.execute("DELETE FROM email_verification_tokens");
+        jdbc.execute("DELETE FROM oauth2_authorization");
+        jdbc.execute("DELETE FROM oauth2_authorization_consent");
+        jdbc.execute("DELETE FROM oauth2_registered_client");
+        jdbc.execute("DELETE FROM oauth2_cimd_clients");
         jdbc.update("UPDATE users SET two_factor_enabled = FALSE, two_factor_secret = NULL, "
                 + "two_factor_enabled_at = NULL WHERE email = ?", ADMIN_EMAIL);
         jdbc.execute("DELETE FROM user_username_history");

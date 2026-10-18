@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:replace="~{oauth/layout :: page(#{oauth.ui.login.title}, ~{::main})}">
+<body>
+<main class="content">
+    <h1 th:text="#{oauth.ui.login.title}">Conectar con Stocka</h1>
+    <p th:if="${clientName != null}" th:text="#{oauth.ui.login.subtitle(${clientName})}">La aplicación quiere acceder a tu cuenta.</p>
+    <p th:if="${clientName == null}" th:text="#{oauth.ui.login.subtitle_generic}">Una aplicación quiere acceder a tu cuenta.</p>
+
+    <div class="alert alert-error" th:if="${error != null}" th:text="#{${error}}">Error</div>
+
+    <form method="post" th:action="@{/auth/connect/login}" autocomplete="on">
+        <label for="email" th:text="#{oauth.ui.login.email}">Correo electrónico</label>
+        <input id="email" name="email" type="email" required autofocus autocomplete="username" th:value="${email}">
+        <label for="password" th:text="#{oauth.ui.login.password}">Contraseña</label>
+        <input id="password" name="password" type="password" required autocomplete="current-password">
+        <div class="actions">
+            <button class="btn btn-primary" type="submit" th:text="#{oauth.ui.login.submit}">Continuar</button>
+        </div>
+    </form>
+</main>
+</body>
+</html>

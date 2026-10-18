@@ -84,6 +84,15 @@ public class RateLimitFilter extends OncePerRequestFilter {
     /** {@code POST /webhooks/resend}: 60/min por IP (defensa en profundidad junto a la firma Svix). */
     static final RateLimitPolicy WEBHOOKS_RESEND_IP =
             new RateLimitPolicy("webhooks.resend.ip", 60, 60, Duration.ofMinutes(1));
+    /** {@code POST /oauth2/register}: 20 registros dinámicos/h por IP. */
+    static final RateLimitPolicy OAUTH_REGISTER_IP =
+            new RateLimitPolicy("oauth.register.ip", 20, 20, Duration.ofHours(1));
+    /** {@code POST /oauth2/token}: 60/min por IP (canjes de código y refrescos). */
+    static final RateLimitPolicy OAUTH_TOKEN_IP =
+            new RateLimitPolicy("oauth.token.ip", 60, 60, Duration.ofMinutes(1));
+    /** {@code POST /mcp}: 300 llamadas/min por IP (los hosts MCP lanzan herramientas en paralelo). */
+    static final RateLimitPolicy MCP_IP =
+            new RateLimitPolicy("mcp.calls.ip", 300, 300, Duration.ofMinutes(1));
 
     private final RateLimitProperties properties;
     private final RateLimitService rateLimitService;
@@ -180,6 +189,11 @@ public class RateLimitFilter extends OncePerRequestFilter {
             new Mapping("POST", "/auth/resend-verification",   AUTH_RESEND_IP),
             new Mapping("GET",  "/auth/check-username",        AUTH_CHECK_USERNAME_IP),
             new Mapping("POST", "/invitations/*/accept",       INVITATIONS_ACCEPT_IP),
-            new Mapping("POST", "/webhooks/resend",            WEBHOOKS_RESEND_IP)
+            new Mapping("POST", "/webhooks/resend",            WEBHOOKS_RESEND_IP),
+            new Mapping("POST", "/auth/connect/login",         AUTH_LOGIN_IP),
+            new Mapping("POST", "/auth/connect/2fa",           AUTH_2FA_LOGIN_IP),
+            new Mapping("POST", "/oauth2/register",            OAUTH_REGISTER_IP),
+            new Mapping("POST", "/oauth2/token",               OAUTH_TOKEN_IP),
+            new Mapping("POST", "/mcp",                        MCP_IP)
     );
 }

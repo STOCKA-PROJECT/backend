@@ -3,6 +3,7 @@ package com.stocka.backend.modules.security.config;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -57,7 +58,12 @@ public class SecurityConfiguration {
         this.corsProperties = corsProperties;
     }
 
+    /**
+     * The REST chain. Ordered last: the OAuth authorization server ({@code @Order(1)}) and the MCP
+     * resource server ({@code @Order(2)}) claim their paths first; everything else lands here.
+     */
     @Bean
+    @Order(3)
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())

@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stocka.xeye.es/schema/scene.v1.json",
+  "title": "Stocka timeline scene document",
+  "description": "The editor document of a timeline. Board sizes and item geometry are in board pixels (10 px = 1 cm). Times are milliseconds from the start of the show. Unknown fields are preserved by the server.",
+  "type": "object",
+  "required": ["schemaVersion", "board", "layers", "items", "tracks", "clips", "durationMs"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "board": {
+      "type": "object",
+      "description": "Size of the board the items are placed on.",
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "number", "exclusiveMinimum": 0, "description": "Width in board pixels (cm × 10)." },
+        "height": { "type": "number", "exclusiveMinimum": 0, "description": "Height in board pixels (cm × 10)." },
+        "background": { "type": ["string", "null"], "description": "Background colour or image reference." }
+      }
+    },
+    "layers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "z", "visible", "locked", "opacity"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "z": { "type": "integer", "description": "Stacking order, higher on top." },
+          "visible": { "type": "boolean" },
+          "locked": { "type": "boolean" },
+          "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "items": {
+      "type": "array",
+      "description": "Pieces placed on the board.",
+      "items": {
+        "type": "object",
+        "required": ["id", "pieceId", "layerId", "x", "y", "width", "height", "rotation"],
+        "properties": {
+          "id": { "type": "string" },
+          "pieceId": { "type": "integer", "description": "Id of the piece (see pieces_search)." },
+          "layerId": { "type": "string" },
+          "x": { "type": "number" },
+          "y": { "type": "number" },
+          "width": { "type": "number", "exclusiveMinimum": 0 },
+          "height": { "type": "number", "exclusiveMinimum": 0 },
+          "rotation": { "type": "number", "description": "Degrees, clockwise." },
+          "widthAttr": { "type": ["string", "null"], "description": "Piece attribute name driving the width (cm)." },
+          "heightAttr": { "type": ["string", "null"], "description": "Piece attribute name driving the height (cm)." },
+          "ports": { "type": "array", "items": { "type": "integer" }, "description": "Ids of the hardware ports bound to this item (ports_list). Only ports whose piece type matches the piece are valid." },
+          "ledPath": {
+            "type": ["array", "null"],
+            "description": "Polyline the LEDs follow inside the item, as fractions of its size (0,0 top-left; 1,1 bottom-right).",
+            "items": { "type": "object", "required": ["x", "y"], "properties": { "x": { "type": "number" }, "y": { "type": "number" } } }
+          }
+        }
+      }
+    },
+    "tracks": {
+      "type": "array",
+      "description": "One track per item; clips live on tracks.",
+      "items": {
+        "type": "object",
+        "required": ["id", "itemId", "name"],
+        "properties": {
+          "id": { "type": "string" },
+          "itemId": { "type": "string" },
+          "name": { "type": "string" }
+        }
+      }
+    },
+    "clips": {
+      "type": "array",
+      "description": "An action of the item's piece type played at a moment of the show.",
+      "items": {
+        "type": "object",
+        "required": ["id", "trackId", "pieceTypeActionId", "startMs", "durationMs", "paramValues"],
+        "properties": {
+          "id": { "type": "string" },
+          "trackId": { "type": "string" },
+          "pieceTypeActionId": { "type": ["integer", "null"], "description": "Id of the piece-type action (piece_type_get). Null = placeholder clip." },
+          "startMs": { "type": "integer", "minimum": 0 },
+          "durationMs": { "type": "integer", "exclusiveMinimum": 0, "description": "Clip length; it is also the value of the action's duration parameter (seconds = durationMs / 1000)." },
+          "paramValues": { "type": "object", "additionalProperties": true, "description": "Values of the action's dynamic parameters, by parameter name. Static parameters are fixed on the action and must not appear here." },
+          "label": { "type": "string" }
+        }
+      }
+    },
+    "durationMs": { "type": "integer", "exclusiveMinimum": 0, "description": "Total length of the show." },
+    "fps": { "type": "integer", "description": "Editor playback frame rate (default 30)." },
+    "stripOrder": {
+      "type": "object",
+      "description": "For LED strip ports: port id → item ids in the order they sit along the strip (first LED first).",
+      "additionalProperties": { "type": "array", "items": { "type": "string" } }
+    }
+  }
+}

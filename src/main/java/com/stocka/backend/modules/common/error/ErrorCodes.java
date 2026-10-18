@@ -138,6 +138,13 @@ public final class ErrorCodes {
     public static final String SEARCH_NOT_CONFIGURED = "search.not_configured";
     public static final String SEARCH_UNAVAILABLE = "search.unavailable";
 
+    // ---- OAuth authorization server / MCP --------------------------------
+    public static final String OAUTH_APP_NOT_FOUND = "oauth.app_not_found";
+    public static final String OAUTH_REGISTRATION_DISABLED = "oauth.registration_disabled";
+    public static final String AUTH_INSUFFICIENT_SCOPE = "auth.insufficient_scope";
+    public static final String MCP_TOOL_NOT_FOUND = "mcp.tool_not_found";
+    public static final String MCP_INVALID_ARGUMENTS = "mcp.invalid_arguments";
+
     // ---- generic --------------------------------------------------------
     public static final String VALIDATION_REQUIRED = "validation.required";
     public static final String VALIDATION_FAILED = "validation.failed";

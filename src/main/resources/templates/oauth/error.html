@@ -1,0 +1,9 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:replace="~{oauth/layout :: page(#{oauth.ui.error.title}, ~{::main})}">
+<body>
+<main class="content">
+    <h1 th:text="#{oauth.ui.error.title}">Error</h1>
+    <div class="alert alert-error" th:text="#{${messageKey}}">Detalle</div>
+</main>
+</body>
+</html>

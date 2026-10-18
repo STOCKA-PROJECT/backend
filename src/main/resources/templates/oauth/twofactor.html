@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:replace="~{oauth/layout :: page(#{oauth.ui.twofactor.title}, ~{::main})}">
+<body>
+<main class="content">
+    <h1 th:text="#{oauth.ui.twofactor.title}">Verificación en dos pasos</h1>
+    <p th:text="#{oauth.ui.twofactor.hint}">Introduce el código.</p>
+
+    <div class="alert alert-error" th:if="${error != null}" th:text="#{${error}}">Error</div>
+
+    <form method="post" th:action="@{/auth/connect/2fa}">
+        <label for="code" th:text="#{oauth.ui.twofactor.code}">Código</label>
+        <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" required autofocus>
+        <div class="actions">
+            <button class="btn btn-primary" type="submit" th:text="#{oauth.ui.twofactor.submit}">Verificar</button>
+        </div>
+    </form>
+</main>
+</body>
+</html>

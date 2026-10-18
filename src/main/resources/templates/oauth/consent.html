@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:replace="~{oauth/layout :: page(#{oauth.ui.consent.title(${client.name()})}, ~{::main})}">
+<body>
+<main class="content">
+    <h1 th:text="#{oauth.ui.consent.title(${client.name()})}">Autorizar</h1>
+    <p class="muted" th:text="#{oauth.ui.consent.signed_in_as(${userName}, ${userEmail})}">Sesión iniciada</p>
+
+    <div class="app">
+        <img th:if="${client.logoUri() != null}" th:src="${client.logoUri()}" alt="">
+        <div class="placeholder" th:if="${client.logoUri() == null}" th:text="${#strings.substring(client.name(), 0, 1)}">A</div>
+        <div>
+            <div class="name">
+                <span th:text="${client.name()}">App</span>
+                <span class="badge badge-ok" th:if="${client.trusted()}" th:text="#{oauth.ui.consent.trusted}">Verificada</span>
+                <span class="badge badge-warn" th:if="${!client.trusted()}" th:text="#{oauth.ui.consent.untrusted}">No verificada</span>
+            </div>
+            <div class="meta" th:if="${client.clientUri() != null}" th:text="${client.clientUri()}">https://</div>
+            <div class="meta" th:if="${redirectHost != null}" th:text="#{oauth.ui.consent.redirect(${redirectHost})}">Volverás a</div>
+        </div>
+    </div>
+
+    <div class="alert alert-warn" th:if="${loopback}" th:text="#{oauth.ui.consent.loopback_warning}">Aviso</div>
+
+    <form method="post" th:action="@{${authorizeUri}}" id="approve">
+        <input type="hidden" name="client_id" th:value="${clientId}">
+        <input type="hidden" name="state" th:value="${state}">
+        <input type="hidden" name="scope" value="offline_access" th:if="${offlineRequested}">
+
+        <h2 th:text="#{oauth.ui.consent.permissions}">Permisos</h2>
+        <ul class="scopes">
+            <li th:each="s : ${scopes}">
+                <input type="checkbox" name="scope" th:id="${'scope-' + s.value()}" th:value="${s.value()}" th:checked="${s.checked()}">
+                <label th:for="${'scope-' + s.value()}" style="margin:0">
+                    <span th:text="#{${s.labelKey()}}">Permiso</span>
+                    <span class="code" th:text="${s.value()}">read</span>
+                </label>
+            </li>
+        </ul>
+        <p class="muted" th:if="${offlineRequested}" th:text="#{oauth.ui.consent.offline}">Mantener la conexión</p>
+
+        <h2 th:text="#{oauth.ui.consent.organizations}">Organizaciones</h2>
+        <ul class="orgs" th:if="${!organizations.isEmpty()}">
+            <li th:each="o : ${organizations}">
+                <span th:text="${o.name()}">Org</span>
+                <span class="muted" th:text="${o.role()}">OWNER</span>
+            </li>
+        </ul>
+        <p class="muted" th:if="${organizations.isEmpty()}" th:text="#{oauth.ui.consent.no_organizations}">Ninguna</p>
+    </form>
+
+    <div class="actions">
+        <button class="btn btn-primary" type="submit" form="approve" th:text="#{oauth.ui.consent.approve}">Autorizar</button>
+        <form method="post" th:action="@{${authorizeUri}}">
+            <input type="hidden" name="client_id" th:value="${clientId}">
+            <input type="hidden" name="state" th:value="${state}">
+            <button class="btn btn-ghost" type="submit" th:text="#{oauth.ui.consent.deny}">Cancelar</button>
+        </form>
+    </div>
+    <p class="muted" style="margin-top:16px" th:text="#{oauth.ui.consent.revoke_hint}">Puedes revocar el acceso.</p>
+</main>
+</body>
+</html>
