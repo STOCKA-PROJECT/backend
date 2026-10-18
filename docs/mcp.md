@@ -71,4 +71,7 @@ Cada autorización y cada revocación quedan registradas en **Actividad de segur
   versión: si alguien guarda desde el editor a la vez, el asistente recarga y reintenta.
 - Para desarrollo local el backend genera una clave de firma efímera; en producción la clave vive en
   `stocka.env` (`OAUTH_JWK_PRIVATE_KEY`). `MCP_ENABLED=false` apaga el servidor MCP sin tocar nada más.
+- El backend va detrás de Caddy (TLS en el proxy): `server.forward-headers-strategy=framework` hace que
+  las redirecciones absolutas (login, consentimiento) salgan como `https://stocka.xeye.es/...`; sin ello
+  salen en `http://` y solo funcionan gracias a la redirección 308 y al HSTS de Caddy.
 - Especificación: https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization.
