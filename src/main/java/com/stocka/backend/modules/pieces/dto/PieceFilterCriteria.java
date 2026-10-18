@@ -57,4 +57,14 @@ public record PieceFilterCriteria(
     public static PieceFilterCriteria empty() {
         return new PieceFilterCriteria(List.of(), null, null, null, null, null, List.of());
     }
+
+    /**
+     * The same criteria without the free-text filter, for callers that resolve {@link #q} by other
+     * means (semantic ranking) and only need the structural filters.
+     *
+     * @return a copy with {@code q} set to {@code null}
+     */
+    public PieceFilterCriteria withoutText() {
+        return new PieceFilterCriteria(typeIds, locationId, ownerUserId, ownerContactId, status, null, attributeFilters);
+    }
 }

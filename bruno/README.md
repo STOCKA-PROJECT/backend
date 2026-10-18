@@ -52,6 +52,16 @@ organizaciones cuyo owner es ADMIN global):
 El catálogo (`src/main/resources/contract/catalog.json`) es una copia literal de `rpi4-system/contract/catalog.json`;
 si cambia allí, hay que copiarlo aquí y al editor (`timeline-editor/app/data/catalog.json`).
 
+Búsqueda semántica (XEYE; opcional, solo si el servidor tiene `XEYE_SEARCH_ENABLED=true` y `XEYE_API_KEY`):
+
+1. `organizations/75-search/get-search-status` — `enabled`, `indexed`, `indexedPieces / totalPieces`, `trainingPending`. Cualquier miembro.
+2. `organizations/75-search/reindex-search` — reconstruye el índice de la organización (OWNER/MANAGER). Sin XEYE → `409 search.not_configured`.
+3. `organizations/75-search/list-pieces-semantic` — `GET /pieces?q=` ranqueado por XEYE; el resto de filtros se aplican encima. Sin XEYE (o sin nada indexado) `q` sigue siendo el `LIKE` sobre nombre y descripción.
+4. `organizations/75-search/reindex-all-search` — `POST /admin/search/reindex`, backfill de todas las organizaciones (ADMIN global).
+
+Los cambios de artículos se indexan solos tras cada alta/edición/borrado y se entrenan en XEYE una vez por lista cuando
+llevan `XEYE_TRAINING_DELAY` (10 min) sin cambios; hasta entonces los nuevos solo coinciden por texto.
+
 Notas:
 
 - `owner@stocka.local / 123456` lo crea el `AdminSeeder` al arrancar la app.
@@ -123,6 +133,7 @@ Campos:
 | `organizations.invitation_limit_reached`      | 400    | usa `params.max`               |
 | `organizations.invitation_expired`            | 410    |                                |
 | `storage.r2_unavailable`                      | 503    |                                |
+| `search.not_configured` / `search.unavailable` | 409 / 503 | búsqueda semántica (XEYE) sin configurar en el servidor / XEYE no responde |
 | `upload.too_large`                            | 413    |                                |
 | `upload.invalid_kind`                         | 400    |                                |
 | `validation.required` / `validation.failed`   | 400    | bean validation                |

@@ -1,0 +1,22 @@
+meta {
+  name: Reindex Search (OWNER/MANAGER)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/search/reindex
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  Reconstrueix l'índex XEYE de l'organització (esborra els elements antics i torna a crear un
+  element per article actiu, en lots). Útil després d'activar la funció o si l'índex ha quedat
+  desfasat. `409 search.not_configured` si el servidor no té `XEYE_API_KEY`;
+  `503 search.unavailable` si XEYE no respon. Només OWNER o MANAGER.
+}

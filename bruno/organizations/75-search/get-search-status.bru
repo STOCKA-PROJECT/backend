@@ -1,0 +1,21 @@
+meta {
+  name: Get Search Status
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/search/status
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  Estat de l'índex semàntic (XEYE) de l'organització: `enabled` (el servidor té clau XEYE),
+  `indexed` (ja té llista), `indexedPieces / totalPieces`, `trainingPending` i
+  `lastTrainingLaunchedAt`. Qualsevol membre, també SPECTATOR.
+}

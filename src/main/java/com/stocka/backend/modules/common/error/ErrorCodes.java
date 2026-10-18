@@ -134,6 +134,10 @@ public final class ErrorCodes {
     public static final String UPLOAD_IMAGE_DIMENSIONS_TOO_LARGE = "upload.image_dimensions_too_large";
     public static final String UPLOAD_INVALID_DURATION = "upload.invalid_duration";
 
+    // ---- semantic search (XEYE) -----------------------------------------
+    public static final String SEARCH_NOT_CONFIGURED = "search.not_configured";
+    public static final String SEARCH_UNAVAILABLE = "search.unavailable";
+
     // ---- generic --------------------------------------------------------
     public static final String VALIDATION_REQUIRED = "validation.required";
     public static final String VALIDATION_FAILED = "validation.failed";

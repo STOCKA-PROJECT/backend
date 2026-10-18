@@ -7,11 +7,13 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -105,6 +107,7 @@ public class PieceService {
     private final ContactRepository contactRepository;
     private final OrganizationQuotaProperties quotas;
     private final ApplicationEventPublisher events;
+    private final PieceSearchRanker searchRanker;
 
     public PieceService(
             PieceRepository pieceRepository,
@@ -123,7 +126,8 @@ public class PieceService {
             UserRepository userRepository,
             ContactRepository contactRepository,
             OrganizationQuotaProperties quotas,
-            ApplicationEventPublisher events
+            ApplicationEventPublisher events,
+            PieceSearchRanker searchRanker
     ) {
         this.pieceRepository = pieceRepository;
         this.valueRepository = valueRepository;
@@ -142,6 +146,7 @@ public class PieceService {
         this.contactRepository = contactRepository;
         this.quotas = quotas;
         this.events = events;
+        this.searchRanker = searchRanker;
     }
 
     @Transactional
@@ -241,6 +246,13 @@ public class PieceService {
     public Page<Piece> list(Integer orgId, PieceFilterCriteria criteria, Pageable pageable) {
         Organization org = organizationService.findById(orgId);
         Pageable bounded = boundPageable(pageable);
+        Optional<List<Integer>> ranked = rankedIds(org, criteria);
+        if (ranked.isPresent()) {
+            List<Piece> matches = rankedPieces(org, criteria, ranked.get());
+            int from = (int) Math.min(bounded.getOffset(), matches.size());
+            int to = Math.min(from + bounded.getPageSize(), matches.size());
+            return new PageImpl<>(new ArrayList<>(matches.subList(from, to)), bounded, matches.size());
+        }
         Specification<Piece> spec = buildListSpec(org, criteria);
         return pieceRepository.findAll(spec, bounded);
     }
@@ -257,9 +269,47 @@ public class PieceService {
      */
     public List<Piece> findAllForExport(Integer orgId, PieceFilterCriteria criteria, int limit) {
         Organization org = organizationService.findById(orgId);
+        int cap = Math.max(1, limit);
+        Optional<List<Integer>> ranked = rankedIds(org, criteria);
+        if (ranked.isPresent()) {
+            List<Piece> matches = rankedPieces(org, criteria, ranked.get());
+            return new ArrayList<>(matches.subList(0, Math.min(cap, matches.size())));
+        }
         Specification<Piece> spec = buildListSpec(org, criteria);
-        Pageable page = PageRequest.of(0, Math.max(1, limit), Sort.by("id").ascending());
+        Pageable page = PageRequest.of(0, cap, Sort.by("id").ascending());
         return pieceRepository.findAll(spec, page).getContent();
+    }
+
+    /**
+     * Asks the semantic ranker for the pieces matching the free-text filter. Empty when there is
+     * no text filter or the ranker cannot answer, in which case the {@code LIKE} filter of
+     * {@link #buildListSpec} applies instead.
+     */
+    private Optional<List<Integer>> rankedIds(Organization org, PieceFilterCriteria criteria) {
+        String q = criteria.q();
+        if (q == null || q.isBlank()) return Optional.empty();
+        return searchRanker.rank(org, q.trim());
+    }
+
+    /**
+     * Applies every filter except the text one to the ranked ids and returns the survivors in
+     * ranking order. The ranker caps its answer to a few hundred ids, so loading them in one
+     * query and ordering in memory is cheap and keeps pagination exact.
+     */
+    private List<Piece> rankedPieces(Organization org, PieceFilterCriteria criteria, List<Integer> rankedIds) {
+        if (rankedIds.isEmpty()) return List.of();
+        Specification<Piece> spec = buildListSpec(org, criteria.withoutText())
+                .and((root, query, cb) -> root.get("id").in(rankedIds));
+        Map<Integer, Piece> byId = new HashMap<>();
+        for (Piece piece : pieceRepository.findAll(spec)) {
+            byId.put(piece.getId(), piece);
+        }
+        List<Piece> ordered = new ArrayList<>(byId.size());
+        for (Integer id : rankedIds) {
+            Piece piece = byId.get(id);
+            if (piece != null) ordered.add(piece);
+        }
+        return ordered;
     }
 
     private Specification<Piece> buildListSpec(Organization org, PieceFilterCriteria criteria) {

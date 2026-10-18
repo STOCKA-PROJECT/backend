@@ -1,0 +1,20 @@
+meta {
+  name: Reindex Search for all organizations (ADMIN)
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/admin/search/reindex
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  Reconstrueix l'índex de totes les organitzacions actives (backfill inicial). Només ADMIN global.
+  Retorna l'estat de cada organització; s'atura a la primera que XEYE rebutja.
+}

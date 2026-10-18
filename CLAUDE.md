@@ -79,6 +79,9 @@ On startup, `RoleSeeder` creates USER/ADMIN roles, then `AdminSeeder` creates a 
 | POST   | `/admins`      | ADMIN         | Create admin user        |
 | POST   | `/webhooks/resend` | Public (Svix-signed) | Resend webhook events (only when `EMAIL_PROVIDER=resend`) |
 | GET    | `/contract/catalog` | Authenticated | Output catalog (kinds, actions, board rules) shared with the belén player |
+| GET    | `/organizations/{orgSlug}/search/status` | any member | Semantic index status (XEYE) |
+| POST   | `/organizations/{orgSlug}/search/reindex` | OWNER, MANAGER | Rebuild the organization's semantic index |
+| POST   | `/admin/search/reindex` | ADMIN | Rebuild every organization's semantic index |
 
 ### Domain endpoints (under `/organizations/{orgId}/...`)
 
@@ -169,6 +172,22 @@ Per-piece attachment limits (configurable via `stocka.pieces.attachment.*`):
 - AUDIO: mp3/wav/ogg/flac/m4a (what VLC plays on the belén RPi), max 50 MB, max 50 per piece;
   carries `durationMs` measured by the client. The timeline editor names the asset
   `<attachmentId>-<filename>` and reads the bytes from `/content`.
+
+### Semantic search (XEYE)
+
+Optional, off by default. With `XEYE_SEARCH_ENABLED=true` and `XEYE_API_KEY` (an XEYE key with the
+scopes `lists:write`, `trainings:write` and `search`), module `search/` keeps one public XEYE list
+per organization (`stocka-org-<id>`, table `search_lists`) with one element per active piece
+(table `search_entries`): `text` = name · serial, `description` = types, free text, location path,
+owner and attribute values (`PieceSearchDocument`), `params.pieceId`. Piece lifecycle events
+index/remove elements asynchronously (`PieceLifecycleSearchListener`); `SemanticSearchTrainer`
+launches one training per list once edits have settled (`XEYE_TRAINING_DELAY`, default 10m).
+`GET /pieces?q=` then ranks through XEYE (`PieceSearchRanker` → `SemanticSearchRanker`, hits under
+`XEYE_MIN_SCORE` dropped, at most `XEYE_MAX_RESULTS`), applies the structural filters on top and
+falls back to `LIKE` when the feature is off, nothing is indexed yet or XEYE fails. A full rebuild
+(`/search/reindex`) recreates every element in two batch calls; use it to backfill after enabling
+the feature or when types/locations were renamed (those are not re-indexed until the piece is
+edited). XEYE's own docs: https://xeye.es/docs.
 
 ## API Testing
 

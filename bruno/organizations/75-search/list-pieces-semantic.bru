@@ -1,0 +1,21 @@
+meta {
+  name: List Pieces (semantic q)
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces?q=figura de fusta amb una ovella
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  Amb XEYE configurat i l'organització indexada, `q` es resol per cerca híbrida (text + semàntica):
+  els resultats arriben ordenats per rellevància i la resta de filtres (tipus, ubicació, estat,
+  atributs) s'apliquen a sobre. Sense XEYE, `q` és el `LIKE` de sempre sobre nom i descripció.
+}
