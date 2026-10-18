@@ -54,7 +54,7 @@ si cambia allí, hay que copiarlo aquí y al editor (`timeline-editor/app/data/c
 
 Búsqueda semántica (XEYE; opcional, solo si el servidor tiene `XEYE_SEARCH_ENABLED=true` y `XEYE_API_KEY`):
 
-1. `organizations/75-search/get-search-status` — `enabled`, `indexed`, `indexedPieces / totalPieces`, `trainingPending`. Cualquier miembro.
+1. `organizations/75-search/get-search-status` — `enabled`, `indexed`, `indexedPieces / totalPieces`, `trainingPending`. Cualquier miembro. (Al arrancar con clave, el backend indexa solo las organizaciones que aún no tienen lista.)
 2. `organizations/75-search/reindex-search` — reconstruye el índice de la organización (OWNER/MANAGER). Sin XEYE → `409 search.not_configured`.
 3. `organizations/75-search/list-pieces-semantic` — `GET /pieces?q=` ranqueado por XEYE; el resto de filtros se aplican encima. Sin XEYE (o sin nada indexado) `q` sigue siendo el `LIKE` sobre nombre y descripción.
 4. `organizations/75-search/reindex-all-search` — `POST /admin/search/reindex`, backfill de todas las organizaciones (ADMIN global).

@@ -184,10 +184,11 @@ index/remove elements asynchronously (`PieceLifecycleSearchListener`); `Semantic
 launches one training per list once edits have settled (`XEYE_TRAINING_DELAY`, default 10m).
 `GET /pieces?q=` then ranks through XEYE (`PieceSearchRanker` → `SemanticSearchRanker`, hits under
 `XEYE_MIN_SCORE` dropped, at most `XEYE_MAX_RESULTS`), applies the structural filters on top and
-falls back to `LIKE` when the feature is off, nothing is indexed yet or XEYE fails. A full rebuild
-(`/search/reindex`) recreates every element in two batch calls; use it to backfill after enabling
-the feature or when types/locations were renamed (those are not re-indexed until the piece is
-edited). XEYE's own docs: https://xeye.es/docs.
+falls back to `LIKE` when the feature is off, nothing is indexed yet or XEYE fails. On startup
+`SemanticSearchBootstrap` indexes every organization that has no list yet (so enabling the key on
+an existing installation backfills by itself); a full rebuild (`/search/reindex`) recreates every
+element in two batch calls and is the fix when types/locations were renamed (those are not
+re-indexed until the piece is edited). XEYE's own docs: https://xeye.es/docs.
 
 ## API Testing
 
