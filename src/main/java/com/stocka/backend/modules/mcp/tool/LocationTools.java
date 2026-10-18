@@ -1,5 +1,6 @@
 package com.stocka.backend.modules.mcp.tool;
 
+import com.stocka.backend.modules.common.schema.Param;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;

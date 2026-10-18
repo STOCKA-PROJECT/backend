@@ -1,0 +1,27 @@
+meta {
+  name: Authorize (abrir en el navegador)
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/oauth2/authorize?response_type=code&client_id={{mcpClientId}}&redirect_uri=http://localhost:3118/callback&scope=read inventory:write timelines:write hardware:write org:manage delete offline_access&state=bruno&code_challenge={{pkceChallenge}}&code_challenge_method=S256&resource={{baseUrl}}/mcp
+  body: none
+  auth: none
+}
+
+script:pre-request {
+  const crypto = require("crypto");
+  const verifier = crypto.randomBytes(32).toString("base64url");
+  const challenge = crypto.createHash("sha256").update(verifier).digest("base64url");
+  bru.setVar("pkceVerifier", verifier);
+  bru.setVar("pkceChallenge", challenge);
+}
+
+docs {
+  No se ejecuta desde Bruno: el pre-request genera el PKCE (vars `pkceVerifier` / `pkceChallenge`);
+  copia la URL resultante y ábrela en el navegador. Inicia sesión (y 2FA si procede), marca los
+  permisos y autoriza. El navegador acabará en `http://localhost:3118/callback?code=...&state=bruno&iss=...`
+  (fallará al cargar, da igual): copia `code` a la var `mcpAuthCode` y lanza `Token (PKCE)`.
+  El `code` caduca a los 5 minutos y es de un solo uso.
+}

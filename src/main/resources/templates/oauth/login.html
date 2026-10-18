@@ -8,7 +8,19 @@
 
     <div class="alert alert-error" th:if="${error != null}" th:text="#{${error}}">Error</div>
 
-    <form method="post" th:action="@{/auth/connect/login}" autocomplete="on">
+    <th:block th:if="${knownUserEmail != null}">
+        <p class="muted" th:text="#{oauth.ui.login.session_hint}">Ya tienes sesión iniciada.</p>
+        <form method="post" th:action="@{/auth/connect/continue}">
+            <div class="actions">
+                <button class="btn btn-primary" type="submit"
+                        th:text="#{oauth.ui.login.continue_as(${knownUserName})}">Continuar como</button>
+                <a class="btn btn-ghost" th:href="@{/auth/connect/login(other='1')}"
+                   th:text="#{oauth.ui.login.other_account}">Usar otra cuenta</a>
+            </div>
+        </form>
+    </th:block>
+
+    <form th:unless="${knownUserEmail != null}" method="post" th:action="@{/auth/connect/login}" autocomplete="on">
         <label for="email" th:text="#{oauth.ui.login.email}">Correo electrónico</label>
         <input id="email" name="email" type="email" required autofocus autocomplete="username" th:value="${email}">
         <label for="password" th:text="#{oauth.ui.login.password}">Contraseña</label>

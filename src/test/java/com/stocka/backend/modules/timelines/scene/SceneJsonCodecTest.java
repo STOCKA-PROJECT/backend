@@ -1,0 +1,115 @@
+package com.stocka.backend.modules.timelines.scene;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.util.List;
+import java.util.Map;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+
+import com.stocka.backend.modules.common.error.ApiException;
+import com.stocka.backend.modules.common.error.ErrorCodes;
+
+import tools.jackson.databind.JsonNode;
+
+@DisplayName("SceneJsonCodec")
+class SceneJsonCodecTest {
+
+    private final SceneJsonCodec codec = new SceneJsonCodec();
+
+    private static final String EDITOR_DOCUMENT = """
+            {"schemaVersion":1,"board":{"width":1280,"height":720,"background":null,"grid":true},
+             "layers":[{"id":"layer-1","name":"Capa 1","z":0,"visible":true,"locked":false,"opacity":1,"color":"#fff"}],
+             "items":[{"id":"item-a","pieceId":5,"layerId":"layer-1","x":10,"y":20,"width":100,"height":50,"rotation":0,
+                       "ports":[7],"ledPath":[{"x":0,"y":0.5},{"x":1,"y":0.5}],"customFlag":true}],
+             "tracks":[{"id":"track-a","itemId":"item-a","name":"A","muted":false}],
+             "clips":[{"id":"clip-a","trackId":"track-a","pieceTypeActionId":9,"startMs":0,"durationMs":500,
+                       "paramValues":{"color":"[1,2,3]"},"label":"x","collapsed":true}],
+             "durationMs":30000,"fps":30,"stripOrder":{"7":["item-a"]},"editorPrefs":{"zoom":2}}
+            """;
+
+    @Nested
+    @DisplayName("parse")
+    class Parse {
+
+        @Test
+        @DisplayName("null yields the empty scene")
+        void empty() {
+            SceneDocument doc = codec.parse(null);
+            assertThat(doc.layers()).hasSize(1);
+            assertThat(doc.durationMs()).isEqualTo(SceneDocument.DEFAULT_DURATION_MS);
+        }
+
+        @Test
+        @DisplayName("an editor document is read, ignoring the fields the server does not model")
+        void parses() {
+            SceneDocument doc = codec.parse(codec.mapper().readTree(EDITOR_DOCUMENT));
+            assertThat(doc.items()).hasSize(1);
+            assertThat(doc.items().get(0).ports()).containsExactly(7);
+            assertThat(doc.items().get(0).ledPath()).hasSize(2);
+            assertThat(doc.clips().get(0).paramValues()).containsEntry("color", "[1,2,3]");
+            assertThat(doc.stripOrder()).containsEntry("7", List.of("item-a"));
+        }
+
+        @Test
+        @DisplayName("a newer schema version is refused")
+        void newerSchema() {
+            assertThatThrownBy(() -> codec.parse(codec.mapper().readTree("{\"schemaVersion\":2}")))
+                    .isInstanceOf(ApiException.class)
+                    .extracting(e -> ((ApiException) e).getCode()).isEqualTo(ErrorCodes.TIMELINE_SCENE_SCHEMA_UNSUPPORTED);
+        }
+
+        @Test
+        @DisplayName("structurally wrong JSON is a document_invalid error")
+        void invalid() {
+            assertThatThrownBy(() -> codec.parse(codec.mapper().readTree("{\"items\":\"nope\"}")))
+                    .isInstanceOf(ApiException.class)
+                    .extracting(e -> ((ApiException) e).getCode()).isEqualTo(ErrorCodes.TIMELINE_SCENE_DOCUMENT_INVALID);
+        }
+    }
+
+    @Nested
+    @DisplayName("toJson")
+    class ToJson {
+
+        @Test
+        @DisplayName("fields unknown to the server survive a round trip, at every level")
+        void preservesUnknown() {
+            JsonNode original = codec.mapper().readTree(EDITOR_DOCUMENT);
+            SceneDocument doc = codec.parse(original);
+            SceneDocument edited = new SceneDocument(doc.schemaVersion(), doc.board(), doc.layers(), doc.items(), doc.tracks(),
+                    doc.clips(), 45_000, doc.fps(), doc.stripOrder());
+            JsonNode out = codec.toJson(edited, original);
+            assertThat(out.path("durationMs").asLong()).isEqualTo(45_000);
+            assertThat(out.path("editorPrefs").path("zoom").asInt()).isEqualTo(2);
+            assertThat(out.path("board").path("grid").asBoolean()).isTrue();
+            assertThat(out.path("layers").get(0).path("color").asText()).isEqualTo("#fff");
+            assertThat(out.path("items").get(0).path("customFlag").asBoolean()).isTrue();
+            assertThat(out.path("tracks").get(0).path("muted").asBoolean()).isFalse();
+            assertThat(out.path("clips").get(0).path("collapsed").asBoolean()).isTrue();
+        }
+
+        @Test
+        @DisplayName("removed elements do not resurrect and nulls are omitted")
+        void noResurrection() {
+            JsonNode original = codec.mapper().readTree(EDITOR_DOCUMENT);
+            SceneDocument doc = codec.parse(original);
+            SceneDocument edited = new SceneDocument(doc.schemaVersion(), doc.board(), doc.layers(), doc.items(), doc.tracks(),
+                    List.of(), doc.durationMs(), doc.fps(), Map.of());
+            JsonNode out = codec.toJson(edited, original);
+            assertThat(out.path("clips")).isEmpty();
+            assertThat(out.path("items").get(0).has("widthAttr")).isFalse();
+        }
+
+        @Test
+        @DisplayName("without an original the typed document is written as is")
+        void fresh() {
+            JsonNode out = codec.toJson(SceneDocument.empty(1000, null), null);
+            assertThat(out.path("schemaVersion").asInt()).isEqualTo(1);
+            assertThat(out.path("layers").get(0).path("name").asText()).isEqualTo("Capa 1");
+        }
+    }
+}

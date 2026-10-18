@@ -202,6 +202,26 @@ public class RefreshTokenService {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
+    /**
+     * Looks up the user behind a refresh token without rotating or revoking anything. Used by the
+     * OAuth authorization server to recognise a browser that already has a Stocka session (the
+     * refresh cookie travels to {@code /auth/**}) and offer "continue as…" instead of the password.
+     *
+     * @param rawToken raw token from the cookie; may be {@code null}
+     * @return the user when the token is known, not revoked and not expired
+     */
+    @Transactional(readOnly = true)
+    public Optional<User> peek(String rawToken) {
+        if (rawToken == null || rawToken.isBlank()) {
+            return Optional.empty();
+        }
+        return repository.findByTokenHash(hashToken(rawToken))
+                .filter(token -> token.getRevokedAt() == null)
+                .filter(token -> token.getExpiresAt().isAfter(LocalDateTime.now()))
+                .map(RefreshToken::getUser)
+                .filter(user -> user.getDeletedAt() == null);
+    }
+
     private String hashToken(String rawToken) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");

@@ -78,26 +78,27 @@ public class AttributeValueResolver {
                 if (matches(ref, a.getId(), a.getName(), a.getDisplayName())) typeMatches.add(a);
             }
         }
-        if (scope != AttributeScope.TYPE || typeMatches.isEmpty()) {
+        if (scope == AttributeScope.ORG || typeMatches.isEmpty()) {
             for (OrganizationPieceAttribute a : orgAttrs) {
                 if (matches(ref, a.getId(), a.getName(), a.getDisplayName())) orgMatches.add(a);
             }
         }
-        if (!typeMatches.isEmpty() && scope == AttributeScope.TYPE || !typeMatches.isEmpty() && orgMatches.isEmpty()) {
-            if (typeMatches.size() > 1 && distinctIds(typeMatches) > 1) {
-                throw ambiguous(ref, candidates(typeMatches, orgMatches));
+        if (!typeMatches.isEmpty()) {
+            // A type attribute wins over an organization attribute with the same name.
+            if (distinctIds(typeMatches) > 1) {
+                throw ambiguous(ref, candidates(typeMatches, List.of()));
             }
             return new AttributeValueInputDto(typeMatches.get(0).getId(), AttributeScope.TYPE, input.value());
         }
-        if (orgMatches.size() == 1 && typeMatches.isEmpty()) {
+        if (orgMatches.size() == 1) {
             return new AttributeValueInputDto(orgMatches.get(0).getId(), AttributeScope.ORG, input.value());
         }
-        if (typeMatches.isEmpty() && orgMatches.isEmpty()) {
+        if (orgMatches.isEmpty()) {
             throw new ToolException("pieces.attribute_unknown", "Unknown attribute: " + ref,
                     "Use an attribute name, label or id from piece_types_list or org_attributes_list.",
                     Map.of("attribute", ref));
         }
-        throw ambiguous(ref, candidates(typeMatches, orgMatches));
+        throw ambiguous(ref, candidates(List.of(), orgMatches));
     }
 
     private static int distinctIds(List<PieceTypeAttribute> attrs) {

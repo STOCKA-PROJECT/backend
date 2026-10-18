@@ -1,0 +1,17 @@
+meta {
+  name: Get Protected Resource Metadata
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/.well-known/oauth-protected-resource/mcp
+  body: none
+  auth: none
+}
+
+docs {
+  RFC 9728: el recurso protegido (`resource` = URL de `/mcp`), el authorization server que emite
+  sus tokens (`authorization_servers[0]` = issuer del backend) y los scopes. Es lo primero que lee
+  un cliente MCP tras recibir un 401 de `/mcp`. Público, sin token.
+}

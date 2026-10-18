@@ -1,0 +1,29 @@
+meta {
+  name: MCP tools/call me
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{baseUrl}}/mcp
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json, text/event-stream
+}
+
+auth:bearer {
+  token: {{mcpAccessToken}}
+}
+
+body:json {
+  { "jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": { "name": "me", "arguments": {} } }
+}
+
+docs {
+  Usuario, organizaciones (slug, rol, `hardwareEnabled`, `semanticSearch`) y scopes de la conexión.
+  Los resultados llevan `structuredContent` y el mismo JSON como texto. Un error devuelve
+  `isError: true` con `{error, message, hint, params}`.
+}

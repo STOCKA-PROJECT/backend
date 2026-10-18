@@ -1,0 +1,20 @@
+meta {
+  name: Get Connected Apps
+  type: http
+  seq: 12
+}
+
+get {
+  url: {{baseUrl}}/users/me/connected-apps
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  Aplicaciones OAuth (conectores MCP) con grant del usuario: nombre, `trusted` (CIMD de host de
+  confianza), `registeredVia` (CIMD / DCR / MANUAL), scopes, fechas. Con el token de la SPA.
+}

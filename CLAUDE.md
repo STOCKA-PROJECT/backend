@@ -42,7 +42,10 @@ modules/
 ├── contract/      OutputKind + OutputCatalog (copy of rpi4-system/contract/catalog.json) + GET /contract/catalog
 ├── roles/         Role entity (USER, ADMIN) + repository
 ├── security/      SecurityConfiguration, JwtAuthenticationFilter, JwtService
-└── users/         User entity, UserController, AdminController, UserService
+├── users/         User entity, UserController, AdminController, UserService
+├── oauth/         OAuth 2.1 authorization server for MCP connectors (login/consent pages, DCR, CIMD, connected apps)
+├── mcp/           MCP server at /mcp (resource server chain, tools, resources, prompts)
+└── timelines/scene/  Scene document model, operations (SceneEditor), validator and summary shared by REST and MCP
 ```
 
 Each module follows **Controller → Service → Repository** layering with constructor-based DI.
@@ -82,6 +85,15 @@ On startup, `RoleSeeder` creates USER/ADMIN roles, then `AdminSeeder` creates a 
 | GET    | `/organizations/{orgSlug}/search/status` | any member | Semantic index status (XEYE) |
 | POST   | `/organizations/{orgSlug}/search/reindex` | OWNER, MANAGER | Rebuild the organization's semantic index |
 | POST   | `/admin/search/reindex` | ADMIN | Rebuild every organization's semantic index |
+| GET    | `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource[/mcp]` | Public | OAuth discovery (RFC 8414 / RFC 9728) |
+| GET/POST | `/oauth2/authorize`, `/oauth2/token`, `/oauth2/jwks`, `/oauth2/revoke` | OAuth clients | Spring Authorization Server endpoints |
+| POST   | `/oauth2/register` | Public (rate-limited) | Dynamic client registration (RFC 7591), public clients only |
+| GET/POST | `/auth/connect/login`, `/auth/connect/2fa`, `/oauth2/consent` | Browser | Login + consent pages of the authorization server (Thymeleaf) |
+| POST   | `/mcp` | MCP access token | MCP server (Streamable HTTP, stateless, JSON-RPC) |
+| GET/DELETE | `/users/me/connected-apps[?clientId=]` | Authenticated | OAuth clients the user authorized; revoke |
+| POST   | `/organizations/{orgSlug}/timelines/{id}/scene/ops` | OWNER, MANAGER, USER | Apply scene operations atomically (see `SceneOp`) |
+| GET    | `/organizations/{orgSlug}/timelines/{id}/scene/summary` | any member | Compact scene view with validation findings |
+| POST   | `/organizations/{orgSlug}/timelines/{id}/scene/validate` | any member | Validation report of the scene |
 
 ### Domain endpoints (under `/organizations/{orgId}/...`)
 
@@ -189,6 +201,44 @@ falls back to `LIKE` when the feature is off, nothing is indexed yet or XEYE fai
 an existing installation backfills by itself); a full rebuild (`/search/reindex`) recreates every
 element in two batch calls and is the fix when types/locations were renamed (those are not
 re-indexed until the piece is edited). XEYE's own docs: https://xeye.es/docs.
+
+### MCP server and OAuth 2.1
+
+Assistants (Claude.ai, Claude Code, Cursor…) connect to `https://<backend>/mcp` with OAuth 2.1 + PKCE; the
+backend is also the **authorization server** (Spring Security 7's authorization server, JDBC tables from
+`V22__oauth_server.sql`). Three ordered security chains: `@Order(1)` `OAuthServerConfiguration` (`/oauth2/**`,
+`/auth/connect/**`, `/.well-known/oauth-authorization-server`; the only chain with sessions, 10 min),
+`@Order(2)` `McpSecurityConfiguration` (`/mcp`, protected resource metadata; resource server validating
+RS256 tokens with `aud` = `MCP_RESOURCE_URL`), `@Order(3)` the REST chain. Tokens never cross: SPA JWTs are
+refused by `/mcp`, MCP tokens by the REST API.
+
+- Client registration: Client ID Metadata Documents (`CimdRegisteredClientRepository`, URL client ids, cached
+  documents, `OAUTH_CIMD_TRUSTED_HOSTS` marks "verified" apps), anonymous DCR (`DynamicClientRegistrationController`,
+  `OAUTH_DCR_ENABLED`), or rows inserted by hand in `oauth2_registered_client`. All public clients; loopback redirects
+  (`localhost`, `127.0.0.1`) match on any port (`OAuthRedirectUriValidator`).
+- Scopes (`OAuthScope`): `read`, `inventory:write`, `timelines:write`, `hardware:write`, `org:manage`, `delete`,
+  `offline_access`; writes imply `read`; `delete` and `org:manage` are unticked by default on the consent page; the
+  organization role still applies on top. Refresh tokens only with `offline_access`, rotated, capped by
+  `OAUTH_REFRESH_ABSOLUTE_TTL` (`OAuthRefreshTokenGenerator`); public clients refresh with `client_id` only
+  (`PublicClientRefreshAuthentication`).
+- Access tokens: RS256 JWT (`OAUTH_JWK_PRIVATE_KEY`, PKCS#8 RSA PEM; ephemeral key outside `prod`), 30 min,
+  claims `sub` = user id, `aud`, `email`, `tokenVersion`, `client_name` (`OAuthTokenCustomizer`). `/mcp` accepts a
+  token only while its `oauth2_authorization` row exists (`McpAuthenticationConverter`), so revoking from
+  "connected apps" (`ConnectedAppService`) is immediate.
+- Tools: one `ToolSource` bean per domain in `modules/mcp/tool` (`ToolDefinition` = name, description, input
+  record annotated with `@Param`, scope, hints, handler). `McpToolRegistry` is the only class touching the MCP SDK:
+  it checks the scope, rate-limits per user, converts arguments, restores the `SecurityContext` on the SDK worker
+  thread (services read the current user from it), serializes `structuredContent` + JSON text, and maps every
+  exception to `{error, message, hint, params}` (`ToolErrorMapper`). JSON Schemas come from `ToolSchemas`
+  (records → properties; `SceneOp` → `oneOf`). Resources (`stocka://guide`, `stocka://catalog`,
+  `stocka://schema/scene`, `stocka://org/{slug}/overview`) and prompts live in `resource/` and `prompt/`.
+- Timelines are edited through `SceneOp` batches (`SceneEditor`, `SceneValidator`, `SceneSummary`,
+  `SceneJsonCodec` keeps unknown editor fields) with optimistic `version`; the same engine backs
+  `POST …/scene/ops` for the editor. Adding a tool = one `ToolDefinition` in the domain's `ToolSource` + a test.
+- Config: `stocka.oauth.*` (`OAUTH_*`), `stocka.mcp.*` (`MCP_*`), `spring.ai.mcp.server.*` (protocol `STATELESS`,
+  annotation scanner off). Tests enable everything through `src/test/resources/application.properties` and
+  create the JDBC tables with `oauth2-schema-h2.sql`. End-to-end: `OAuthFlowIntegrationTest`,
+  `McpToolsIntegrationTest` (helper `OAuthTestClient`). User guide: `docs/mcp.md`; design: `docs/plan/mcp-oauth.md`.
 
 ## API Testing
 

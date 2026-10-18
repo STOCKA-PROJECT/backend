@@ -93,7 +93,7 @@ public class McpToolRegistry {
                 .annotations(new McpSchema.ToolAnnotations(null, definition.hints().readOnly(),
                         definition.hints().destructive(), definition.hints().idempotent(), false, null));
         if (definition.outputType() != null) {
-            builder.outputSchema(ToolSchemas.forRecord(definition.outputType()));
+            builder.outputSchema(ToolSchemas.forOutput(definition.outputType()));
         }
         return builder.build();
     }

@@ -47,6 +47,8 @@ class TimelineSceneServiceTest {
     @Mock PieceRepository pieceRepository;
     @Mock PieceTypeActionRepository actionRepository;
     @Mock PortRepository portRepository;
+    @Mock com.stocka.backend.modules.piecetypes.service.PieceTypeService pieceTypeService;
+    @Mock com.stocka.backend.modules.piecetypes.service.PieceTypeActionService actionService;
 
     private final TimelineSceneJsonCodec codec = new TimelineSceneJsonCodec();
     private TimelineSceneService sut;
@@ -60,7 +62,9 @@ class TimelineSceneServiceTest {
         timeline = new Timeline().setOrganization(org);
         timeline.setId(10);
         sut = new TimelineSceneService(
-                sceneRepository, timelineService, codec, pieceRepository, actionRepository, portRepository);
+                sceneRepository, timelineService, codec, new com.stocka.backend.modules.timelines.scene.SceneJsonCodec(),
+                pieceRepository, actionRepository, portRepository, pieceTypeService, actionService,
+                new com.stocka.backend.modules.contract.OutputCatalog());
         lenient().when(timelineService.findInOrg(1, 10)).thenReturn(timeline);
         lenient().when(pieceRepository.findAllById(anyIterable())).thenReturn(List.of());
         lenient().when(actionRepository.findAllById(anyIterable())).thenReturn(List.of());

@@ -1,5 +1,6 @@
 package com.stocka.backend.modules.mcp.tool;
 
+import com.stocka.backend.modules.common.schema.Param;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.time.Duration;

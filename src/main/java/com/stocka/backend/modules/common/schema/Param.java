@@ -1,4 +1,4 @@
-package com.stocka.backend.modules.mcp.tool;
+package com.stocka.backend.modules.common.schema;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;

@@ -21,7 +21,7 @@ public class ToolException extends RuntimeException {
     }
 
     public ToolException(String code, String message, String hint, Map<String, Object> params) {
-        super(message);
+        super(message == null || message.isBlank() ? code : message);
         this.code = code;
         this.hint = hint;
         this.params = params == null ? Collections.emptyMap() : Collections.unmodifiableMap(new LinkedHashMap<>(params));

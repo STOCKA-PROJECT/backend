@@ -69,6 +69,17 @@ Notas:
 - En dev, R2 usa el fallback local (`stocka.r2.use-local=true`); para usar Cloudflare R2 real, define `R2_USE_LOCAL=false` y `R2_BUCKET / R2_ENDPOINT / R2_ACCESS_KEY / R2_SECRET_KEY`.
 - `SPECTATOR` puede consultar todo el contenido de la organización pero no escribir nada.
 
+MCP y OAuth 2.1 (conectores como Claude; carpeta `mcp/`):
+
+1. `mcp/get-protected-resource-metadata` y `mcp/get-authorization-server-metadata` — descubrimiento (público).
+2. `mcp/register-client` — registro dinámico de un cliente público; guarda `mcpClientId`.
+3. `mcp/authorize` — genera el PKCE y construye la URL: ábrela en el navegador, inicia sesión, autoriza y copia el `code` de la redirección a `mcpAuthCode`.
+4. `mcp/token-pkce` — canjea el código; guarda `mcpAccessToken` y `mcpRefreshToken`. `mcp/refresh` rota el refresh token.
+5. `mcp/mcp-initialize`, `mcp/mcp-tools-list`, `mcp/mcp-tools-call-me`, `mcp/mcp-tools-call-pieces-search`, `mcp/mcp-tools-call-timeline-scene-edit` — JSON-RPC sobre `POST /mcp` con el token MCP (cabecera `Accept: application/json, text/event-stream`).
+6. `mcp/get-connected-apps` / `mcp/revoke-connected-app` — lo que ve el usuario en Mi cuenta › Aplicaciones conectadas (token de la SPA).
+
+Los tokens no se cruzan: el de la SPA no vale en `/mcp` y el de MCP no vale en el resto del API. En local no hace falta `OAUTH_JWK_PRIVATE_KEY` (se genera una clave efímera); con `OAUTH_SESSION_COOKIE_SECURE=false` el login del navegador funciona por http.
+
 ## Webhooks
 
 - `webhooks/resend-webhook` — POST `/webhooks/resend`. Solo activo cuando `EMAIL_PROVIDER=resend`.
@@ -134,6 +145,9 @@ Campos:
 | `organizations.invitation_expired`            | 410    |                                |
 | `storage.r2_unavailable`                      | 503    |                                |
 | `search.not_configured` / `search.unavailable` | 409 / 503 | búsqueda semántica (XEYE) sin configurar en el servidor / XEYE no responde |
+| `oauth.app_not_found` / `oauth.registration_disabled` | 404 / 404 | aplicaciones conectadas (MCP) |
+| `auth.insufficient_scope` | - | solo en resultados de herramientas MCP: el token no tiene el scope |
+| `timeline_scenes.version_required` / `schema_unsupported` / `op_invalid` | 400 | operaciones de escena (`/scene/ops` y `timeline_scene_edit`); `op_invalid` lleva `params.index`, `op`, `detail` |
 | `upload.too_large`                            | 413    |                                |
 | `upload.invalid_kind`                         | 400    |                                |
 | `validation.required` / `validation.failed`   | 400    | bean validation                |

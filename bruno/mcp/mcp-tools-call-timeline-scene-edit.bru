@@ -1,0 +1,48 @@
+meta {
+  name: MCP tools/call timeline_scene_edit
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{baseUrl}}/mcp
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json, text/event-stream
+}
+
+auth:bearer {
+  token: {{mcpAccessToken}}
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 5,
+    "method": "tools/call",
+    "params": {
+      "name": "timeline_scene_edit",
+      "arguments": {
+        "org": "{{orgSlug}}",
+        "timelineId": {{timelineId}},
+        "expectedVersion": 1,
+        "ops": [
+          { "op": "add_item", "pieceName": "Pastor", "x": 10, "y": 5 },
+          { "op": "set_duration", "durationMs": 90000 }
+        ]
+      }
+    }
+  }
+}
+
+docs {
+  Operaciones atómicas sobre la escena (ver `stocka://schema/scene` y la guía `stocka://guide`).
+  Devuelve `version` (pásala como `expectedVersion` en el siguiente lote), `createdIds` (ids de
+  ítems/pistas/clips creados), `issues` de validación y el resumen compacto de la escena. Con una
+  versión obsoleta → `timeline_scenes.version_conflict`; con una operación inválida →
+  `timeline_scenes.op_invalid` con `params.index`, `params.op`, `params.detail` y candidatos.
+  El mismo motor está en REST: `POST /timelines/{id}/scene/ops`, `GET .../scene/summary`, `POST .../scene/validate`.
+}

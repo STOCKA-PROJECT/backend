@@ -1,0 +1,17 @@
+meta {
+  name: Get Authorization Server Metadata
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/.well-known/oauth-authorization-server
+  body: none
+  auth: none
+}
+
+docs {
+  RFC 8414: endpoints `authorization`, `token`, `jwks`, `revocation` y `registration` (DCR),
+  `client_id_metadata_document_supported: true` (CIMD), `code_challenge_methods_supported: [S256]`,
+  `scopes_supported` y `token_endpoint_auth_methods_supported: [none]` (solo clientes públicos).
+}

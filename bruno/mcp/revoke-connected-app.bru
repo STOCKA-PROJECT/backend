@@ -1,0 +1,21 @@
+meta {
+  name: Revoke Connected App
+  type: http
+  seq: 13
+}
+
+delete {
+  url: {{baseUrl}}/users/me/connected-apps?clientId={{mcpClientId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  Revoca todas las autorizaciones del usuario para ese cliente: el refresh token muere al instante
+  y el access token deja de pasar la validación de `/mcp` (401 `invalid_token`). 404
+  `oauth.app_not_found` si no había grant.
+}

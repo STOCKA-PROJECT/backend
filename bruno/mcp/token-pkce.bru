@@ -1,0 +1,33 @@
+meta {
+  name: Token (PKCE)
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/oauth2/token
+  body: formUrlEncoded
+  auth: none
+}
+
+body:form-urlencoded {
+  grant_type: authorization_code
+  code: {{mcpAuthCode}}
+  redirect_uri: http://localhost:3118/callback
+  client_id: {{mcpClientId}}
+  code_verifier: {{pkceVerifier}}
+  resource: {{baseUrl}}/mcp
+}
+
+script:post-response {
+  if (res.status === 200) {
+    bru.setVar("mcpAccessToken", res.body.access_token);
+    bru.setVar("mcpRefreshToken", res.body.refresh_token);
+  }
+}
+
+docs {
+  Canjea el código por un access token (JWT RS256, 30 min, `aud` = URL de `/mcp`) y, si se
+  concedió `offline_access`, un refresh token (30 días, rotado en cada uso, máximo 90 días desde la
+  autorización). Guarda ambos en `mcpAccessToken` / `mcpRefreshToken`.
+}

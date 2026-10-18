@@ -1,0 +1,29 @@
+meta {
+  name: MCP tools/list
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/mcp
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json, text/event-stream
+}
+
+auth:bearer {
+  token: {{mcpAccessToken}}
+}
+
+body:json {
+  { "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {} }
+}
+
+docs {
+  Catálogo de herramientas con `inputSchema`, `outputSchema` y anotaciones (`readOnlyHint`,
+  `destructiveHint`, `idempotentHint`). Prueba también `resources/list`, `resources/read`
+  (`{"uri":"stocka://guide"}`), `resources/templates/list` y `prompts/list`.
+}

@@ -3,6 +3,19 @@
 > Estado: propuesta (2026-10-18). No hay código ni despliegue asociados a este documento.
 > Repos afectados: `backend` (casi todo), `frontend` (dos tarjetas), `xeye-infra` (variables de entorno).
 
+> **Estado (2026-10-18, sesión de implementación, sin desplegar):** fases 0-5 implementadas en local
+> (commits en `master` sin push). Desviaciones respecto al plan: (1) la librería comunitaria `mcp-security`
+> no se usa; la plomería MCP (metadatos RFC 9728 vía `oauth2ResourceServer().protectedResourceMetadata`,
+> 401 con `resource_metadata`, CIMD, DCR anónimo, redirects loopback, refresh de clientes públicos) se ha
+> escrito a mano sobre Spring Security 7.0.5, que ya emite refresh tokens a clientes públicos; (2) la clave
+> de firma es RSA 2048 (PKCS#8 PEM) en lugar de EC, porque la pública se deriva de la privada sin
+> dependencias; (3) la revocación no usa tabla de `jti`: `/mcp` exige que exista la fila
+> `oauth2_authorization` del token, lo que hace la revocación inmediata; (4) el SDK valida la salida de las
+> herramientas contra `outputSchema`, por lo que los esquemas de salida son tolerantes a `null` y a campos
+> extra (`ToolSchemas.forOutput`); (5) el atajo de sesión con la cookie de refresh (§2.5) y Google en el login
+> del AS quedan pendientes (fase 6). Ver `CLAUDE.md` («MCP server and OAuth 2.1») y `docs/mcp.md`.
+
+
 ## 0. Resumen en diez líneas
 
 - Stocka expondrá un **servidor MCP remoto** (Streamable HTTP, sin estado) en `https://stocka.xeye.es/mcp`, dentro del propio backend Spring Boot.

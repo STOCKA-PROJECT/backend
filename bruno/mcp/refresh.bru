@@ -1,0 +1,30 @@
+meta {
+  name: Refresh
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/oauth2/token
+  body: formUrlEncoded
+  auth: none
+}
+
+body:form-urlencoded {
+  grant_type: refresh_token
+  refresh_token: {{mcpRefreshToken}}
+  client_id: {{mcpClientId}}
+  resource: {{baseUrl}}/mcp
+}
+
+script:post-response {
+  if (res.status === 200) {
+    bru.setVar("mcpAccessToken", res.body.access_token);
+    bru.setVar("mcpRefreshToken", res.body.refresh_token);
+  }
+}
+
+docs {
+  Refresco de un cliente público: solo `client_id` + `refresh_token`. El refresh token anterior
+  deja de valer (rotación); reutilizarlo devuelve `invalid_grant`.
+}

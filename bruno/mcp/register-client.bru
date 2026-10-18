@@ -1,0 +1,35 @@
+meta {
+  name: Register Client (DCR)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/oauth2/register
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "client_name": "Bruno MCP client",
+    "redirect_uris": ["http://localhost:3118/callback"],
+    "grant_types": ["authorization_code", "refresh_token"],
+    "response_types": ["code"],
+    "token_endpoint_auth_method": "none",
+    "application_type": "native"
+  }
+}
+
+script:post-response {
+  if (res.status === 201) {
+    bru.setVar("mcpClientId", res.body.client_id);
+  }
+}
+
+docs {
+  Registro dinámico anónimo (RFC 7591) de un cliente público: sin secreto, PKCE obligatorio,
+  redirect https o loopback (`localhost` / `127.0.0.1` con cualquier puerto). Guarda `client_id`
+  en la var `mcpClientId`. Alternativa: usar como `client_id` la URL de un Client ID Metadata
+  Document (lo que hacen Claude.ai y Claude Code). Rate limit: 20/h por IP.
+}

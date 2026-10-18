@@ -1,0 +1,36 @@
+meta {
+  name: MCP tools/call pieces_search
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{baseUrl}}/mcp
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json, text/event-stream
+}
+
+auth:bearer {
+  token: {{mcpAccessToken}}
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "method": "tools/call",
+    "params": {
+      "name": "pieces_search",
+      "arguments": { "org": "{{orgSlug}}", "q": "pastor", "status": "ACTIVE", "page": 0, "size": 10 }
+    }
+  }
+}
+
+docs {
+  Misma búsqueda que `GET /pieces` (semántica si la organización está indexada en XEYE). Cambia
+  `orgSlug` por el slug de tu organización (lo devuelve `me`).
+}

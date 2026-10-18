@@ -598,4 +598,49 @@ class OAuthFlowIntegrationTest {
                     .andExpect(status().is3xxRedirection());
         }
     }
+
+    @Nested
+    @DisplayName("session shortcut")
+    class SessionShortcut {
+
+        @Test
+        @DisplayName("a browser with the SPA refresh cookie can continue without the password")
+        void continueWithCookie() throws Exception {
+            MvcResult spaLogin = mockMvc.perform(post("/auth/login").contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"email\":\"" + ADMIN_EMAIL + "\",\"password\":\"" + ADMIN_PASSWORD + "\"}"))
+                    .andExpect(status().isOk()).andReturn();
+            jakarta.servlet.http.Cookie refresh = spaLogin.getResponse().getCookie("stocka_refresh");
+            assertThat(refresh).isNotNull();
+
+            String clientId = registerClient();
+            Pkce pkce = Pkce.generate();
+            MvcResult first = mockMvc.perform(authorizeRequest(clientId, pkce, "read", RESOURCE, REDIRECT)).andReturn();
+            MockHttpSession session = (MockHttpSession) first.getRequest().getSession(false);
+
+            mockMvc.perform(get("/auth/connect/login").session(session).cookie(refresh))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string(org.hamcrest.Matchers.containsString("/auth/connect/continue")))
+                    .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("name=\"password\""))));
+            mockMvc.perform(get("/auth/connect/login").session(session).cookie(refresh).param("other", "1"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string(org.hamcrest.Matchers.containsString("name=\"password\"")));
+
+            MvcResult continued = mockMvc.perform(post("/auth/connect/continue").session(session).cookie(refresh).with(csrf()))
+                    .andExpect(status().is3xxRedirection()).andReturn();
+            assertThat(continued.getResponse().getRedirectedUrl()).contains("/oauth2/authorize?");
+            MvcResult consent = mockMvc.perform(authorizeRequest(clientId, pkce, "read", RESOURCE, REDIRECT).session(session)).andReturn();
+            assertThat(consent.getResponse().getRedirectedUrl()).contains("/oauth2/consent?");
+        }
+
+        @Test
+        @DisplayName("without a valid cookie the password form is shown and continue bounces back")
+        void noCookie() throws Exception {
+            mockMvc.perform(get("/auth/connect/login").cookie(new jakarta.servlet.http.Cookie("stocka_refresh", "garbage")))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string(org.hamcrest.Matchers.containsString("name=\"password\"")));
+            mockMvc.perform(post("/auth/connect/continue").with(csrf()))
+                    .andExpect(status().is3xxRedirection())
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl("/auth/connect/login?other"));
+        }
+    }
 }

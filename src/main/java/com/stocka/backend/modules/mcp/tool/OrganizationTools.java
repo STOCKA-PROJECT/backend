@@ -1,5 +1,6 @@
 package com.stocka.backend.modules.mcp.tool;
 
+import com.stocka.backend.modules.common.schema.Param;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -227,7 +228,7 @@ public class OrganizationTools implements ToolSource, ResourceSource {
     }
 
     private long count(Organization org, PieceStatus status) {
-        PieceFilterCriteria criteria = new PieceFilterCriteria(null, null, null, null, status, null, List.of());
+        PieceFilterCriteria criteria = new PieceFilterCriteria(List.of(), null, null, null, status, null, List.of());
         return pieces.list(org.getId(), criteria, PageRequest.of(0, 1)).getTotalElements();
     }
 }

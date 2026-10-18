@@ -1,0 +1,38 @@
+meta {
+  name: MCP initialize
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/mcp
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json, text/event-stream
+}
+
+auth:bearer {
+  token: {{mcpAccessToken}}
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+      "protocolVersion": "2025-06-18",
+      "capabilities": {},
+      "clientInfo": { "name": "bruno", "version": "1.0" }
+    }
+  }
+}
+
+docs {
+  Streamable HTTP sin estado: cada POST es independiente, no hay `Mcp-Session-Id`. Sin token (o con
+  uno revocado) responde 401 con `WWW-Authenticate: Bearer resource_metadata="..."`. El token de la
+  SPA (`JWTtoken`) NO vale aquí, y el de MCP no vale en el resto del API.
+}
