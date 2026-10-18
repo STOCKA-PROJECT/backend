@@ -127,9 +127,12 @@ class DynamicClientRegistrationControllerTest {
         @DisplayName("grants, response types and auth method")
         void grants() {
             DynamicClientRegistrationController.validateGrants(null);
+            DynamicClientRegistrationController.validateGrants(List.of());
             DynamicClientRegistrationController.validateGrants(List.of("authorization_code"));
+            DynamicClientRegistrationController.validateGrants(
+                    List.of("authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:jwt-bearer"));
             assertThatThrownBy(() -> DynamicClientRegistrationController.validateGrants(List.of("client_credentials")))
-                    .hasMessageContaining("grant_type");
+                    .hasMessageContaining("authorization_code");
             DynamicClientRegistrationController.validateResponseTypes(List.of("code"));
             assertThatThrownBy(() -> DynamicClientRegistrationController.validateResponseTypes(List.of("token")))
                     .hasMessageContaining("response_type");

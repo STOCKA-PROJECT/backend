@@ -1,5 +1,7 @@
 package com.stocka.backend.modules.security.config;
 
+import jakarta.servlet.DispatcherType;
+
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -77,6 +79,9 @@ public class SecurityConfiguration {
                         .contentSecurityPolicy(csp -> csp.policyDirectives(
                                 "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")))
                 .authorizeHttpRequests(auth -> auth
+                        // sendError() from any chain (e.g. the authorization server's invalid_request) is
+                        // re-dispatched to /error through this chain; without this it surfaced as a bare 401.
+                        .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers("/auth/2fa/**", "/auth/oauth/google/unlink", "/auth/handoff").authenticated()
                         .requestMatchers("/auth/**", "/health").permitAll()
                         .requestMatchers("/webhooks/resend").permitAll()

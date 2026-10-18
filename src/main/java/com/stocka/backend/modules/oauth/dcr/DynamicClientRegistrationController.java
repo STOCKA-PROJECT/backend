@@ -37,7 +37,7 @@ import com.stocka.backend.modules.oauth.client.RegisteredClients;
  * Metadata Document.
  *
  * <p>Registers public clients only: no secret is ever issued, PKCE is mandatory and the grants are
- * limited to authorization code + refresh token. Redirect URIs must be https or loopback. The
+ * limited to authorization code + refresh token (other requested grants are ignored). Redirect URIs must be https or loopback. The
  * endpoint is rate-limited per IP and clients that never obtain an authorization are purged by
  * {@link OAuthCleanupJob}. Errors follow RFC 7591 §3.2.2 ({@code invalid_redirect_uri},
  * {@code invalid_client_metadata}).
@@ -49,7 +49,6 @@ public class DynamicClientRegistrationController {
     static final int MAX_NAME_LENGTH = 120;
     static final int MAX_REDIRECT_URIS = 10;
     static final int MAX_URI_LENGTH = 512;
-    static final Set<String> ALLOWED_GRANTS = Set.of("authorization_code", "refresh_token");
 
     private final RegisteredClientRepository clients;
     private final JdbcTemplate jdbc;
@@ -139,12 +138,15 @@ public class DynamicClientRegistrationController {
         return name;
     }
 
+    /**
+     * Grants the server does not support are ignored (RFC 7591 lets the server register a subset of
+     * what was asked; the response advertises the effective grants), but the client must at least
+     * ask for the authorization code grant.
+     */
     static void validateGrants(List<String> grants) {
-        if (grants == null) return;
-        for (String grant : grants) {
-            if (grant == null || !ALLOWED_GRANTS.contains(grant)) {
-                throw new RegistrationException("invalid_client_metadata", "unsupported grant_type: " + grant);
-            }
+        if (grants == null || grants.isEmpty()) return;
+        if (!grants.contains("authorization_code")) {
+            throw new RegistrationException("invalid_client_metadata", "grant_types must include authorization_code");
         }
     }
 

@@ -7,7 +7,17 @@
 > (backend por GitHub Actions, migración V22 aplicada, clave RSA `stocka-1` en `stocka.env`, `MCP_ENABLED=true`;
 > frontend en el worker `stocka`). Verificado en producción: metadatos RFC 8414/9728, JWKS, DCR, reto 401 de
 > `/mcp`, páginas de login; el flujo completo navegador → consentimiento → token → `/mcp` queda cubierto por
-> `OAuthFlowIntegrationTest` y se comprueba a mano desde Claude.ai. Desviaciones respecto al plan: (1) la librería comunitaria `mcp-security`
+> `OAuthFlowIntegrationTest` y se comprueba a mano desde Claude.ai. Correcciones tras el primer intento real desde Claude.ai (2026-10-18): (a) el documento
+> CIMD de Claude.ai declara `urn:ietf:params:oauth:grant-type:jwt-bearer`; CIMD y DCR ignoran ahora los grants
+> no soportados y solo exigen `authorization_code`; (b) el driver de MariaDB no convierte `String` a columnas
+> `BLOB` («Could not convert … to -4») y ninguna autorización podía guardarse: V23 pasa las columnas de
+> `oauth2_authorization` a `LONGTEXT`; (c) los `sendError()` del servidor de autorización llegaban a `/error`
+> por la cadena REST y salían como `401 auth.unauthenticated`; la cadena permite el *dispatch* ERROR,
+> `SafeErrorAttributes` expone el mensaje solo en 4xx y `templates/error.html` lo muestra con la marca. (d) En Tomcat real la
+> `Authentication` no estaba en el `SecurityContextHolder` cuando el transporte MCP extraía el contexto (solo
+> `tools/list` funcionaba; cualquier tool devolvía `auth.unauthenticated`): el extractor lee ahora el contexto que
+> el *resource server* guarda en los atributos de la petición (`RequestAttributeSecurityContextRepository`) y usa el
+> holder como respaldo. Todo ello ensayado en local contra MariaDB 11.4.13 con los dos documentos CIMD de Claude. Desviaciones respecto al plan: (1) la librería comunitaria `mcp-security`
 > no se usa; la plomería MCP (metadatos RFC 9728 vía `oauth2ResourceServer().protectedResourceMetadata`,
 > 401 con `resource_metadata`, CIMD, DCR anónimo, redirects loopback, refresh de clientes públicos) se ha
 > escrito a mano sobre Spring Security 7.0.5, que ya emite refresh tokens a clientes públicos; (2) la clave

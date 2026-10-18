@@ -157,11 +157,28 @@ class ClientMetadataDocumentClientTest {
         }
 
         @Test
-        @DisplayName("confidential clients and other grants are rejected")
+        @DisplayName("confidential clients are rejected")
         void publicOnly() {
             assertThat(parseError(VALID.replace("\"none\"", "\"client_secret_basic\"")).getMessage()).contains("public");
-            assertThat(parseError(VALID.replace("\"refresh_token\"", "\"client_credentials\"")).getMessage())
-                    .contains("grant_type");
+        }
+
+        @Test
+        @DisplayName("grants the server does not support are ignored while authorization_code is listed (Claude.ai declares jwt-bearer)")
+        void unsupportedGrantsIgnored() {
+            ClientMetadataDocument doc = client.parse(URL, VALID.replace("\"refresh_token\"",
+                    "\"refresh_token\", \"urn:ietf:params:oauth:grant-type:jwt-bearer\", \"client_credentials\""));
+            assertThat(doc.clientName()).isEqualTo("Claude Code");
+        }
+
+        @Test
+        @DisplayName("grant_types without authorization_code is rejected; an absent or empty list is accepted")
+        void authorizationCodeRequired() {
+            assertThat(parseError(VALID.replace("\"authorization_code\", ", "")).getMessage())
+                    .contains("authorization_code");
+            assertThat(client.parse(URL, VALID.replace("\"grant_types\": [\"authorization_code\", \"refresh_token\"], ", ""))
+                    .clientName()).isEqualTo("Claude Code");
+            assertThat(client.parse(URL, VALID.replace("[\"authorization_code\", \"refresh_token\"]", "[]"))
+                    .clientName()).isEqualTo("Claude Code");
         }
 
         @Test

@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<!-- Spring Boot's HTML error view (/error): reached when a filter calls sendError(), e.g. the
+     authorization server rejecting a client_id or redirect_uri. API clients get JSON instead. -->
+<html xmlns:th="http://www.thymeleaf.org" th:replace="~{oauth/layout :: page(#{error.page.title}, ~{::main})}">
+<body>
+<main class="content">
+    <h1 th:text="#{error.page.title}">Algo ha fallado</h1>
+    <p class="muted" th:text="#{error.page.status(${status})}">Error 400</p>
+    <div class="alert alert-error" th:if="${message != null and !#strings.isEmpty(message)}" th:text="${message}">Detalle</div>
+    <p th:if="${message == null or #strings.isEmpty(message)}" th:text="#{error.page.generic}">No se ha podido procesar la petición.</p>
+</main>
+</body>
+</html>

@@ -173,18 +173,23 @@ public class ClientMetadataDocumentClient {
         if (!authMethod.isMissingNode() && !authMethod.isNull() && !"none".equals(authMethod.asText())) {
             throw new ClientMetadataDocumentException(Reason.INVALID, "only public clients (token_endpoint_auth_method=none) are supported");
         }
+        // The document lists everything the client can do; we only honour authorization_code
+        // (+ refresh_token). Other grants (Claude.ai declares jwt-bearer, for instance) are ignored,
+        // as RFC 7591 lets a server register a subset of the requested capabilities.
         JsonNode grants = root.path("grant_types");
-        if (grants.isArray()) {
-            for (JsonNode g : grants) {
-                String grant = g.asText("");
-                if (!grant.equals("authorization_code") && !grant.equals("refresh_token")) {
-                    throw new ClientMetadataDocumentException(Reason.INVALID, "unsupported grant_type: " + grant);
-                }
-            }
+        if (grants.isArray() && !grants.isEmpty() && !containsText(grants, "authorization_code")) {
+            throw new ClientMetadataDocumentException(Reason.INVALID, "grant_types must include authorization_code");
         }
         String clientUri = optionalHttpsUrl(root, "client_uri");
         String logoUri = optionalHttpsUrl(root, "logo_uri");
         return new ClientMetadataDocument(clientId, name, clientUri, logoUri, List.copyOf(redirectUris));
+    }
+
+    private static boolean containsText(JsonNode array, String value) {
+        for (JsonNode node : array) {
+            if (value.equals(node.asText(""))) return true;
+        }
+        return false;
     }
 
     private static String optionalHttpsUrl(JsonNode root, String field) {
