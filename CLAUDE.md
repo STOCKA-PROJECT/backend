@@ -244,6 +244,11 @@ refused by `/mcp`, MCP tokens by the REST API.
 
 Bruno collections are in `bruno/`. See `bruno/README.md` for the recommended test sequence.
 
+## Raspberry Pi del belén
+
+Claude Code tiene acceso SSH directo a la Raspberry Pi que ejecuta el player (`ssh rpi4b '<comando>'`).
+Todo lo relativo a la conexión, el despliegue y el estado del arranque está en `../rpi4-system/CLAUDE.md`.
+
 ---
 
 ## Core Purpose
