@@ -24,13 +24,15 @@ import com.stocka.backend.modules.timelines.scene.SceneOp;
 import com.stocka.backend.modules.timelines.scene.SceneSummary;
 import com.stocka.backend.modules.timelines.service.TimelineSceneService;
 import com.stocka.backend.modules.timelines.service.TimelineService;
+import com.stocka.backend.modules.timelines.show.ShowPackage;
+import com.stocka.backend.modules.timelines.show.ShowService;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Timelines and their scenes: list, inspect (compact or raw), create, edit through operations,
- * validate, replace, delete.
+ * validate, export as a show package, replace, delete.
  */
 @Component
 public class TimelineTools implements ToolSource {
@@ -115,12 +117,15 @@ public class TimelineTools implements ToolSource {
     private final OrgAccess access;
     private final TimelineService timelines;
     private final TimelineSceneService scenes;
+    private final ShowService shows;
     private final JsonMapper json;
 
-    public TimelineTools(OrgAccess access, TimelineService timelines, TimelineSceneService scenes, JsonMapper json) {
+    public TimelineTools(OrgAccess access, TimelineService timelines, TimelineSceneService scenes, ShowService shows,
+                         JsonMapper json) {
         this.access = access;
         this.timelines = timelines;
         this.scenes = scenes;
+        this.shows = shows;
         this.json = json;
     }
 
@@ -165,6 +170,14 @@ public class TimelineTools implements ToolSource {
                                 + "output catalog, timing) without changing anything.",
                         TimelineInput.class, OAuthScope.READ, ToolHints.READ, this::validate)
                         .returning(ValidationResult.class),
+                ToolDefinition.of("timeline_show_export",
+                        "Exports the scene as the stocka-show package the Raspberry Pi plays (hardware from the "
+                                + "organization's ports, events with parameters coerced to the catalog types, assets, "
+                                + "meta.hash). Fails with timeline_shows.invalid and the blocking issues when the scene "
+                                + "has errors; fix them with timeline_scene_edit. The same package is served at "
+                                + "GET /organizations/{org}/timelines/{id}/show and bundled with its media at /bundle.",
+                        TimelineInput.class, OAuthScope.READ, ToolHints.READ, this::showExport)
+                        .returning(ShowPackage.class),
                 ToolDefinition.of("timeline_delete",
                         "Deletes a timeline and its scene. Needs OWNER, MANAGER or USER and the delete scope.",
                         TimelineInput.class, OAuthScope.DELETE, ToolHints.DELETE, this::delete)
@@ -247,6 +260,11 @@ public class TimelineTools implements ToolSource {
         List<SceneIssue> issues = scenes.validate(org.getId(), call.input().timelineId());
         int errors = (int) issues.stream().filter(SceneIssue::isError).count();
         return new ValidationResult(errors == 0, errors, issues.size() - errors, issues);
+    }
+
+    private ShowPackage showExport(ToolCall<TimelineInput> call) {
+        Organization org = access.read(call.caller(), call.input().org());
+        return shows.showPackage(org.getId(), call.input().timelineId());
     }
 
     private ToolResults.Done delete(ToolCall<TimelineInput> call) {

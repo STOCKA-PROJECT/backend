@@ -45,7 +45,8 @@ modules/
 ├── users/         User entity, UserController, AdminController, UserService
 ├── oauth/         OAuth 2.1 authorization server for MCP connectors (login/consent pages, DCR, CIMD, connected apps)
 ├── mcp/           MCP server at /mcp (resource server chain, tools, resources, prompts)
-└── timelines/scene/  Scene document model, operations (SceneEditor), validator and summary shared by REST and MCP
+├── timelines/scene/  Scene document model, operations (SceneEditor), validator and summary shared by REST and MCP
+└── timelines/show/   stocka-show package + .belen.zip bundle generated server-side (ShowPackageBuilder, ShowBundleWriter)
 ```
 
 Each module follows **Controller → Service → Repository** layering with constructor-based DI.
@@ -94,6 +95,8 @@ On startup, `RoleSeeder` creates USER/ADMIN roles, then `AdminSeeder` creates a 
 | POST   | `/organizations/{orgSlug}/timelines/{id}/scene/ops` | OWNER, MANAGER, USER | Apply scene operations atomically (see `SceneOp`) |
 | GET    | `/organizations/{orgSlug}/timelines/{id}/scene/summary` | any member | Compact scene view with validation findings |
 | POST   | `/organizations/{orgSlug}/timelines/{id}/scene/validate` | any member | Validation report of the scene |
+| GET    | `/organizations/{orgSlug}/timelines/{id}/show` | any member | `stocka-show` v2 package built server-side (404 no scene, 422 `timeline_shows.invalid` + issues) |
+| GET    | `/organizations/{orgSlug}/timelines/{id}/bundle` | any member | `.belen.zip` (`show.json` + `assets/` + `manifest.json`) streamed; 404 `timeline_shows.asset_not_found` |
 
 ### Domain endpoints (under `/organizations/{orgId}/...`)
 
@@ -235,6 +238,14 @@ refused by `/mcp`, MCP tokens by the REST API.
 - Timelines are edited through `SceneOp` batches (`SceneEditor`, `SceneValidator`, `SceneSummary`,
   `SceneJsonCodec` keeps unknown editor fields) with optimistic `version`; the same engine backs
   `POST …/scene/ops` for the editor. Adding a tool = one `ToolDefinition` in the domain's `ToolSource` + a test.
+- Show export (`modules/timelines/show`): `ShowPackageBuilder` is a 1:1 Java port of the editor's
+  `utils/showPackage.ts` chain (`ExecutionPlan` ← `exportBundle.ts`, `ShowHardware`, `ShowCoerce`, `StripLayout`,
+  `AudioAssets`, `ShowValidator` ← `contract/validate.py`); `ShowCanonicalJson` is the canonical form + sha256 of
+  `tools/show_hash.py`, so the backend, the editor and the RPi agree on `meta.hash` (golden test:
+  `belen-2026` → `sha256:6e46887d…`, `ShowPackageBuilderTest`/`ShowControllerIntegrationTest`). `ShowService`
+  feeds it from `JpaSceneContext`, the org's ports and the AUDIO attachments of audio pieces (asset name
+  `<attachmentId>-<file>`, unresolvable names are `E_ASSET_MISSING`); `ShowBundleWriter` streams the
+  `stocka-bundle` zip (`StreamingResponseBody`, assets STORED, manifest last). MCP tool: `timeline_show_export`.
 - Config: `stocka.oauth.*` (`OAUTH_*`), `stocka.mcp.*` (`MCP_*`), `spring.ai.mcp.server.*` (protocol `STATELESS`,
   annotation scanner off). Tests enable everything through `src/test/resources/application.properties` and
   create the JDBC tables with `oauth2-schema-h2.sql`. End-to-end: `OAuthFlowIntegrationTest`,

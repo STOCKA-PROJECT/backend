@@ -31,6 +31,10 @@ Timelines (líneas de tiempo, mismos permisos que pieces):
 - `organizations/66-timelines/list-timelines` / `get-timeline` / `update-timeline` / `delete-timeline`.
 - `organizations/66-timelines/get-scene` / `put-scene` — documento del Timeline Editor (tablero +
   capas + clips) como JSON versionado. `put-scene` usa concurrencia optimista (`version`).
+- `organizations/66-timelines/get-show` — paquete `stocka-show` v2 generado en el servidor (hash canónico
+  igual al del editor); 422 `timeline_shows.invalid` con los `issues` si la escena tiene errores.
+- `organizations/66-timelines/get-bundle` — `.belen.zip` (`show.json` + `assets/` + `manifest.json`) para
+  importar en la Raspberry Pi sin Internet. Necesita puertos, acciones y una escena guardada.
 
 Timeline Editor (ventana nueva):
 
@@ -75,7 +79,7 @@ MCP y OAuth 2.1 (conectores como Claude; carpeta `mcp/`):
 2. `mcp/register-client` — registro dinámico de un cliente público; guarda `mcpClientId`.
 3. `mcp/authorize` — genera el PKCE y construye la URL: ábrela en el navegador, inicia sesión, autoriza y copia el `code` de la redirección a `mcpAuthCode`.
 4. `mcp/token-pkce` — canjea el código; guarda `mcpAccessToken` y `mcpRefreshToken`. `mcp/refresh` rota el refresh token.
-5. `mcp/mcp-initialize`, `mcp/mcp-tools-list`, `mcp/mcp-tools-call-me`, `mcp/mcp-tools-call-pieces-search`, `mcp/mcp-tools-call-timeline-scene-edit` — JSON-RPC sobre `POST /mcp` con el token MCP (cabecera `Accept: application/json, text/event-stream`).
+5. `mcp/mcp-initialize`, `mcp/mcp-tools-list`, `mcp/mcp-tools-call-me`, `mcp/mcp-tools-call-pieces-search`, `mcp/mcp-tools-call-timeline-scene-edit`, `mcp/mcp-tools-call-timeline-show-export` — JSON-RPC sobre `POST /mcp` con el token MCP (cabecera `Accept: application/json, text/event-stream`).
 6. `mcp/get-connected-apps` / `mcp/revoke-connected-app` — lo que ve el usuario en Mi cuenta › Aplicaciones conectadas (token de la SPA).
 
 Los tokens no se cruzan: el de la SPA no vale en `/mcp` y el de MCP no vale en el resto del API. En local no hace falta `OAUTH_JWK_PRIVATE_KEY` (se genera una clave efímera); con `OAUTH_SESSION_COOKIE_SECURE=false` el login del navegador funciona por http.

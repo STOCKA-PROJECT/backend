@@ -1,0 +1,347 @@
+{
+  "format": "stocka-show",
+  "version": 2,
+  "meta": {
+    "name": "Pessebre 2026 (mostra)",
+    "timelineId": null,
+    "exportedAt": "2026-10-12T00:00:00.000Z",
+    "hash": "sha256:6e46887ddeaebe56360f7b617a91dbd4e0a5c71ea814f3d27d2e2532a9eb173f"
+  },
+  "board": "rpi4b",
+  "mode": {
+    "on": "once",
+    "cycles": 1
+  },
+  "hardware": {
+    "Focos": {
+      "kind": "relay",
+      "pin": 27
+    },
+    "Sembra": {
+      "kind": "relay",
+      "pin": 26
+    },
+    "LlumsE": {
+      "kind": "relay",
+      "pin": 18
+    },
+    "LedStrip3": {
+      "kind": "led_strip",
+      "pin": 13,
+      "dma": 10,
+      "channel": 1,
+      "length": 300
+    },
+    "LedStrip4": {
+      "kind": "led_strip",
+      "pin": 10,
+      "dma": 8,
+      "channel": 0,
+      "length": 44
+    },
+    "Fondo1": {
+      "kind": "led_segment",
+      "strip": "LedStrip3",
+      "first": 0,
+      "last": 148
+    },
+    "Fondo2": {
+      "kind": "led_segment",
+      "strip": "LedStrip3",
+      "first": 298,
+      "last": 149
+    },
+    "CasaSimple": {
+      "kind": "led_segment",
+      "strip": "LedStrip4",
+      "first": 0,
+      "last": 15
+    },
+    "CasaDoble": {
+      "kind": "led_segment",
+      "strip": "LedStrip4",
+      "first": 16,
+      "last": 43
+    },
+    "Audio": {
+      "kind": "audio"
+    },
+    "Pulsador Belen": {
+      "kind": "button",
+      "pin": 20
+    }
+  },
+  "timeline": [
+    {
+      "t": 0,
+      "target": "Focos",
+      "action": "focoOn",
+      "params": {}
+    },
+    {
+      "t": 0,
+      "target": "Fondo1",
+      "action": "fill",
+      "params": {
+        "color": [
+          255,
+          50,
+          0
+        ]
+      }
+    },
+    {
+      "t": 0,
+      "target": "Fondo2",
+      "action": "fill",
+      "params": {
+        "color": [
+          255,
+          50,
+          0
+        ]
+      }
+    },
+    {
+      "t": 0,
+      "target": "CasaSimple",
+      "action": "fill",
+      "params": {
+        "color": [
+          255,
+          50,
+          0
+        ]
+      }
+    },
+    {
+      "t": 0,
+      "target": "CasaDoble",
+      "action": "fill",
+      "params": {
+        "color": [
+          50,
+          16,
+          0
+        ]
+      }
+    },
+    {
+      "t": 0,
+      "target": "Audio",
+      "action": "play",
+      "params": {
+        "audio_name": "nature.mp3"
+      }
+    },
+    {
+      "t": 7000,
+      "target": "Sembra",
+      "action": "turn_on",
+      "params": {}
+    },
+    {
+      "t": 20000,
+      "target": "Focos",
+      "action": "focoOff",
+      "params": {}
+    },
+    {
+      "t": 23000,
+      "target": "Sembra",
+      "action": "turn_off",
+      "params": {}
+    },
+    {
+      "t": 24000,
+      "target": "CasaSimple",
+      "action": "animate",
+      "params": {
+        "animation_type": "fade",
+        "color": [
+          0,
+          0,
+          0
+        ],
+        "from_color": [
+          255,
+          50,
+          0
+        ],
+        "duration": 3
+      }
+    },
+    {
+      "t": 24000,
+      "target": "CasaDoble",
+      "action": "animate",
+      "params": {
+        "animation_type": "fade",
+        "color": [
+          0,
+          0,
+          0
+        ],
+        "from_color": [
+          50,
+          16,
+          0
+        ],
+        "duration": 3
+      }
+    },
+    {
+      "t": 25000,
+      "target": "Fondo1",
+      "action": "animate",
+      "params": {
+        "animation_type": "fade",
+        "color": [
+          10,
+          0,
+          60
+        ],
+        "from_color": [
+          255,
+          50,
+          0
+        ],
+        "duration": 10
+      }
+    },
+    {
+      "t": 25000,
+      "target": "Fondo2",
+      "action": "animate",
+      "params": {
+        "animation_type": "fade",
+        "color": [
+          10,
+          0,
+          60
+        ],
+        "from_color": [
+          255,
+          50,
+          0
+        ],
+        "duration": 10
+      }
+    },
+    {
+      "t": 27000,
+      "target": "Audio",
+      "action": "stop",
+      "params": {}
+    },
+    {
+      "t": 30000,
+      "target": "LlumsE",
+      "action": "turn_on",
+      "params": {
+        "time": 21
+      }
+    },
+    {
+      "t": 118000,
+      "target": "Sembra",
+      "action": "turn_off",
+      "params": {}
+    },
+    {
+      "t": 118000,
+      "target": "Audio",
+      "action": "stop",
+      "params": {}
+    },
+    {
+      "t": 118000,
+      "target": "Focos",
+      "action": "focoOff",
+      "params": {}
+    },
+    {
+      "t": 118000,
+      "target": "CasaSimple",
+      "action": "animate",
+      "params": {
+        "animation_type": "fade",
+        "color": [
+          0,
+          0,
+          0
+        ],
+        "from_color": [
+          255,
+          50,
+          0
+        ],
+        "duration": 4
+      }
+    },
+    {
+      "t": 118000,
+      "target": "CasaDoble",
+      "action": "animate",
+      "params": {
+        "animation_type": "fade",
+        "color": [
+          0,
+          0,
+          0
+        ],
+        "from_color": [
+          50,
+          16,
+          0
+        ],
+        "duration": 4
+      }
+    },
+    {
+      "t": 118000,
+      "target": "Fondo1",
+      "action": "animate",
+      "params": {
+        "animation_type": "fade",
+        "color": [
+          0,
+          0,
+          0
+        ],
+        "from_color": [
+          255,
+          50,
+          0
+        ],
+        "duration": 4
+      }
+    },
+    {
+      "t": 118000,
+      "target": "Fondo2",
+      "action": "animate",
+      "params": {
+        "animation_type": "fade",
+        "color": [
+          0,
+          0,
+          0
+        ],
+        "from_color": [
+          255,
+          50,
+          0
+        ],
+        "duration": 4
+      }
+    }
+  ],
+  "durationMs": 122000,
+  "assets": {
+    "audio": [
+      "nature.mp3"
+    ],
+    "video": []
+  }
+}

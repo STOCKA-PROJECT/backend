@@ -1,0 +1,26 @@
+meta {
+  name: Download Bundle (.belen.zip)
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/timelines/{{timelineId}}/bundle
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  Descarga el paquete autocontenido `stocka-bundle` v1 (`application/zip`,
+  `Content-Disposition: attachment; filename="<slug>-<hash8>.belen.zip"`): `show.json` (deflate),
+  `assets/audio|video/<nombre>` (sin comprimir, leídos de R2) y `manifest.json` con el sha256 y el tamaño de
+  cada fichero. Es lo que importa la página local de la Raspberry Pi y lo que descarga la app móvil.
+
+  El paquete se construye y cada activo se comprueba antes de enviar el primer byte: mismos 404/422 que
+  `get-show`, más 404 `timeline_shows.asset_not_found` si falta el adjunto o sus bytes en R2.
+  Cualquier miembro (incl. SPECTATOR). Guarda la respuesta como fichero desde Bruno.
+}

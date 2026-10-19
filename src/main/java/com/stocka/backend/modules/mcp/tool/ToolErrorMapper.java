@@ -47,6 +47,10 @@ public class ToolErrorMapper {
             Map.entry("timeline_scenes.version_conflict",
                     "Someone else saved the scene. Call `timeline_scene_get`, re-read the current version and retry with expectedVersion set to it."),
             Map.entry("timelines.name_conflict", "Choose another name or rename the existing timeline."),
+            Map.entry("timeline_shows.invalid",
+                    "The scene cannot be exported yet: fix the errors listed in params.issues with `timeline_scene_edit` (or the ports/actions they mention) and retry."),
+            Map.entry("timeline_shows.scene_not_found",
+                    "The timeline has no scene yet; build one with `timeline_scene_edit` before exporting."),
             Map.entry(ErrorCodes.MCP_INVALID_ARGUMENTS, "Check the tool's input schema and resend the call."),
             Map.entry(ErrorCodes.REQUEST_RATE_LIMITED, "Wait a moment before calling more tools."),
             Map.entry(ErrorCodes.SEARCH_UNAVAILABLE, "Semantic search is down; the plain text search was used instead or try again later."));

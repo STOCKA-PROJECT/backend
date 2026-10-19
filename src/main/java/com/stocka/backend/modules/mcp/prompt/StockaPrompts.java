@@ -59,7 +59,8 @@ public class StockaPrompts implements PromptSource {
                 `add_item` for each piece (set `ports` when the organization has hardware), then `add_clip` per \
                 moment of the show with `startMs`, `durationMs`, the action name and its parameters. Keep the \
                 `expectedVersion` returned by the previous call.
-                6. Run `timeline_validate` and fix every error it reports; mention the warnings to the user.
+                6. Run `timeline_validate` and fix every error it reports; mention the warnings to the user. If the \
+                user wants the file for the Raspberry Pi, `timeline_show_export` returns the show package.
                 7. Finish with a short summary of the timeline: duration, pieces, number of clips, and how to open \
                 it in the editor.
                 """.formatted(args.get("org"), args.get("description"), duration,

@@ -12,6 +12,7 @@ import java.util.Set;
  * @param reserved      pins that must not be used, with the reason
  * @param warnings      pins that work but deserve a notice, with the reason
  * @param ws281xChannel PWM/SPI/PCM pins that can drive a WS281x strip, mapped to their channel
+ * @param ws281xWarning WS281x pins that work but deserve a notice (e.g. PCM interferes with audio), with the reason
  * @param dmaMin        lowest DMA channel
  * @param dmaMax        highest DMA channel
  * @param dmaAvoid      DMA channels that work but are not recommended
@@ -23,6 +24,7 @@ public record BoardSpec(
         Map<Integer, String> reserved,
         Map<Integer, String> warnings,
         Map<Integer, Integer> ws281xChannel,
+        Map<Integer, String> ws281xWarning,
         int dmaMin,
         int dmaMax,
         Set<Integer> dmaAvoid
@@ -45,5 +47,15 @@ public record BoardSpec(
      */
     public boolean isReserved(int pin) {
         return reserved.containsKey(pin);
+    }
+
+    /**
+     * Notice attached to a WS281x pin, if any.
+     *
+     * @param pin GPIO number
+     * @return the warning text, or {@code null} when the pin has none
+     */
+    public String ws281xWarning(int pin) {
+        return ws281xWarning.get(pin);
     }
 }

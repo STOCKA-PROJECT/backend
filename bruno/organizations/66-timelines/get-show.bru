@@ -1,0 +1,29 @@
+meta {
+  name: Get Show Package
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/timelines/{{timelineId}}/show
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  Devuelve el paquete `stocka-show` v2 de la línea de tiempo, generado en el servidor con el mismo
+  motor que «Exportar» en el editor (hardware a partir de los puertos de la organización, eventos con
+  parámetros coaccionados al catálogo, `assets`, `meta.hash` canónico). Cualquier miembro (incl. SPECTATOR).
+
+  - 404 `timelines.not_found` / `timeline_shows.scene_not_found` si no existe la línea o nunca se guardó la escena.
+  - 422 `timeline_shows.invalid` con `params.issues` (códigos `E_*` del editor) cuando la escena tiene errores
+    bloqueantes; `params.warnings` lista los avisos.
+
+  Requiere una organización con la función de hardware (owner ADMIN), puertos (`68-ports`) y acciones en
+  los tipos (`62-piece-type-actions`), y una escena guardada (`put-scene`). Los `audio_name` de los clips
+  deben ser `<attachmentId>-<fichero>` de un adjunto AUDIO del artículo.
+}

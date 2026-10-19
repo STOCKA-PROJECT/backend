@@ -49,6 +49,8 @@ confianza (por ejemplo `claude.ai`) aparecen como *verificadas*.
 - Crear una timeline a partir de una descripción: coloca artículos, añade clips con las acciones
   de cada tipo y valida el resultado contra el catálogo de hardware. Lo que crea el asistente se
   abre tal cual en el editor de timelines, y viceversa.
+- Exportar el show de una timeline (`timeline_show_export`): el mismo paquete `stocka-show` que
+  genera el editor, con su `meta.hash`; si la escena tiene errores los lista para corregirlos.
 - En organizaciones con hardware: puertos y acciones de tipo.
 
 Pídele al asistente que empiece por la herramienta `me` y lea la guía (`stocka://guide`): así conoce

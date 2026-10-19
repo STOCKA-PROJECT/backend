@@ -2,7 +2,7 @@
 
 Generated from the registered definitions by `McpToolCatalogTest` (`./mvnw test -Dtest=McpToolCatalogTest -Dstocka.docs.write=true`). Every tool takes the organization slug as `org` unless stated otherwise; scopes are checked before the organization role.
 
-## Tools (59)
+## Tools (60)
 
 | Tool | Scope | Hints | Description |
 |---|---|---|---|
@@ -64,6 +64,7 @@ Generated from the registered definitions by `McpToolCatalogTest` (`./mvnw test 
 | `timeline_scene_edit` | `timelines:write` | idempotent | Edits the scene with a batch of operations (add_item, add_clip, move_clip, remove_clip, set_duration …), applied atomically. Sizes in cm, times in ms, references by id or unique name. Returns the new version, the ids created (use them in the next batch), validation findings and the compact scene. On timeline_scenes.version_conflict re-read the scene and retry. Needs OWNER, MANAGER or USER. |
 | `timeline_scene_put` | `timelines:write` | idempotent | Replaces the whole scene document (for restores or bulk rewrites; prefer timeline_scene_edit). Needs OWNER, MANAGER or USER. |
 | `timeline_validate` | `read` | read-only idempotent | Validates the scene (references, clip parameters against the action definitions and the output catalog, timing) without changing anything. |
+| `timeline_show_export` | `read` | read-only idempotent | Exports the scene as the stocka-show package the Raspberry Pi plays (hardware from the organization's ports, events with parameters coerced to the catalog types, assets, meta.hash). Fails with timeline_shows.invalid and the blocking issues when the scene has errors; fix them with timeline_scene_edit. The same package is served at GET /organizations/{org}/timelines/{id}/show and bundled with its media at /bundle. |
 | `timeline_delete` | `delete` | destructive idempotent | Deletes a timeline and its scene. Needs OWNER, MANAGER or USER and the delete scope. |
 
 ### Parameters
@@ -563,6 +564,13 @@ No arguments.
 | `expectedVersion` | integer | no | Scene version you read; required once the scene exists |
 
 #### `timeline_validate`
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `org` | string | yes | Organization slug |
+| `timelineId` | integer | yes | Timeline id |
+
+#### `timeline_show_export`
 
 | Argument | Type | Required | Description |
 |---|---|---|---|

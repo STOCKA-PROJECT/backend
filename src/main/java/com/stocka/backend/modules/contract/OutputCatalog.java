@@ -206,7 +206,13 @@ public class OutputCatalog {
             Map<Integer, String> warnings = new LinkedHashMap<>();
             b.path("warnings").properties().forEach(e -> warnings.put(Integer.parseInt(e.getKey()), e.getValue().asText()));
             Map<Integer, Integer> ws = new LinkedHashMap<>();
-            b.path("ws281x").properties().forEach(e -> ws.put(Integer.parseInt(e.getKey()), e.getValue().path("channel").asInt()));
+            Map<Integer, String> wsWarnings = new LinkedHashMap<>();
+            b.path("ws281x").properties().forEach(e -> {
+                ws.put(Integer.parseInt(e.getKey()), e.getValue().path("channel").asInt());
+                if (e.getValue().hasNonNull("warning")) {
+                    wsWarnings.put(Integer.parseInt(e.getKey()), e.getValue().path("warning").asText());
+                }
+            });
             Set<Integer> avoid = new LinkedHashSet<>();
             for (JsonNode n : b.path("dma").path("avoid")) {
                 avoid.add(n.asInt());
@@ -218,6 +224,7 @@ public class OutputCatalog {
                     Collections.unmodifiableMap(reserved),
                     Collections.unmodifiableMap(warnings),
                     Collections.unmodifiableMap(ws),
+                    Collections.unmodifiableMap(wsWarnings),
                     b.path("dma").path("min").asInt(0),
                     b.path("dma").path("max").asInt(14),
                     Collections.unmodifiableSet(avoid)));

@@ -81,7 +81,10 @@ public class SecurityConfiguration {
                 .authorizeHttpRequests(auth -> auth
                         // sendError() from any chain (e.g. the authorization server's invalid_request) is
                         // re-dispatched to /error through this chain; without this it surfaced as a bare 401.
-                        .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                        // ASYNC covers the re-dispatch that completes a StreamingResponseBody (the bundle
+                        // download): the original REQUEST dispatch was already authorized, the JWT filter does
+                        // not run again on it, and denying it would cut the response after it was committed.
+                        .dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.ASYNC).permitAll()
                         .requestMatchers("/auth/2fa/**", "/auth/oauth/google/unlink", "/auth/handoff").authenticated()
                         .requestMatchers("/auth/**", "/health").permitAll()
                         .requestMatchers("/webhooks/resend").permitAll()

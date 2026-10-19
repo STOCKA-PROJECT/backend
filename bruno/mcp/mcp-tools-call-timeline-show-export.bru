@@ -1,0 +1,41 @@
+meta {
+  name: MCP tools/call timeline_show_export
+  type: http
+  seq: 12
+}
+
+post {
+  url: {{baseUrl}}/mcp
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json, text/event-stream
+}
+
+auth:bearer {
+  token: {{mcpAccessToken}}
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 6,
+    "method": "tools/call",
+    "params": {
+      "name": "timeline_show_export",
+      "arguments": {
+        "org": "{{orgSlug}}",
+        "timelineId": {{timelineId}}
+      }
+    }
+  }
+}
+
+docs {
+  Exporta la escena como paquete `stocka-show` v2 (el mismo que `GET /timelines/{id}/show`): `hardware`,
+  `timeline`, `assets` y `meta.hash`. Scope `read`; cualquier miembro. Con errores bloqueantes la herramienta
+  devuelve `isError` con `error: timeline_shows.invalid` y la lista en `params.issues`; corrígelos con
+  `timeline_scene_edit`. El `.belen.zip` con los activos solo está en REST (`GET .../bundle`).
+}

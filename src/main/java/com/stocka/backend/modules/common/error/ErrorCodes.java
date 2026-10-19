@@ -87,6 +87,9 @@ public final class ErrorCodes {
     public static final String TIMELINE_SCENE_VERSION_REQUIRED = "timeline_scenes.version_required";
     public static final String TIMELINE_SCENE_SCHEMA_UNSUPPORTED = "timeline_scenes.schema_unsupported";
     public static final String TIMELINE_SCENE_OP_INVALID = "timeline_scenes.op_invalid";
+    public static final String TIMELINE_SHOWS_SCENE_NOT_FOUND = "timeline_shows.scene_not_found";
+    public static final String TIMELINE_SHOWS_INVALID = "timeline_shows.invalid";
+    public static final String TIMELINE_SHOWS_ASSET_NOT_FOUND = "timeline_shows.asset_not_found";
 
     // ---- organizations --------------------------------------------------
     public static final String ORGANIZATIONS_NOT_FOUND = "organizations.not_found";

@@ -60,7 +60,11 @@ Workflow:
    `after: clipId`; `durationMs`; `params` by name), `update_clip`, `move_clip`, `remove_clip`,
    `set_duration`, `set_board`, `set_strip_order`.
 4. `timeline_validate` reports errors (must fix) and warnings (mention them).
-5. `timeline_scene_put` replaces the whole document; use it only for restores.
+5. `timeline_show_export` builds the `stocka-show` package the Raspberry Pi plays (hardware, events,
+   assets, `meta.hash`); with blocking errors it fails with `timeline_shows.invalid` and lists them.
+   The same package is at `GET /organizations/{org}/timelines/{id}/show`, and `/bundle` adds the media
+   files as a `.belen.zip`.
+6. `timeline_scene_put` replaces the whole document; use it only for restores.
 
 Clip parameters: static parameters are fixed on the action definition and must not be sent; dynamic
 ones are sent in `params`; the parameter flagged `isDuration` is the clip length and must not be sent
