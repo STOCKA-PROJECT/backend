@@ -1,0 +1,41 @@
+meta {
+  name: Create Device (returns the heartbeat token once)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/devices
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Belén Martorell"
+  }
+}
+
+script:post-response {
+  if (res.status === 201) {
+    bru.setVar("stockaDeviceId", res.body.device.id);
+    bru.setVar("heartbeatToken", res.body.heartbeatToken);
+    bru.setVar("heartbeatUrl", res.body.heartbeatUrl);
+  }
+}
+
+docs {
+  OWNER o MANAGER. `name` 1–80 caràcters (es retalla), únic per organització (409 `devices.name_taken`).
+  Respon `{ device, heartbeatToken, heartbeatUrl }`: el token (`bht_...`) només es mostra aquí, al servidor
+  només se'n guarda el sha256 i els 8 primers caràcters (`tokenPrefix`). Desa `stockaDeviceId`,
+  `heartbeatToken` i `heartbeatUrl` per a `rotate-device-token`, `delete-device` i `player/heartbeat`.
+  A la Pi: `Authorization: Device <heartbeatToken>` cap a `heartbeatUrl`.
+}

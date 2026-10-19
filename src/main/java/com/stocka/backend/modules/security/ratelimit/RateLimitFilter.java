@@ -93,6 +93,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
     /** {@code POST /mcp}: 300 llamadas/min por IP (los hosts MCP lanzan herramientas en paralelo). */
     static final RateLimitPolicy MCP_IP =
             new RateLimitPolicy("mcp.calls.ip", 300, 300, Duration.ofMinutes(1));
+    /** {@code POST /player/heartbeat}: 120/min por IP (varios belenes detrás de la misma NAT). */
+    static final RateLimitPolicy PLAYER_HEARTBEAT_IP =
+            new RateLimitPolicy("player.heartbeat.ip", 120, 120, Duration.ofMinutes(1));
 
     private final RateLimitProperties properties;
     private final RateLimitService rateLimitService;
@@ -194,6 +197,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             new Mapping("POST", "/auth/connect/2fa",           AUTH_2FA_LOGIN_IP),
             new Mapping("POST", "/oauth2/register",            OAUTH_REGISTER_IP),
             new Mapping("POST", "/oauth2/token",               OAUTH_TOKEN_IP),
-            new Mapping("POST", "/mcp",                        MCP_IP)
+            new Mapping("POST", "/mcp",                        MCP_IP),
+            new Mapping("POST", "/player/heartbeat",           PLAYER_HEARTBEAT_IP)
     );
 }

@@ -88,6 +88,9 @@ public class SecurityConfiguration {
                         .requestMatchers("/auth/2fa/**", "/auth/oauth/google/unlink", "/auth/handoff").authenticated()
                         .requestMatchers("/auth/**", "/health").permitAll()
                         .requestMatchers("/webhooks/resend").permitAll()
+                        // Belén players report with "Authorization: Device <token>"; the controller
+                        // authenticates the token itself (devices.token_invalid → 401).
+                        .requestMatchers("/player/heartbeat").permitAll()
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .anyRequest().authenticated())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

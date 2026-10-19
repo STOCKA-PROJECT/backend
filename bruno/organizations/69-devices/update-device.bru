@@ -1,0 +1,30 @@
+meta {
+  name: Update Device (rename)
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{baseUrl}}/organizations/{{orgId}}/devices/{{stockaDeviceId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Belén Martorell (local)"
+  }
+}
+
+docs {
+  OWNER o MANAGER. Mateixes regles que la creació (1–80, retallat, únic → 409 `devices.name_taken`).
+  404 `devices.not_found` si l'id no és de l'organització.
+}

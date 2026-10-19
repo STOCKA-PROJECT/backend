@@ -42,6 +42,7 @@ import com.stocka.backend.modules.pieces.repository.PieceRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeActionRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeAttributeRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeRepository;
+import com.stocka.backend.modules.devices.repository.DeviceRepository;
 import com.stocka.backend.modules.ports.repository.PortRepository;
 import com.stocka.backend.modules.timelines.repository.TimelineRepository;
 import com.stocka.backend.modules.timelines.repository.TimelineSceneRepository;
@@ -72,6 +73,7 @@ public class OrganizationService {
     private final OrganizationPieceAttributeRepository organizationPieceAttributeRepository;
     private final NotificationPreferenceRepository notificationPreferenceRepository;
     private final PortRepository portRepository;
+    private final DeviceRepository deviceRepository;
     private final TimelineRepository timelineRepository;
     private final TimelineSceneRepository timelineSceneRepository;
 
@@ -93,6 +95,7 @@ public class OrganizationService {
             OrganizationPieceAttributeRepository organizationPieceAttributeRepository,
             NotificationPreferenceRepository notificationPreferenceRepository,
             PortRepository portRepository,
+            DeviceRepository deviceRepository,
             TimelineRepository timelineRepository,
             TimelineSceneRepository timelineSceneRepository
     ) {
@@ -113,6 +116,7 @@ public class OrganizationService {
         this.organizationPieceAttributeRepository = organizationPieceAttributeRepository;
         this.notificationPreferenceRepository = notificationPreferenceRepository;
         this.portRepository = portRepository;
+        this.deviceRepository = deviceRepository;
         this.timelineRepository = timelineRepository;
         this.timelineSceneRepository = timelineSceneRepository;
     }
@@ -227,6 +231,7 @@ public class OrganizationService {
         locationRepository.softDeleteByOrganization(org);
         notificationPreferenceRepository.softDeleteByOrganization(org);
         portRepository.softDeleteByOrganization(org);
+        deviceRepository.softDeleteByOrganization(org);
         timelineSceneRepository.softDeleteByOrganization(org);
         timelineRepository.softDeleteByOrganization(org);
 

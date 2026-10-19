@@ -107,6 +107,37 @@ class RateLimitFilterTest {
         assertThat(limited.getStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
     }
 
+    @Test
+    @DisplayName("matches POST /player/heartbeat with the player.heartbeat.ip policy (120/min)")
+    void should_match_player_heartbeat() throws Exception {
+        assertThat(RateLimitFilter.PLAYER_HEARTBEAT_IP.name()).isEqualTo("player.heartbeat.ip");
+        assertThat(RateLimitFilter.PLAYER_HEARTBEAT_IP.capacity()).isEqualTo(120L);
+        for (int i = 0; i < RateLimitFilter.PLAYER_HEARTBEAT_IP.capacity(); i++) {
+            MockHttpServletResponse resp = new MockHttpServletResponse();
+            filter.doFilter(heartbeatRequest("1.2.3.4"), resp, new MockFilterChain());
+            assertThat(resp.getStatus()).isEqualTo(HttpStatus.OK.value());
+        }
+        MockHttpServletResponse limited = new MockHttpServletResponse();
+        filter.doFilter(heartbeatRequest("1.2.3.4"), limited, new MockFilterChain());
+        assertThat(limited.getStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
+
+        // A GET on the same path and another IP are not affected by the exhausted bucket.
+        MockHttpServletResponse other = new MockHttpServletResponse();
+        filter.doFilter(heartbeatRequest("9.9.9.9"), other, new MockFilterChain());
+        assertThat(other.getStatus()).isEqualTo(HttpStatus.OK.value());
+        MockHttpServletRequest getReq = new MockHttpServletRequest("GET", "/player/heartbeat");
+        getReq.setRemoteAddr("1.2.3.4");
+        MockHttpServletResponse getResp = new MockHttpServletResponse();
+        filter.doFilter(getReq, getResp, new MockFilterChain());
+        assertThat(getResp.getStatus()).isEqualTo(HttpStatus.OK.value());
+    }
+
+    private static MockHttpServletRequest heartbeatRequest(String ip) {
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/player/heartbeat");
+        req.setRemoteAddr(ip);
+        return req;
+    }
+
     private static MockHttpServletRequest loginRequest(String ip) {
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/auth/login");
         req.setRemoteAddr(ip);

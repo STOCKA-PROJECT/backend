@@ -1,0 +1,19 @@
+meta {
+  name: Delete Device (soft-delete, frees the name)
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{baseUrl}}/organizations/{{orgId}}/devices/{{stockaDeviceId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  OWNER o MANAGER. 204. El nom es renombra a `<nom>::deleted::<id>` i el token deixa de funcionar.
+}

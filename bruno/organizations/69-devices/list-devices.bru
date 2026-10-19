@@ -1,0 +1,23 @@
+meta {
+  name: List Devices
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/devices
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  Reproductors (Raspberry Pi) registrats a l'organització amb l'últim batec: `online` (últim batec
+  dins de `stocka.devices.online-window`, 5 min per defecte), `lastState` (BOOT|SAFE|IDLE|PLAYING|TEST|ERROR),
+  `lastShowHash`/`lastShowName`, `lastOverrides` (ports tallats a mà), `lastVersion`, `lastIp`, `lastError`,
+  `deviceId` (uuid de la Pi, lligat al primer batec) i `tokenPrefix`. Mateixa porta que els ports: només
+  organitzacions amb owner ADMIN global; qualsevol membre (també SPECTATOR) pot llistar.
+}

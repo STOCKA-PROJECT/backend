@@ -1,0 +1,27 @@
+meta {
+  name: Rotate Device Token
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/devices/{{stockaDeviceId}}/rotate-token
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+script:post-response {
+  if (res.status === 200) {
+    bru.setVar("heartbeatToken", res.body.heartbeatToken);
+    bru.setVar("heartbeatUrl", res.body.heartbeatUrl);
+  }
+}
+
+docs {
+  OWNER o MANAGER. Genera un token nou i invalida l'anterior a l'instant (el següent batec amb el token
+  vell respon 401 `devices.token_invalid`). Mateix cos que la creació; actualitza `heartbeatToken`.
+}

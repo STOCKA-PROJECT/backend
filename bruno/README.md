@@ -56,6 +56,17 @@ organizaciones cuyo owner es ADMIN global):
 El catálogo (`src/main/resources/contract/catalog.json`) es una copia literal de `rpi4-system/contract/catalog.json`;
 si cambia allí, hay que copiarlo aquí y al editor (`timeline-editor/app/data/catalog.json`).
 
+Dispositivos (reproductores del belén) y latido (misma puerta que los puertos: organizaciones cuyo owner es ADMIN global):
+
+1. `organizations/69-devices/create-device` — OWNER/MANAGER; `name` único por organización. Devuelve el token `bht_...` **una sola vez**
+   (se guarda `heartbeatToken`, `heartbeatUrl` y `stockaDeviceId`); el servidor solo almacena su sha256 y `tokenPrefix`.
+2. `player/heartbeat` — `POST /player/heartbeat` público con `Authorization: Device {{heartbeatToken}}` y el estado de la Pi
+   (`deviceId`, `state`, `showHash`, `showName`, `overrides`, `version`, `uptimeS`, `netMode`, `error`). 204; 401 `devices.token_invalid`.
+3. `organizations/69-devices/list-devices` — cualquier miembro; `online` = último latido hace menos de `DEVICES_ONLINE_WINDOW` (5 min),
+   `lastState`, `lastShowHash/Name`, `lastOverrides`, `lastVersion`, `lastIp`, `lastError`, `deviceId`.
+4. `organizations/69-devices/update-device` (renombrar), `rotate-device-token` (el token anterior deja de valer al instante;
+   repite `player/heartbeat` con el viejo → 401) y `delete-device` (204; libera el nombre).
+
 Búsqueda semántica (XEYE; opcional, solo si el servidor tiene `XEYE_SEARCH_ENABLED=true` y `XEYE_API_KEY`):
 
 1. `organizations/75-search/get-search-status` — `enabled`, `indexed`, `indexedPieces / totalPieces`, `trainingPending`. Cualquier miembro. (Al arrancar con clave, el backend indexa solo las organizaciones que aún no tienen lista.)
@@ -143,6 +154,10 @@ Campos:
 | `ports.config_unknown_key` / `config_missing_key` / `config_type_mismatch` / `config_out_of_range` / `motor_pins_not_distinct` | 400 | config validada por kind contra el catálogo |
 | `ports.strip_pin_unsupported` / `strip_channel_mismatch` | 400 | tira en pin no WS281x o canal incoherente |
 | `ports.segment_strip_not_found` / `segment_out_of_range` / `strip_shrink_breaks_segment` / `strip_in_use` | 400 / 400 / 400 / 409 | segmentos y tiras |
+| `devices.not_found`                           | 404    | id fuera de la organización    |
+| `devices.name_required` / `devices.name_too_long` | 400 | nombre vacío / > 80 (`params.max`) |
+| `devices.name_taken`                          | 409    | nombre repetido en la organización |
+| `devices.token_invalid`                       | 401    | `POST /player/heartbeat` sin `Authorization: Device <token>` válido |
 | `locations.not_found`                         | 404    |                                |
 | `organizations.not_found`                     | 404    |                                |
 | `organizations.invitation_limit_reached`      | 400    | usa `params.max`               |

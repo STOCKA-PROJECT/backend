@@ -43,6 +43,7 @@ public final class IntegrationTestSupport {
         jdbc.execute("DELETE FROM locations");
         jdbc.execute("DELETE FROM contacts");
         jdbc.execute("DELETE FROM ports");
+        jdbc.execute("DELETE FROM devices");
         jdbc.execute("DELETE FROM organization_audit_logs");
         jdbc.execute("DELETE FROM organization_invitations");
         jdbc.execute("DELETE FROM organization_members");

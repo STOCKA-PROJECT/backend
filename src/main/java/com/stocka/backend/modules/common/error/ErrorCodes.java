@@ -123,6 +123,13 @@ public final class ErrorCodes {
     public static final String PORTS_STRIP_SHRINK_BREAKS_SEGMENT = "ports.strip_shrink_breaks_segment";
     public static final String PORTS_STRIP_IN_USE = "ports.strip_in_use";
 
+    // ---- devices (belén players + heartbeat) -----------------------------
+    public static final String DEVICES_NOT_FOUND = "devices.not_found";
+    public static final String DEVICES_NAME_REQUIRED = "devices.name_required";
+    public static final String DEVICES_NAME_TOO_LONG = "devices.name_too_long";
+    public static final String DEVICES_NAME_TAKEN = "devices.name_taken";
+    public static final String DEVICES_TOKEN_INVALID = "devices.token_invalid";
+
     // ---- contacts --------------------------------------------------------
     public static final String CONTACTS_NOT_FOUND = "contacts.not_found";
     public static final String CONTACTS_NAME_REQUIRED = "contacts.name_required";

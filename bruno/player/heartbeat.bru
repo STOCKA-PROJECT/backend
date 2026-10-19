@@ -1,0 +1,47 @@
+meta {
+  name: Player Heartbeat (Authorization: Device <token>)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/player/heartbeat
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Device {{heartbeatToken}}
+}
+
+body:json {
+  {
+    "deviceId": "0f1e2d3c-1a2b-4c3d-8e9f-000000000001",
+    "name": "belen-pi",
+    "state": "PLAYING",
+    "showHash": "sha256:6e46887d",
+    "showName": "Nadal 2026",
+    "overrides": ["Angel"],
+    "version": "2.0.1",
+    "uptimeS": 86400,
+    "netMode": "ap",
+    "ssid": "belen",
+    "ip": "192.168.4.1",
+    "error": null
+  }
+}
+
+docs {
+  Endpoint públic (sense JWT) que crida la Raspberry Pi quan té Internet; rate limit 120/min per IP
+  (`player.heartbeat.ip`). El token surt de `organizations/69-devices/create-device` (o `rotate-device-token`).
+
+  Respostes: 204 si el token és vàlid (actualitza `last*`, `lastSeenAt` i `lastIp` = IP pública d'origen);
+  401 `devices.token_invalid` si falta la capçalera, usa un altre esquema (`Bearer`) o el token no existeix /
+  s'ha rotat / el dispositiu s'ha esborrat; 400 `validation.failed` si el cos no compleix:
+  `deviceId` obligatori (≤ 36), `state` ∈ BOOT|SAFE|IDLE|PLAYING|TEST|ERROR, `overrides` ≤ 200 elements
+  de ≤ 160 caràcters, `showHash` ≤ 80, `showName` ≤ 160, `version` ≤ 40, `netMode` ≤ 8, `uptimeS` ≥ 0.
+  `name`, `ssid` i `ip` s'accepten però no es desen. El primer batec lliga `deviceId`; un uuid diferent
+  després s'accepta (targeta reinstal·lada) i es registra a WARN. Un token de dispositiu no val per a la resta
+  de l'API (401 `auth.unauthenticated`).
+}

@@ -59,6 +59,7 @@ import com.stocka.backend.modules.pieces.repository.PieceRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeActionRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeAttributeRepository;
 import com.stocka.backend.modules.piecetypes.repository.PieceTypeRepository;
+import com.stocka.backend.modules.devices.repository.DeviceRepository;
 import com.stocka.backend.modules.ports.repository.PortRepository;
 import com.stocka.backend.modules.timelines.repository.TimelineRepository;
 import com.stocka.backend.modules.timelines.repository.TimelineSceneRepository;
@@ -85,6 +86,7 @@ class OrganizationServiceTest {
     @Mock private OrganizationPieceAttributeRepository organizationPieceAttributeRepository;
     @Mock private NotificationPreferenceRepository notificationPreferenceRepository;
     @Mock private PortRepository portRepository;
+    @Mock private DeviceRepository deviceRepository;
     @Mock private TimelineRepository timelineRepository;
     @Mock private TimelineSceneRepository timelineSceneRepository;
 
@@ -409,6 +411,7 @@ class OrganizationServiceTest {
             verify(locationRepository).softDeleteByOrganization(org);
             verify(notificationPreferenceRepository).softDeleteByOrganization(org);
             verify(portRepository).softDeleteByOrganization(org);
+            verify(deviceRepository).softDeleteByOrganization(org);
             verify(timelineSceneRepository).softDeleteByOrganization(org);
             verify(timelineRepository).softDeleteByOrganization(org);
             assertNotNull(org.getDeletedAt());

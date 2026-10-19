@@ -97,6 +97,7 @@ On startup, `RoleSeeder` creates USER/ADMIN roles, then `AdminSeeder` creates a 
 | POST   | `/organizations/{orgSlug}/timelines/{id}/scene/validate` | any member | Validation report of the scene |
 | GET    | `/organizations/{orgSlug}/timelines/{id}/show` | any member | `stocka-show` v2 package built server-side (404 no scene, 422 `timeline_shows.invalid` + issues) |
 | GET    | `/organizations/{orgSlug}/timelines/{id}/bundle` | any member | `.belen.zip` (`show.json` + `assets/` + `manifest.json`) streamed; 404 `timeline_shows.asset_not_found` |
+| POST   | `/player/heartbeat` | Public (`Authorization: Device <token>`, 120/min per IP) | Heartbeat of a registered belén player; 204 / 401 `devices.token_invalid` |
 
 ### Domain endpoints (under `/organizations/{orgId}/...`)
 
@@ -125,6 +126,11 @@ Org membership roles: `OWNER`, `MANAGER`, `USER`, `SPECTATOR` (read-only).
 | GET    | `/pieces/export(?format=csv\|xlsx&filters)`   | any member                | Bulk export (CSV/XLSX), filtered |
 | GET    | `/pieces/import/template(?format=)`           | OWNER, MANAGER, USER      | Empty header-only template       |
 | POST   | `/pieces/import(?format=&mode=&dryRun=)`      | OWNER, MANAGER, USER      | Bulk import; dry-run preview then all-or-nothing commit |
+| GET    | `/devices`                                    | any member (admin-owned org) | Registered players with `online` + last heartbeat |
+| POST   | `/devices`                                    | OWNER, MANAGER (admin-owned org) | Register a player; returns the heartbeat token once |
+| PATCH  | `/devices/{id}`                               | OWNER, MANAGER            | Rename (409 `devices.name_taken`) |
+| DELETE | `/devices/{id}`                               | OWNER, MANAGER            | Soft-delete (name renamed `::deleted::<id>`) |
+| POST   | `/devices/{id}/rotate-token`                  | OWNER, MANAGER            | New heartbeat token; the old one dies immediately |
 
 Ports (`/organizations/{orgId}/ports`, gated to admin-owned orgs) carry a closed `kind` from the
 output catalog (`relay`, `led_strip`, `led_segment`, `motor`, `audio`, `video`, `button`) plus a
@@ -132,6 +138,19 @@ per-kind `config` validated by `PortConfigValidator`; piece types may declare a 
 case their actions are validated against the catalog by `ActionCatalogValidator`. The catalog JSON
 is a byte-identical copy of `rpi4-system/contract/catalog.json` (also copied to
 `timeline-editor/app/data/catalog.json`): change it there first.
+
+Devices (`modules/devices/`, `/organizations/{orgSlug}/devices`, same gating as ports) are the Raspberry Pi
+players of an organization. Registering one returns a heartbeat token (`bht_` + 32 random bytes base64url)
+exactly once; the row keeps only its sha256 (`token_hash`, unique) and first 8 chars (`token_prefix`). The Pi,
+when it has Internet, posts `POST /player/heartbeat` (public, rate-limited `player.heartbeat.ip` 120/min) with
+`Authorization: Device <token>` and `{deviceId, state, showHash?, showName?, overrides?, version?, uptimeS?,
+netMode?, error?}`; `DeviceService.recordHeartbeat` binds `device_id` on the first call (a different uuid
+later is accepted and logged at WARN), stores every `last_*` column and `last_ip` from `ClientIpResolver`.
+`online` = `lastSeenAt` within `stocka.devices.online-window` (`DEVICES_ONLINE_WINDOW`, default `PT5M`);
+`heartbeatUrl` in the creation response comes from `stocka.devices.heartbeat-base-url`
+(`DEVICES_HEARTBEAT_BASE_URL`, defaults to `stocka.oauth.issuer`; blank derives it from the request). The
+device token is never an API credential: `JwtAuthenticationFilter` only reads `Bearer` and the REST chain
+rejects it with 401. Table `devices` (`V24__devices.sql`), soft-deleted with the org cascade.
 
 Import/export share the piece column schema (fixed columns + one column per
 attribute, named `"<Type> / <DisplayName>"` or `"Org / <DisplayName>"`).
