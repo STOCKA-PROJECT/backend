@@ -27,7 +27,7 @@ class ShowValidatorTest {
     private final OutputCatalog catalog = new OutputCatalog();
     private final Map<String, Map<String, Object>> hardware = new LinkedHashMap<>();
     private final List<ShowEvent> timeline = new ArrayList<>();
-    private ShowAssets assets = new ShowAssets(List.of(), List.of());
+    private ShowAssets assets = new ShowAssets(List.of());
     private long durationMs = 122000;
 
     private void port(String name, Object... kv) {
@@ -71,8 +71,134 @@ class ShowValidatorTest {
                 Map<String, Object> params = json.convertValue(ev.get("params"), Map.class);
                 events.add(new ShowEvent(ev.get("t").asLong(), ev.get("target").asText(), ev.get("action").asText(), params));
             }
-            ShowAssets declared = new ShowAssets(List.of("nature.mp3"), List.of());
+            ShowAssets declared = new ShowAssets(List.of("nature.mp3"));
             assertThat(ShowValidator.validate(hw, events, "rpi4b", 122000, declared, catalog)).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("relays and expanders (contract v3)")
+    class RelaysAndExpanders {
+
+        private void expander(String name, int address) {
+            port(name, "kind", "gpio_expander", "chip", "mcp23017", "bus", 1, "address", address, "activeLow", true);
+        }
+
+        @Test
+        @DisplayName("a relay takes a pin or expander + channel, never both")
+        void pinXorExpander() {
+            expander("exp1", 32);
+            port("A", "kind", "relay", "pin", 26, "expander", "exp1", "channel", 1);
+            port("B", "kind", "relay", "expander", "exp1", "channel", 2);
+            port("C", "kind", "relay");
+            port("D", "kind", "relay", "pin", 24, "channel", 3);
+            port("E", "kind", "relay", "expander", "exp1");
+            port("F", "kind", "relay", "expander", "exp1", "channel", 4, "activeLow", true);
+            event(0, "A", "turn_on");
+            event(0, "B", "turn_on");
+            event(0, "C", "turn_on");
+            event(0, "D", "turn_on");
+            event(0, "E", "turn_on");
+            event(0, "F", "turn_on");
+            List<ShowIssue> issues = validate();
+            assertThat(errors()).containsOnly("E_CONFIG_INVALID");
+            assertThat(issues.stream().filter(i -> "E_CONFIG_INVALID".equals(i.code())).map(ShowIssue::port).toList())
+                    .containsExactly("A", "C", "D", "E", "F");
+        }
+
+        @Test
+        @DisplayName("a native relay may be active-low and still counts its pin")
+        void activeLowNative() {
+            port("A", "kind", "relay", "pin", 26, "activeLow", true);
+            port("B", "kind", "relay", "pin", 26);
+            event(0, "A", "pulse", "duration", 0.5);
+            event(0, "B", "turn_on");
+            assertThat(errors()).containsExactly("E_PIN_DUPLICATE");
+        }
+
+        @Test
+        @DisplayName("the expander must exist as a gpio_expander and each channel takes one relay")
+        void expanderRefAndChannels() {
+            expander("exp1", 32);
+            port("Strip", "kind", "led_strip", "pin", 13, "dma", 10, "channel", 1, "length", 10);
+            port("A", "kind", "relay", "expander", "exp9", "channel", 1);
+            port("B", "kind", "relay", "expander", "Strip", "channel", 1);
+            port("C", "kind", "relay", "expander", "exp1", "channel", 3);
+            port("D", "kind", "relay", "expander", "exp1", "channel", 3);
+            for (String n : List.of("A", "B", "C", "D")) event(0, n, "turn_on");
+            assertThat(errors()).containsExactly("E_EXPANDER_MISSING", "E_EXPANDER_MISSING", "E_EXPANDER_CHANNEL_DUPLICATE");
+        }
+
+        @Test
+        @DisplayName("I2C addresses are unique per bus and GPIO 2/3 become reserved")
+        void addressesAndI2cPins() {
+            expander("exp1", 32);
+            expander("exp2", 32);
+            port("exp3", "kind", "gpio_expander", "chip", "mcp23017", "bus", 0, "address", 32);
+            port("Sembra", "kind", "relay", "pin", 2);
+            event(0, "Sembra", "turn_on");
+            assertThat(errors()).containsExactly("E_PIN_RESERVED", "E_I2C_ADDRESS_DUPLICATE");
+            assertThat(validate().stream().filter(i -> "E_PIN_RESERVED".equals(i.code())).findFirst().orElseThrow().message()).contains("I2C");
+        }
+
+        @Test
+        @DisplayName("without an expander GPIO 2/3 are only a pull-up warning; expanders are not unused ports")
+        void withoutExpander() {
+            port("Sembra", "kind", "relay", "pin", 3);
+            event(0, "Sembra", "turn_on");
+            assertThat(errors()).isEmpty();
+            assertThat(warnings()).containsExactly("W_PIN_PULLUP");
+            expander("exp1", 32);
+            port("Pou", "kind", "relay", "expander", "exp1", "channel", 0);
+            event(1, "Pou", "pulse", "duration", 1);
+            assertThat(warnings()).doesNotContain("W_PORT_UNUSED");
+        }
+    }
+
+    @Nested
+    @DisplayName("moving heads and motor (contract v3)")
+    class HeadsAndMotor {
+
+        @Test
+        @DisplayName("a head must fit the universe and not overlap another")
+        void dmxRanges() {
+            port("F1", "kind", "moving_head", "profile", "varytec-hero-wash-712z", "address", 1);
+            port("F2", "kind", "moving_head", "profile", "varytec-hero-wash-712z", "address", 15);
+            port("F3", "kind", "moving_head", "profile", "varytec-hero-wash-712z", "address", 500);
+            port("F4", "kind", "moving_head", "profile", "varytec-hero-wash-712z", "address", 498);
+            for (String n : List.of("F1", "F2", "F3", "F4")) event(0, n, "set", "intensity", 50);
+            assertThat(errors()).containsExactly("E_DMX_ADDRESS_OVERLAP", "E_DMX_ADDRESS_RANGE");
+        }
+
+        @Test
+        @DisplayName("set takes physical units within the catalog ranges; an empty cue warns")
+        void cues() {
+            port("F", "kind", "moving_head", "profile", "varytec-hero-wash-712z", "address", 1);
+            event(0, "F", "set", "pan", 270, "tilt", 95, "zoom", 15, "color", List.of(255L, 160L, 60L), "white", 40L, "intensity", 80, "time", 2);
+            event(1000, "F", "blackout", "time", 1);
+            assertThat(errors()).isEmpty();
+            event(2000, "F", "set", "time", 2);
+            assertThat(warnings()).containsExactly("W_EMPTY_CUE");
+            event(3000, "F", "set", "pan", 541);
+            event(4000, "F", "set", "zoom", 5);
+            event(5000, "F", "set", "strobe", 1);
+            assertThat(errors()).containsExactly("E_PARAM_TYPE", "E_PARAM_TYPE", "E_PARAM_UNKNOWN");
+        }
+
+        @Test
+        @DisplayName("motors need maxUpTime; start_up cannot exceed it and a short one warns")
+        void motor() {
+            port("Angel", "kind", "motor", "pinR", 17, "pinL", 27, "sensorPin", 22, "downTime", 18);
+            event(0, "Angel", "start_down");
+            assertThat(errors()).containsExactly("E_CONFIG_INVALID");
+            hardware.get("Angel").put("maxUpTime", 24);
+            assertThat(errors()).isEmpty();
+            event(1000, "Angel", "start_up", "time", 25);
+            assertThat(errors()).containsExactly("E_MOTOR_UP_TIME");
+            timeline.remove(timeline.size() - 1);
+            hardware.get("Angel").put("maxUpTime", 10);
+            assertThat(errors()).isEmpty();
+            assertThat(warnings()).contains("W_MOTOR_UP_TIME_SHORT");
         }
     }
 
@@ -163,7 +289,7 @@ class ShowValidatorTest {
         @DisplayName("a pin used twice is an error, motor pins included")
         void duplicatePins() {
             port("A", "kind", "relay", "pin", 26);
-            port("M", "kind", "motor", "pinR", 26, "pinL", 27, "sensorPin", 25, "downTime", 15);
+            port("M", "kind", "motor", "pinR", 26, "pinL", 27, "sensorPin", 25, "downTime", 15, "maxUpTime", 20);
             event(0, "A", "turn_on");
             event(0, "M", "stop");
             List<ShowIssue> issues = validate();
@@ -174,7 +300,7 @@ class ShowValidatorTest {
         @Test
         @DisplayName("a motor cannot repeat a pin among its own three")
         void motorPins() {
-            port("M", "kind", "motor", "pinR", 26, "pinL", 26, "sensorPin", 25, "downTime", 15);
+            port("M", "kind", "motor", "pinR", 26, "pinL", 26, "sensorPin", 25, "downTime", 15, "maxUpTime", 20);
             event(0, "M", "stop");
             // The repeated pin is also, by construction, a pin used by two outputs of the board.
             assertThat(errors()).containsExactly("E_CONFIG_INVALID", "E_PIN_DUPLICATE");
@@ -279,7 +405,7 @@ class ShowValidatorTest {
             event(0, "Audio", "play", "audio_name", "night.mp3");
             event(0, "Audio", "play");
             event(0, "Seg", "animate", "animation_type", "fade", "color", List.of(0, 0, 0), "density", 2);
-            assets = new ShowAssets(List.of("nature.mp3"), List.of());
+            assets = new ShowAssets(List.of("nature.mp3"));
             assertThat(errors()).containsExactly("E_PARAM_UNKNOWN", "E_PARAM_TYPE", "E_ASSET_UNLISTED", "E_PARAM_REQUIRED",
                     "E_ANIMATION_PARAM");
             assertThat(warnings()).containsExactly("W_FADE_FROM_BLACK", "W_ASSET_UNUSED");
@@ -322,7 +448,7 @@ class ShowValidatorTest {
         }
 
         @Test
-        @DisplayName("the legacy player accepts a single motor, audio and video port")
+        @DisplayName("the legacy player accepts a single motor and audio port")
         void singletons() {
             port("A1", "kind", "audio");
             port("A2", "kind", "audio");
@@ -336,7 +462,7 @@ class ShowValidatorTest {
         @Test
         @DisplayName("declared assets nobody uses warn")
         void unusedAssets() {
-            assets = new ShowAssets(List.of("a.mp3"), List.of("v.mp4"));
+            assets = new ShowAssets(List.of("a.mp3", "b.mp3"));
             assertThat(warnings()).containsExactly("W_ASSET_UNUSED", "W_ASSET_UNUSED");
         }
     }

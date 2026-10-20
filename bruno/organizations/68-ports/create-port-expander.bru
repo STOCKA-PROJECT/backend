@@ -1,0 +1,39 @@
+meta {
+  name: Create Port (gpio_expander)
+  type: http
+  seq: 12
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/ports
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "exp1",
+    "kind": "gpio_expander",
+    "config": {
+      "chip": "mcp23017",
+      "bus": 1,
+      "address": 32,
+      "activeLow": true
+    }
+  }
+}
+
+docs {
+  Expansor MCP23017 por I2C (16 canales para relés). Infraestructura: sin tipo de pieza ni pin. `address` es la
+  dirección I2C 0x20–0x27 (32–39), única por bus; `activeLow` describe la placa de relés conectada. Mientras exista
+  un expansor, los GPIO 2 y 3 quedan reservados (ports.i2c_pin_reserved). No se puede borrar con relés que lo usen
+  (ports.expander_in_use); renombrarlo actualiza esos relés.
+}

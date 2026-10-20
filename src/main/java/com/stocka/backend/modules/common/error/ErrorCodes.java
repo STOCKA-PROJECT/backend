@@ -122,6 +122,17 @@ public final class ErrorCodes {
     public static final String PORTS_SEGMENT_OUT_OF_RANGE = "ports.segment_out_of_range";
     public static final String PORTS_STRIP_SHRINK_BREAKS_SEGMENT = "ports.strip_shrink_breaks_segment";
     public static final String PORTS_STRIP_IN_USE = "ports.strip_in_use";
+    public static final String PORTS_RELAY_PIN_OR_EXPANDER = "ports.relay_pin_or_expander";
+    public static final String PORTS_RELAY_CHANNEL_REQUIRED = "ports.relay_channel_required";
+    public static final String PORTS_RELAY_CHANNEL_WITHOUT_EXPANDER = "ports.relay_channel_without_expander";
+    public static final String PORTS_RELAY_ACTIVE_LOW_ON_EXPANDER = "ports.relay_active_low_on_expander";
+    public static final String PORTS_EXPANDER_NOT_FOUND = "ports.expander_not_found";
+    public static final String PORTS_EXPANDER_CHANNEL_CONFLICT = "ports.expander_channel_conflict";
+    public static final String PORTS_EXPANDER_ADDRESS_CONFLICT = "ports.expander_address_conflict";
+    public static final String PORTS_EXPANDER_IN_USE = "ports.expander_in_use";
+    public static final String PORTS_I2C_PIN_RESERVED = "ports.i2c_pin_reserved";
+    public static final String PORTS_DMX_ADDRESS_RANGE = "ports.dmx_address_range";
+    public static final String PORTS_DMX_ADDRESS_CONFLICT = "ports.dmx_address_conflict";
 
     // ---- devices (belén players + heartbeat) -----------------------------
     public static final String DEVICES_NOT_FOUND = "devices.not_found";

@@ -7,7 +7,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.stocka.backend.modules.common.schema.Param;
 
 /**
- * The {@code stocka-show} v2 package: what the Raspberry Pi player executes. Format and rules are
+ * The {@code stocka-show} v3 package: what the Raspberry Pi player executes. Format and rules are
  * documented in {@code rpi4-system/contract/README.md} and checked by {@link ShowValidator}; the
  * editor builds the very same structure in {@code utils/showPackage.ts}.
  *
@@ -23,7 +23,7 @@ import com.stocka.backend.modules.common.schema.Param;
  */
 public record ShowPackage(
         @Param("Always stocka-show") String format,
-        @Param("Always 2") int version,
+        @Param("Always 3") int version,
         @Param("Name, origin and hash of the show") ShowMeta meta,
         @Param("Board id, e.g. rpi4b") String board,
         @Param("How the show repeats") ShowMode mode,
@@ -35,7 +35,7 @@ public record ShowPackage(
     /** Package format id. */
     public static final String FORMAT = "stocka-show";
     /** Package format version. */
-    public static final int VERSION = 2;
+    public static final int VERSION = 3;
 
     /**
      * Metadata about the export.
@@ -86,8 +86,7 @@ public record ShowPackage(
      * Media files the events reference, by asset name.
      *
      * @param audio audio asset names
-     * @param video video asset names
      */
-    public record ShowAssets(@Param("Audio asset names") List<String> audio, @Param("Video asset names") List<String> video) {
+    public record ShowAssets(@Param("Audio asset names") List<String> audio) {
     }
 }

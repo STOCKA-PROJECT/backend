@@ -130,7 +130,7 @@ class ShowPackageBuilderTest {
             assertThat(pkg.mode()).isEqualTo(new ShowMode("once", 1));
             assertThat(pkg.board()).isEqualTo("rpi4b");
             assertThat(pkg.format()).isEqualTo("stocka-show");
-            assertThat(pkg.version()).isEqualTo(2);
+            assertThat(pkg.version()).isEqualTo(3);
             assertThat(pkg.meta().assets()).isNull();
             ShowPackage pulse = builder.build(Belen2026Fixture.input().withMode(new ShowMode("pulse", 3))).pkg();
             assertThat(pulse.mode()).isEqualTo(new ShowMode("pulse", 3));
@@ -354,12 +354,12 @@ class ShowPackageBuilderTest {
             List<Item> items = items();
             replace(items, i -> i.id().equals("i-focos"), i -> withPorts(i, 1, 6));
             Assembled ok = builder.assemble(Belen2026Fixture.input(doc(items, clips())));
-            assertThat(ok.timeline().stream().filter(e -> e.target().equals("Fondo1") && e.action().equals("focoOn"))).isEmpty();
+            assertThat(ok.timeline().stream().filter(e -> e.target().equals("Fondo1") && e.action().equals("turn_on"))).isEmpty();
             assertThat(errors(ok)).isEmpty();
             replace(items, i -> i.id().equals("i-focos"), i -> withPorts(i, 6));
             Assembled bad = builder.assemble(Belen2026Fixture.input(doc(items, clips())));
             assertThat(codes(errors(bad))).contains("E_NO_PORT");
-            assertThat(errors(bad).get(0).message()).contains("Focos").contains("Encendre focus");
+            assertThat(errors(bad).get(0).message()).contains("Focos").contains("«Encendre»");
             assertThat(errors(bad).get(0).clipId()).isEqualTo("c01");
         }
 
@@ -499,9 +499,9 @@ class ShowPackageBuilderTest {
         @DisplayName("an action the port's kind does not know is E_ACTION_UNKNOWN")
         void actionUnknown() {
             StubSceneContext ctx = Belen2026Fixture.context()
-                    .action(11, "fill", "Omplir", Belen2026Fixture.RELAY_TYPE, "Tipus 1", "relay");
+                    .action(13, "fill", "Omplir", Belen2026Fixture.RELAY_TYPE, "Tipus 1", "relay");
             Assembled assembled = builder.assemble(ShowBuildInput.of(Belen2026Fixture.document(), ctx, Belen2026Fixture.ports()));
-            assertThat(codes(errors(assembled))).containsExactly("E_ACTION_UNKNOWN");
+            assertThat(codes(errors(assembled))).containsOnly("E_ACTION_UNKNOWN");
             assertThat(errors(assembled).get(0).message()).contains("«fill»").contains("relay").contains("Focos");
         }
 
@@ -606,7 +606,6 @@ class ShowPackageBuilderTest {
             clips.add(Belen2026Fixture.clip("c98", "i-audio", 31, 61000, 1000, Map.of("audio_name", "night.mp3")));
             Assembled assembled = builder.assemble(Belen2026Fixture.input(doc(items(), clips)));
             assertThat(assembled.assets().audio()).containsExactly("nature.mp3", "night.mp3");
-            assertThat(assembled.assets().video()).isEmpty();
         }
 
         @Test

@@ -48,7 +48,9 @@ organizaciones cuyo owner es ADMIN global):
 2. `organizations/60-piece-types/create-piece-type-with-kind` — tipo con `kind` (p. ej. `led_segment`); captura `pieceTypeId`.
 3. `organizations/68-ports/create-port-led-strip` — tira (infraestructura, sin tipo): pin WS281x + `config.dma/channel/length`.
 4. `organizations/68-ports/create-port-led-segment` — segmento sobre la tira por nombre, `first/last` dentro de la tira.
-5. `organizations/68-ports/create-port` (relé), `create-port-motor`, `create-port-audio`, `create-port-button` — un ejemplo por kind.
+5. `organizations/68-ports/create-port` (relé), `create-port-motor` (con `maxUpTime`), `create-port-audio`, `create-port-button`,
+   `create-port-expander` (MCP23017, infraestructura), `create-port-relay-expander` (relé por `expander` + `channel`),
+   `create-port-moving-head` (cabezal DMX: `profile` + `address`) — un ejemplo por kind.
 6. `organizations/62-piece-type-actions/create-action` — acción `animate` validada contra el catálogo del kind del tipo.
 7. Rechazos: `create-port-kind-mismatch`, `create-port-segment-out-of-range`, `create-port-pin-conflict`,
    `create-action-not-in-catalog`, `create-action-duration-mismatch`, `update-piece-type-kind` sobre un tipo con acciones incompatibles.
@@ -152,6 +154,9 @@ Campos:
 | `ports.piece_type_required` / `piece_type_kind_mismatch` | 400 | tipo obligatorio salvo infraestructura; su kind debe coincidir |
 | `ports.pin_invalid` / `pin_reserved` / `pin_not_allowed` / `pin_conflict` | 400 / 400 / 400 / 409 | GPIO fuera de rango, reservado (0, 1), kind sin pin, pin ya usado (incluidos los del motor) |
 | `ports.config_unknown_key` / `config_missing_key` / `config_type_mismatch` / `config_out_of_range` / `motor_pins_not_distinct` | 400 | config validada por kind contra el catálogo |
+| `ports.relay_pin_or_expander` / `relay_channel_required` / `relay_channel_without_expander` / `relay_active_low_on_expander` | 400 | un relé lleva pin **o** expander+channel; `activeLow` solo en relés nativos |
+| `ports.expander_not_found` / `expander_channel_conflict` / `expander_address_conflict` / `expander_in_use` / `i2c_pin_reserved` | 400 / 409 / 409 / 409 / 400-409 | expansor inexistente, canal o dirección I2C repetidos, borrado con relés, GPIO 2/3 con expansor |
+| `ports.dmx_address_range` / `dmx_address_conflict` | 400 / 409 | cabezal fuera del universo DMX o solapado con otro |
 | `ports.strip_pin_unsupported` / `strip_channel_mismatch` | 400 | tira en pin no WS281x o canal incoherente |
 | `ports.segment_strip_not_found` / `segment_out_of_range` / `strip_shrink_breaks_segment` / `strip_in_use` | 400 / 400 / 400 / 409 | segmentos y tiras |
 | `devices.not_found`                           | 404    | id fuera de la organización    |

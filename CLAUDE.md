@@ -95,7 +95,7 @@ On startup, `RoleSeeder` creates USER/ADMIN roles, then `AdminSeeder` creates a 
 | POST   | `/organizations/{orgSlug}/timelines/{id}/scene/ops` | OWNER, MANAGER, USER | Apply scene operations atomically (see `SceneOp`) |
 | GET    | `/organizations/{orgSlug}/timelines/{id}/scene/summary` | any member | Compact scene view with validation findings |
 | POST   | `/organizations/{orgSlug}/timelines/{id}/scene/validate` | any member | Validation report of the scene |
-| GET    | `/organizations/{orgSlug}/timelines/{id}/show` | any member | `stocka-show` v2 package built server-side (404 no scene, 422 `timeline_shows.invalid` + issues) |
+| GET    | `/organizations/{orgSlug}/timelines/{id}/show` | any member | `stocka-show` v3 package built server-side (404 no scene, 422 `timeline_shows.invalid` + issues) |
 | GET    | `/organizations/{orgSlug}/timelines/{id}/bundle` | any member | `.belen.zip` (`show.json` + `assets/` + `manifest.json`) streamed; 404 `timeline_shows.asset_not_found` |
 | POST   | `/player/heartbeat` | Public (`Authorization: Device <token>`, 120/min per IP) | Heartbeat of a registered belén player; 204 / 401 `devices.token_invalid` |
 
@@ -133,8 +133,15 @@ Org membership roles: `OWNER`, `MANAGER`, `USER`, `SPECTATOR` (read-only).
 | POST   | `/devices/{id}/rotate-token`                  | OWNER, MANAGER            | New heartbeat token; the old one dies immediately |
 
 Ports (`/organizations/{orgId}/ports`, gated to admin-owned orgs) carry a closed `kind` from the
-output catalog (`relay`, `led_strip`, `led_segment`, `motor`, `audio`, `video`, `button`) plus a
-per-kind `config` validated by `PortConfigValidator`; piece types may declare a `kind`, in which
+output catalog v3 (`relay`, `gpio_expander`, `led_strip`, `led_segment`, `motor`, `audio`, `moving_head`,
+`button`; the projector kind `video` disappeared on 2026-10-20, migration `V25__contract_v3.sql` cleans its rows) plus a
+per-kind `config` validated by `PortConfigValidator`. A relay takes either `pin` (native GPIO, optional `activeLow`)
+or `expander` + `channel` (0–15) naming a `gpio_expander` port (MCP23017: `chip`, `bus`, `address` 0x20–0x27,
+`activeLow`), mirroring strips and segments: channel unique per expander, address unique per bus, rename cascades,
+delete refused while relays depend on it (`ports.expander_in_use`), and GPIO 2/3 reserved for I2C while an expander
+exists (`ports.i2c_pin_reserved`). Motors need `maxUpTime`. Moving heads (`moving_head`: `profile`
+`varytec-hero-wash-712z`, `address` 1–512) must fit `profiles.moving_head.<id>.channels` inside the 512-channel
+universe without overlapping (`ports.dmx_address_range` / `ports.dmx_address_conflict`); piece types may declare a `kind`, in which
 case their actions are validated against the catalog by `ActionCatalogValidator`. The catalog JSON
 is a byte-identical copy of `rpi4-system/contract/catalog.json` (also copied to
 `timeline-editor/app/data/catalog.json`): change it there first.

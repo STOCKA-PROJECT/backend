@@ -38,7 +38,7 @@ public final class Belen2026Fixture {
 
     public static final String TIMELINE_NAME = "Pessebre 2026 (mostra)";
     public static final String EXPORTED_AT = "2026-10-12T00:00:00.000Z";
-    public static final String HASH = "sha256:6e46887ddeaebe56360f7b617a91dbd4e0a5c71ea814f3d27d2e2532a9eb173f";
+    public static final String HASH = "sha256:48a434c027e3fe7420d094bb5cbf119924f1e0c93b385cddd9766d808a00c92d";
     public static final String SAMPLE_RESOURCE = "/show/belen-2026.show.json";
 
     private Belen2026Fixture() {
@@ -75,9 +75,7 @@ public final class Belen2026Fixture {
         for (ShowPort p : ports()) {
             ctx.port(p.id(), p.name(), p.pieceTypeId(), p.kind());
         }
-        ctx.action(11, "focoOn", "Encendre focus", RELAY_TYPE, "Tipus 1", "relay")
-                .action(12, "focoOff", "Apagar focus", RELAY_TYPE, "Tipus 1", "relay")
-                .action(13, "turn_on", "Encendre", RELAY_TYPE, "Tipus 1", "relay")
+        ctx.action(13, "turn_on", "Encendre", RELAY_TYPE, "Tipus 1", "relay")
                 .action(14, "turn_off", "Apagar", RELAY_TYPE, "Tipus 1", "relay")
                 .action(41, "turn_on", "Encendre un temps", TIMED_RELAY_TYPE, "Tipus 4", "relay",
                         param("time", AttributeType.DECIMAL, false, true, null, true))
@@ -121,14 +119,14 @@ public final class Belen2026Fixture {
     /** @return clips in the order the sample lists its events, so stable sorting reproduces that order */
     public static List<Clip> clips() {
         List<Clip> out = new ArrayList<>();
-        out.add(clip("c01", "i-focos", 11, 0, 1000, Map.of()));
+        out.add(clip("c01", "i-focos", 13, 0, 1000, Map.of()));
         out.add(clip("c02", "i-fondo1", 21, 0, 1000, Map.of("color", "[255,50,0]")));
         out.add(clip("c03", "i-fondo2", 21, 0, 1000, Map.of("color", "[255,50,0]")));
         out.add(clip("c04", "i-casasimple", 21, 0, 1000, Map.of("color", "[255,50,0]")));
         out.add(clip("c05", "i-casadoble", 21, 0, 1000, Map.of("color", "[50,16,0]")));
         out.add(clip("c06", "i-audio", 31, 0, 1000, Map.of("audio_name", "nature.mp3")));
         out.add(clip("c07", "i-sembra", 13, 7000, 1000, Map.of()));
-        out.add(clip("c08", "i-focos", 12, 20000, 1000, Map.of()));
+        out.add(clip("c08", "i-focos", 14, 20000, 1000, Map.of()));
         out.add(clip("c09", "i-sembra", 14, 23000, 1000, Map.of()));
         out.add(clip("c10", "i-casasimple", 22, 24000, 3000, fade("[0,0,0]", "[255,50,0]")));
         out.add(clip("c11", "i-casadoble", 22, 24000, 3000, fade("[0,0,0]", "[50,16,0]")));
@@ -138,7 +136,7 @@ public final class Belen2026Fixture {
         out.add(clip("c15", "i-llumse", 41, 30000, 21000, Map.of()));
         out.add(clip("c16", "i-sembra", 14, 118000, 1000, Map.of()));
         out.add(clip("c17", "i-audio", 32, 118000, 1000, Map.of()));
-        out.add(clip("c18", "i-focos", 12, 118000, 1000, Map.of()));
+        out.add(clip("c18", "i-focos", 14, 118000, 1000, Map.of()));
         out.add(clip("c19", "i-casasimple", 22, 118000, 4000, fade("[0,0,0]", "[255,50,0]")));
         out.add(clip("c20", "i-casadoble", 22, 118000, 4000, fade("[0,0,0]", "[50,16,0]")));
         out.add(clip("c21", "i-fondo1", 22, 118000, 4000, fade("[0,0,0]", "[255,50,0]")));

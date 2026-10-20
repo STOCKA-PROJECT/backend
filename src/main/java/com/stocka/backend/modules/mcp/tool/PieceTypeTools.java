@@ -97,7 +97,7 @@ public class PieceTypeTools implements ToolSource {
     public record CreateTypeInput(
             @Param(value = "Organization slug", required = true) String org,
             @Param(value = "Type name, unique in the organization", required = true) String name,
-            @Param("Hardware output kind (relay, led_segment, motor, audio, video) when pieces of this type are driven by the player; omit for plain inventory") String kind,
+            @Param("Hardware output kind (relay, led_strip, led_segment, motor, audio, moving_head) when pieces of this type are driven by the player; omit for plain inventory") String kind,
             @Param("Initial attributes") List<AttributeInput> attributes) {
     }
 

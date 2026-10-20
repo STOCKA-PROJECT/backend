@@ -122,8 +122,8 @@ public class ShowService {
             pkg.meta().assets().forEach(ref -> refs.put(ref.kind() + "/" + ref.name(), ref));
         }
         List<ShowBundle.BundleAsset> assets = new ArrayList<>();
-        for (String kind : List.of("audio", "video")) {
-            List<String> names = "audio".equals(kind) ? pkg.assets().audio() : pkg.assets().video();
+        for (String kind : List.of("audio")) {
+            List<String> names = pkg.assets().audio();
             for (String name : names) {
                 ShowAssetRef ref = refs.get(kind + "/" + name);
                 PieceAttachment attachment = ref == null ? null : attachments.findById(ref.attachmentId())

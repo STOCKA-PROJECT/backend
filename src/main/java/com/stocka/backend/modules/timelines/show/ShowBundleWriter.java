@@ -23,7 +23,7 @@ import com.stocka.backend.modules.storage.R2Service;
 /**
  * Writes a {@code .belen.zip} ({@code stocka-bundle} v1, see
  * {@code rpi4-system/contract/bundle/bundle.schema.json}): {@code show.json} deflated, every asset
- * stored as is (audio and video are already compressed) and {@code manifest.json} last, with the
+ * stored as is (audio is already compressed) and {@code manifest.json} last, with the
  * SHA-256 and size of every file so the Raspberry Pi can verify the bundle offline. Zip readers
  * locate entries by name, so writing the manifest last costs nothing and lets the assets be read
  * from storage once.

@@ -154,7 +154,7 @@ class ShowCanonicalJsonTest {
             Map<String, Object> input = ShowCanonicalJson.hashInput(Belen2026Fixture.sample());
             assertThat(input.keySet()).containsExactly("board", "mode", "hardware", "timeline", "durationMs", "assets");
             String text = ShowCanonicalJson.canonical(input);
-            assertThat(text).startsWith("{\"assets\":{\"audio\":[\"nature.mp3\"],\"video\":[]},\"board\":\"rpi4b\"");
+            assertThat(text).startsWith("{\"assets\":{\"audio\":[\"nature.mp3\"]},\"board\":\"rpi4b\"");
             assertThat(text).contains("\"duration\":10,");
             assertThat(text.replaceAll("\"[^\"]*\"", "")).doesNotContainPattern("\\s");
         }

@@ -28,7 +28,7 @@ import com.stocka.backend.modules.timelines.show.ShowPackage.ShowMeta;
 import com.stocka.backend.modules.timelines.show.StripLayout.StripSlot;
 
 /**
- * Builds the {@code stocka-show} v2 package from a scene. The execution plan resolves clips into
+ * Builds the {@code stocka-show} v3 package from a scene. The execution plan resolves clips into
  * steps per board item; here each step becomes one event per port of the item that belongs to the
  * piece type owning the action, with parameters coerced to the catalog types. Pieces on a LED strip
  * become segments of it. The result is validated with the device's rules and hashed canonically, so
@@ -149,7 +149,6 @@ public class ShowPackageBuilder {
         }
 
         Set<String> audioAssets = new LinkedHashSet<>();
-        Set<String> videoAssets = new LinkedHashSet<>();
         Map<String, ShowAssetRef> assetRefs = new LinkedHashMap<>();
         List<ShowEvent> events = new ArrayList<>();
         Map<String, ExecutionItem> itemById = new HashMap<>();
@@ -231,7 +230,7 @@ public class ShowPackageBuilder {
                     if (res.omitted()) continue;
                     params.put(name, res.value());
                     if (pspec.asset() != null && res.value() instanceof String assetName) {
-                        ("audio".equals(pspec.asset()) ? audioAssets : videoAssets).add(assetName);
+                        audioAssets.add(assetName);
                         if ("audio".equals(pspec.asset()) && input.audioByPiece() != null
                                 && item.pieceId() != null && input.audioByPiece().containsKey(item.pieceId())) {
                             List<ShowAudioFile> files = input.audioByPiece().getOrDefault(item.pieceId(), List.of());
@@ -275,7 +274,7 @@ public class ShowPackageBuilder {
         List<ShowEvent> timeline = new ArrayList<>(events);
         timeline.sort((a, b) -> Long.compare(a.t(), b.t()));
 
-        ShowAssets assets = new ShowAssets(new ArrayList<>(audioAssets), new ArrayList<>(videoAssets));
+        ShowAssets assets = new ShowAssets(new ArrayList<>(audioAssets));
         issues.addAll(ShowValidator.validate(hardware, timeline, input.board(), doc.durationMs(), assets, catalog));
         return new Assembled(hardware, timeline, assets, issues, new ArrayList<>(assetRefs.values()));
     }

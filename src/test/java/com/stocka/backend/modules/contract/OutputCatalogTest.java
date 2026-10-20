@@ -36,7 +36,7 @@ class OutputCatalogTest {
         @Test
         @DisplayName("reads the bundled catalog with its version")
         void should_loadBundledCatalog() {
-            assertThat(catalog.version()).isEqualTo(2);
+            assertThat(catalog.version()).isEqualTo(3);
             assertThat(catalog.raw().path("format").asText()).isEqualTo("stocka-catalog");
         }
 
@@ -66,7 +66,7 @@ class OutputCatalogTest {
                     """;
             assertThatThrownBy(() -> new OutputCatalog(new ByteArrayResource(partial.getBytes(StandardCharsets.UTF_8))))
                     .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("led_strip");
+                    .hasMessageContaining("gpio_expander");
         }
 
         @Test
@@ -93,24 +93,60 @@ class OutputCatalogTest {
     class Kinds {
 
         @Test
-        @DisplayName("strips and the button are infrastructure; the rest belong to pieces")
+        @DisplayName("strips, expanders and the button are infrastructure; the rest belong to pieces")
         void should_flagInfrastructure() {
             assertThat(catalog.isInfrastructure(OutputKind.LED_STRIP)).isTrue();
+            assertThat(catalog.isInfrastructure(OutputKind.GPIO_EXPANDER)).isTrue();
             assertThat(catalog.isInfrastructure(OutputKind.BUTTON)).isTrue();
-            for (OutputKind k : List.of(OutputKind.RELAY, OutputKind.LED_SEGMENT, OutputKind.MOTOR, OutputKind.AUDIO, OutputKind.VIDEO)) {
+            for (OutputKind k : List.of(OutputKind.RELAY, OutputKind.LED_SEGMENT, OutputKind.MOTOR, OutputKind.AUDIO, OutputKind.MOVING_HEAD)) {
                 assertThat(catalog.isInfrastructure(k)).as(k.name()).isFalse();
             }
         }
 
         @Test
-        @DisplayName("relay, strip and button carry a pin; the rest do not")
+        @DisplayName("strip and button always carry a pin, the relay optionally, the rest never")
         void should_flagPin() {
+            assertThat(catalog.pinMode(OutputKind.LED_STRIP)).isEqualTo(PinMode.REQUIRED);
+            assertThat(catalog.pinMode(OutputKind.BUTTON)).isEqualTo(PinMode.REQUIRED);
+            assertThat(catalog.pinMode(OutputKind.RELAY)).isEqualTo(PinMode.OPTIONAL);
             assertThat(catalog.hasPin(OutputKind.RELAY)).isTrue();
             assertThat(catalog.hasPin(OutputKind.LED_STRIP)).isTrue();
             assertThat(catalog.hasPin(OutputKind.BUTTON)).isTrue();
-            for (OutputKind k : List.of(OutputKind.LED_SEGMENT, OutputKind.MOTOR, OutputKind.AUDIO, OutputKind.VIDEO)) {
+            for (OutputKind k : List.of(OutputKind.LED_SEGMENT, OutputKind.MOTOR, OutputKind.AUDIO, OutputKind.MOVING_HEAD, OutputKind.GPIO_EXPANDER)) {
                 assertThat(catalog.hasPin(k)).as(k.name()).isFalse();
+                assertThat(catalog.pinMode(k)).as(k.name()).isEqualTo(PinMode.NONE);
             }
+        }
+
+        @Test
+        @DisplayName("PinMode parses the catalog values")
+        void should_parsePinMode() {
+            assertThat(PinMode.parse(true)).isEqualTo(PinMode.REQUIRED);
+            assertThat(PinMode.parse("optional")).isEqualTo(PinMode.OPTIONAL);
+            assertThat(PinMode.parse(" Optional ")).isEqualTo(PinMode.OPTIONAL);
+            assertThat(PinMode.parse(false)).isEqualTo(PinMode.NONE);
+            assertThat(PinMode.parse(null)).isEqualTo(PinMode.NONE);
+            assertThat(PinMode.parse("yes")).isEqualTo(PinMode.NONE);
+            assertThat(PinMode.OPTIONAL.allowsPin()).isTrue();
+            assertThat(PinMode.NONE.allowsPin()).isFalse();
+        }
+
+        @Test
+        @DisplayName("describes the moving head profiles (channels and physical ranges)")
+        void should_exposeProfiles() {
+            FixtureProfile varytec = catalog.movingHeadProfile("varytec-hero-wash-712z").orElseThrow();
+            assertThat(varytec.channels()).isEqualTo(15);
+            assertThat(varytec.panMax()).isEqualTo(540);
+            assertThat(varytec.tiltMax()).isEqualTo(190);
+            assertThat(varytec.zoomMin()).isEqualTo(6);
+            assertThat(varytec.zoomMax()).isEqualTo(36);
+            assertThat(varytec.lastChannel(1)).isEqualTo(15);
+            assertThat(varytec.lastChannel(498)).isEqualTo(512);
+            assertThat(catalog.movingHeadProfiles()).containsOnlyKeys("varytec-hero-wash-712z");
+            assertThat(catalog.movingHeadProfile("generic")).isEmpty();
+            assertThat(catalog.movingHeadProfile(null)).isEmpty();
+            assertThat(catalog.configSchema(OutputKind.MOVING_HEAD).get("profile").values()).containsExactly("varytec-hero-wash-712z");
+            assertThat(catalog.configSchema(OutputKind.MOVING_HEAD).get("address").max()).isEqualByComparingTo(BigDecimal.valueOf(512));
         }
 
         @Test
@@ -129,8 +165,22 @@ class OutputCatalogTest {
             assertThat(segment.get("first").type()).isEqualTo(CatalogType.INT);
 
             assertThat(catalog.configSchema(OutputKind.MOTOR).get("downTime").required()).isTrue();
+            assertThat(catalog.configSchema(OutputKind.MOTOR).get("maxUpTime").required()).isTrue();
             assertThat(catalog.configSchema(OutputKind.AUDIO)).isEmpty();
-            assertThat(catalog.configSchema(OutputKind.RELAY)).isEmpty();
+            Map<String, CatalogParam> relay = catalog.configSchema(OutputKind.RELAY);
+            assertThat(relay.keySet()).containsExactly("expander", "channel", "activeLow");
+            assertThat(relay.get("expander").ref()).isEqualTo("gpio_expander");
+            assertThat(relay.get("expander").required()).isFalse();
+            assertThat(relay.get("channel").max()).isEqualByComparingTo(BigDecimal.valueOf(15));
+            assertThat(relay.get("activeLow").type()).isEqualTo(CatalogType.BOOL);
+            Map<String, CatalogParam> expander = catalog.configSchema(OutputKind.GPIO_EXPANDER);
+            assertThat(expander.keySet()).containsExactly("chip", "bus", "address", "activeLow");
+            assertThat(expander.get("chip").values()).containsExactly("mcp23017");
+            assertThat(expander.get("address").min()).isEqualByComparingTo(BigDecimal.valueOf(32));
+            assertThat(expander.get("address").max()).isEqualByComparingTo(BigDecimal.valueOf(39));
+            assertThat(catalog.kind(OutputKind.GPIO_EXPANDER).actions()).isEmpty();
+            assertThat(catalog.kind(OutputKind.RELAY).actions().keySet()).containsExactly("turn_on", "turn_off", "pulse");
+            assertThat(catalog.kind(OutputKind.MOVING_HEAD).actions().keySet()).containsExactly("set", "blackout");
         }
     }
 
@@ -242,15 +292,15 @@ class OutputCatalogTest {
     class DurationParam {
 
         @ParameterizedTest
-        @CsvSource({"RELAY,turn_on,time", "RELAY,turn_off,time", "LED_SEGMENT,animate,duration",
-                "MOTOR,start_up,time", "MOTOR,start_down,time", "AUDIO,play,time"})
+        @CsvSource({"RELAY,turn_on,time", "RELAY,turn_off,time", "RELAY,pulse,duration", "LED_SEGMENT,animate,duration",
+                "MOTOR,start_up,time", "MOTOR,start_down,time", "AUDIO,play,time", "MOVING_HEAD,set,time", "MOVING_HEAD,blackout,time"})
         @DisplayName("names the parameter that receives the clip length")
         void should_nameDurationParam(OutputKind kind, String action, String expected) {
             assertThat(catalog.action(kind, action).orElseThrow().durationParam()).contains(expected);
         }
 
         @ParameterizedTest
-        @CsvSource({"RELAY,focoOn", "LED_SEGMENT,fill", "LED_SEGMENT,clear", "VIDEO,play", "AUDIO,stop", "LED_STRIP,setBrightness"})
+        @CsvSource({"LED_SEGMENT,fill", "LED_SEGMENT,clear", "MOTOR,stop", "AUDIO,stop", "LED_STRIP,setBrightness"})
         @DisplayName("is empty for actions without one")
         void should_beEmptyWithoutDuration(OutputKind kind, String action) {
             assertThat(catalog.action(kind, action).orElseThrow().durationParam()).isEmpty();

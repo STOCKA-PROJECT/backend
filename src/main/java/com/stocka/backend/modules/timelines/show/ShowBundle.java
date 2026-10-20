@@ -8,7 +8,7 @@ import java.util.List;
  *
  * @param pkg      the show package
  * @param fileName {@code <slug>-<hash8>.belen.zip}
- * @param assets   assets in {@code assets.audio} then {@code assets.video} order
+ * @param assets   assets in {@code assets.audio} order
  */
 public record ShowBundle(ShowPackage pkg, String fileName, List<BundleAsset> assets) {
 
@@ -16,7 +16,7 @@ public record ShowBundle(ShowPackage pkg, String fileName, List<BundleAsset> ass
      * One media file of the bundle.
      *
      * @param path  entry path inside the zip ({@code assets/<kind>/<name>})
-     * @param kind  {@code audio} or {@code video}
+     * @param kind  {@code audio}
      * @param name  asset name
      * @param r2Key storage key of the bytes
      */

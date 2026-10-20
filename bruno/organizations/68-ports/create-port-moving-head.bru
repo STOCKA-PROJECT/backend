@@ -1,0 +1,38 @@
+meta {
+  name: Create Port (moving_head)
+  type: http
+  seq: 14
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/ports
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Foco",
+    "kind": "moving_head",
+    "pieceTypeId": {{pieceTypeId}},
+    "config": {
+      "profile": "varytec-hero-wash-712z",
+      "address": 1
+    }
+  }
+}
+
+docs {
+  Cabezal móvil DMX (Varytec Hero Wash 712 Z, 15 canales) con dirección inicial 1. Requiere un tipo con
+  kind=moving_head. `address + canales - 1` debe caber en 512 (ports.dmx_address_range) y no solapar con otro
+  cabezal (ports.dmx_address_conflict). Acciones del tipo: `set(color, white, intensity, pan, tilt, zoom, time)` y
+  `blackout(time)`; las posiciones con nombre se guardan como acciones con pan/tilt estáticos.
+}

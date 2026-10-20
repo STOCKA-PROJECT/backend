@@ -27,12 +27,13 @@ body:json {
       "pinR": 3,
       "pinL": 4,
       "sensorPin": 7,
-      "downTime": 15
+      "downTime": 15,
+      "maxUpTime": 20
     }
   }
 }
 
 docs {
   Sin pin: los tres pines van en config y cuentan para los conflictos de pin de la organización.
-  Requiere un tipo con kind=motor.
+  `maxUpTime` (segundos máximos subiendo aunque el sensor no detecte) es obligatorio. Requiere un tipo con kind=motor.
 }

@@ -1,5 +1,6 @@
 package com.stocka.backend.modules.ports.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static com.stocka.backend.modules.organizations.IntegrationTestSupport.ADMIN_EMAIL;
 import static com.stocka.backend.modules.organizations.IntegrationTestSupport.ADMIN_PASSWORD;
 import static com.stocka.backend.modules.organizations.IntegrationTestSupport.buildMockMvc;
@@ -300,7 +301,7 @@ class PortControllerIntegrationTest {
     @DisplayName("a motor keeps its pins in the config and they count for pin conflicts")
     void motor_pinsConflict() throws Exception {
         Integer motorTypeId = createPieceType(adminToken, acmeSlug, "Àngel", "motor");
-        Map<String, Object> config = Map.of("pinR", 3, "pinL", 4, "sensorPin", 7, "downTime", 15);
+        Map<String, Object> config = Map.of("pinR", 3, "pinL", 4, "sensorPin", 7, "downTime", 15, "maxUpTime", 20);
         postPort(adminToken, acmeSlug, Map.of("name", "Angel", "kind", "motor", "pieceTypeId", motorTypeId, "config", config))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.pin").value(org.hamcrest.Matchers.nullValue()))
@@ -309,6 +310,90 @@ class PortControllerIntegrationTest {
         createPort(adminToken, acmeSlug, "Sembra", 4, acmePieceTypeId)
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("ports.pin_conflict"));
+    }
+
+    @Test
+    @DisplayName("an expander is infrastructure; relays hang from it by channel and the I2C pins get reserved (contract v3)")
+    void expander_flow() throws Exception {
+        postPort(adminToken, acmeSlug, Map.of("name", "exp1", "kind", "gpio_expander",
+                        "config", Map.of("chip", "mcp23017", "bus", 1, "address", 32, "activeLow", true)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.kind").value("gpio_expander"))
+                .andExpect(jsonPath("$.pin").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.pieceTypeId").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.config.address").value(32));
+        MvcResult relay = postPort(adminToken, acmeSlug, Map.of("name", "Estable", "kind", "relay", "pieceTypeId", acmePieceTypeId,
+                        "config", Map.of("expander", "exp1", "channel", 3)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.pin").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.config.expander").value("exp1"))
+                .andExpect(jsonPath("$.config.channel").value(3))
+                .andReturn();
+        postPort(adminToken, acmeSlug, Map.of("name", "Pou", "kind", "relay", "pieceTypeId", acmePieceTypeId,
+                        "config", Map.of("expander", "exp1", "channel", 3)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ports.expander_channel_conflict"));
+        postPort(adminToken, acmeSlug, Map.of("name", "Pou", "kind", "relay", "pieceTypeId", acmePieceTypeId, "pin", 26,
+                        "config", Map.of("expander", "exp1", "channel", 4)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ports.relay_pin_or_expander"));
+        postPort(adminToken, acmeSlug, Map.of("name", "Pou", "kind", "relay", "pieceTypeId", acmePieceTypeId,
+                        "config", Map.of("expander", "exp9", "channel", 4)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ports.expander_not_found"));
+        createPort(adminToken, acmeSlug, "Sembra", 2, acmePieceTypeId)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ports.i2c_pin_reserved"));
+        postPort(adminToken, acmeSlug, Map.of("name", "exp2", "kind", "gpio_expander", "config", Map.of("chip", "mcp23017", "address", 32)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ports.expander_address_conflict"));
+
+        Integer expanderId = jdbcTemplate.queryForObject("SELECT id FROM ports WHERE name = 'exp1'", Integer.class);
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(portsPath(acmeSlug) + "/" + expanderId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ports.expander_in_use"));
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(portsPath(acmeSlug) + "/" + expanderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of("name", "expansor"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("expansor"));
+        assertThat(relay.getResponse().getContentAsString()).contains("\"Estable\"");
+        mockMvc.perform(get(portsPath(acmeSlug)).header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.name == 'Estable')].config.expander").value(org.hamcrest.Matchers.contains("expansor")));
+    }
+
+    @Test
+    @DisplayName("a moving head fits the DMX universe and does not overlap another; a motor needs maxUpTime (contract v3)")
+    void movingHead_andMotorRules() throws Exception {
+        Integer headTypeId = createPieceType(adminToken, acmeSlug, "Cabezal", "moving_head");
+        postPort(adminToken, acmeSlug, Map.of("name", "Foco", "kind", "moving_head", "pieceTypeId", headTypeId,
+                        "config", Map.of("profile", "varytec-hero-wash-712z", "address", 1)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.kind").value("moving_head"))
+                .andExpect(jsonPath("$.config.address").value(1));
+        postPort(adminToken, acmeSlug, Map.of("name", "Foco2", "kind", "moving_head", "pieceTypeId", headTypeId,
+                        "config", Map.of("profile", "varytec-hero-wash-712z", "address", 15)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ports.dmx_address_conflict"));
+        postPort(adminToken, acmeSlug, Map.of("name", "Foco2", "kind", "moving_head", "pieceTypeId", headTypeId,
+                        "config", Map.of("profile", "varytec-hero-wash-712z", "address", 500)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ports.dmx_address_range"));
+        postPort(adminToken, acmeSlug, Map.of("name", "Foco2", "kind", "moving_head", "pieceTypeId", headTypeId,
+                        "config", Map.of("profile", "varytec-hero-wash-712z", "address", 16)))
+                .andExpect(status().isCreated());
+        Integer motorTypeId = createPieceType(adminToken, acmeSlug, "Àngel", "motor");
+        postPort(adminToken, acmeSlug, Map.of("name", "Angel", "kind", "motor", "pieceTypeId", motorTypeId,
+                        "config", Map.of("pinR", 17, "pinL", 27, "sensorPin", 22, "downTime", 18)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ports.config_missing_key"))
+                .andExpect(jsonPath("$.params.key").value("maxUpTime"));
+        postPort(adminToken, acmeSlug, Map.of("name", "Video", "kind", "video", "pieceTypeId", acmePieceTypeId))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ports.kind_invalid"));
     }
 
     @Test

@@ -7,7 +7,7 @@ import com.stocka.backend.modules.common.schema.Param;
  * {@code meta.assets}, outside the hash.
  *
  * @param name         asset name used by the events ({@code <attachmentId>-<filename>})
- * @param kind         {@code audio} or {@code video}
+ * @param kind         {@code audio}
  * @param pieceId      piece the file belongs to
  * @param attachmentId attachment id
  * @param mimeType     MIME type
@@ -16,7 +16,7 @@ import com.stocka.backend.modules.common.schema.Param;
  */
 public record ShowAssetRef(
         @Param("Asset name used by the events: <attachmentId>-<filename>") String name,
-        @Param("audio or video") String kind,
+        @Param("audio") String kind,
         @Param("Piece the file belongs to") int pieceId,
         @Param("Attachment id") int attachmentId,
         @Param("MIME type") String mimeType,

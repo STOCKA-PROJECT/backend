@@ -23,14 +23,22 @@ import com.stocka.backend.modules.contract.OutputKind;
  *
  * <p>Rules: no unknown keys, every required key present, JSON types matching the catalog type
  * ({@code int} must be an integral number, {@code number} any number, {@code bool} a boolean,
- * {@code string} a string), bounds respected, and for motors the three pins distinct. {@code pin}
- * inside the config is ignored because it lives in {@code Port.pin}. Cross-port rules (strip
- * existence, segment range, pin collisions) are checked by {@link PortService} because they need the
- * repository.
+ * {@code string} a string), bounds respected, for motors the three pins distinct, and for relays
+ * {@code channel} only together with {@code expander} and {@code activeLow} only without it (the
+ * polarity of an expander's board is declared on the expander). {@code pin} inside the config is
+ * ignored because it lives in {@code Port.pin}; whether a relay needs a pin or an expander is decided
+ * by {@link PortService}, which sees both. Cross-port rules (strip existence, segment range, pin
+ * collisions, expander channels, DMX addresses) are checked by {@link PortService} too.
  */
 @Component
 public class PortConfigValidator {
     private static final List<String> MOTOR_PIN_KEYS = List.of("pinR", "pinL", "sensorPin");
+    /** Relay config key naming the {@code gpio_expander} port the relay hangs from. */
+    public static final String EXPANDER_KEY = "expander";
+    /** Relay config key: channel (0–15) on the expander. */
+    public static final String CHANNEL_KEY = "channel";
+    /** Relay and expander config key: the board switches on at low level. */
+    public static final String ACTIVE_LOW_KEY = "activeLow";
 
     private final OutputCatalog catalog;
 
@@ -70,6 +78,18 @@ public class PortConfigValidator {
             out.put(field.name(), coerce(field, value));
         }
 
+        if (kind == OutputKind.RELAY) {
+            boolean onExpander = out.containsKey(EXPANDER_KEY);
+            if (!onExpander && out.containsKey(CHANNEL_KEY)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_RELAY_CHANNEL_WITHOUT_EXPANDER);
+            }
+            if (onExpander && !out.containsKey(CHANNEL_KEY)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_RELAY_CHANNEL_REQUIRED);
+            }
+            if (onExpander && out.containsKey(ACTIVE_LOW_KEY)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_RELAY_ACTIVE_LOW_ON_EXPANDER);
+            }
+        }
         if (kind == OutputKind.MOTOR) {
             Set<Integer> distinct = new HashSet<>();
             for (String key : MOTOR_PIN_KEYS) {
@@ -132,6 +152,12 @@ public class PortConfigValidator {
                     throw typeMismatch(key, "string");
                 }
                 return s.trim();
+            }
+            case RGB_LIST -> {
+                if (!(value instanceof List<?> list)) {
+                    throw typeMismatch(key, "rgb_list");
+                }
+                return value;
             }
             case ENUM -> {
                 if (!(value instanceof String s) || !field.values().contains(s)) {

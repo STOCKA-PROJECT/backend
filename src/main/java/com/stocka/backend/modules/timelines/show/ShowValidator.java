@@ -15,7 +15,9 @@ import com.stocka.backend.modules.contract.BoardSpec;
 import com.stocka.backend.modules.contract.CatalogAction;
 import com.stocka.backend.modules.contract.CatalogKind;
 import com.stocka.backend.modules.contract.CatalogParam;
+import com.stocka.backend.modules.contract.FixtureProfile;
 import com.stocka.backend.modules.contract.OutputCatalog;
+import com.stocka.backend.modules.contract.PinMode;
 import com.stocka.backend.modules.contract.OutputKind;
 import com.stocka.backend.modules.timelines.show.ShowPackage.ShowAssets;
 import com.stocka.backend.modules.timelines.show.ShowPackage.ShowEvent;
@@ -27,6 +29,9 @@ import com.stocka.backend.modules.timelines.show.ShowPackage.ShowEvent;
  * Runs on the assembled package, so the device will accept what passes here.
  */
 public final class ShowValidator {
+
+    private static final List<Integer> I2C_PINS = List.of(2, 3);
+    private static final int DMX_UNIVERSE = 512;
 
     private ShowValidator() {
     }
@@ -132,10 +137,29 @@ public final class ShowValidator {
                             + why + ".", null, name));
                 }
             }
-            if (spec.pin() && !ShowNumbers.isNumber(entry.get("pin"))) {
+            boolean hasPin = ShowNumbers.isNumber(entry.get("pin"));
+            if (spec.pin() == PinMode.REQUIRED && !hasPin) {
                 issues.add(ShowIssue.error("E_CONFIG_INVALID", "El port «" + name + "» necessita «pin».", null, name));
+            } else if (spec.pin() == PinMode.OPTIONAL) {
+                if (entry.containsKey("expander")) {
+                    if (hasPin) {
+                        issues.add(ShowIssue.error("E_CONFIG_INVALID", "El port «" + name + "» no pot tenir «pin» i «expander» alhora.", null, name));
+                    }
+                    if (!entry.containsKey("channel")) {
+                        issues.add(ShowIssue.error("E_CONFIG_INVALID", "El port «" + name + "» necessita «channel» amb l'expansor.", null, name));
+                    }
+                    if (entry.containsKey("activeLow")) {
+                        issues.add(ShowIssue.error("E_CONFIG_INVALID", "El port «" + name + "»: «activeLow» es declara a l'expansor, no al relé.", null, name));
+                    }
+                } else if (!hasPin) {
+                    issues.add(ShowIssue.error("E_CONFIG_INVALID", "El port «" + name + "» necessita «pin» o «expander» + «channel».", null, name));
+                } else if (entry.containsKey("channel")) {
+                    issues.add(ShowIssue.error("E_CONFIG_INVALID", "El port «" + name + "»: «channel» només té sentit amb «expander».", null, name));
+                }
+            } else if (spec.pin() == PinMode.NONE && entry.containsKey("pin")) {
+                issues.add(ShowIssue.error("E_CONFIG_INVALID", "El port «" + name + "» (" + entry.get("kind") + ") no porta «pin».", null, name));
             }
-            for (Map.Entry<String, Long> pinOf : pinsOf(name, entry, spec.pin())) {
+            for (Map.Entry<String, Long> pinOf : pinsOf(name, entry, spec.pin().allowsPin())) {
                 long pin = pinOf.getValue();
                 String label = pinOf.getKey();
                 usedPins.computeIfAbsent(pin, k -> new ArrayList<>()).add(label);
@@ -185,6 +209,12 @@ public final class ShowValidator {
                     issues.add(ShowIssue.error("E_CONFIG_INVALID", "El motor «" + name
                             + "» repeteix un pin entre pinR, pinL i sensorPin.", null, name));
                 }
+                if (ShowNumbers.isNumber(entry.get("downTime")) && ShowNumbers.isNumber(entry.get("maxUpTime"))
+                        && ((Number) entry.get("maxUpTime")).doubleValue() < ((Number) entry.get("downTime")).doubleValue()) {
+                    issues.add(ShowIssue.warning("W_MOTOR_UP_TIME_SHORT", "El motor «" + name + "»: maxUpTime ("
+                            + ShowNumbers.toJsString((Number) entry.get("maxUpTime")) + ") és menor que downTime ("
+                            + ShowNumbers.toJsString((Number) entry.get("downTime")) + "); potser no arribarà a dalt.", null, name));
+                }
             }
         }
         for (Map.Entry<Long, List<String>> used : usedPins.entrySet()) {
@@ -192,6 +222,81 @@ public final class ShowValidator {
                 issues.add(ShowIssue.error("E_PIN_DUPLICATE", "El pin " + used.getKey() + " està usat per més d'un port: "
                         + String.join(", ", used.getValue()) + "."));
             }
+        }
+
+        // --- expanders: unique addresses, unique channels, GPIO 2/3 reserved --------------------
+        Map<String, Map<String, Object>> expanders = new LinkedHashMap<>();
+        hardware.forEach((n, e) -> {
+            if ("gpio_expander".equals(e.get("kind"))) expanders.put(n, e);
+        });
+        if (!expanders.isEmpty()) {
+            for (Integer pin : I2C_PINS) {
+                for (String label : usedPins.getOrDefault(pin.longValue(), List.of())) {
+                    issues.add(ShowIssue.error("E_PIN_RESERVED", "El pin " + pin + " de «" + label
+                            + "» és I2C i queda reservat quan hi ha un expansor.", null, label));
+                }
+            }
+            Map<String, List<String>> addresses = new LinkedHashMap<>();
+            for (Map.Entry<String, Map<String, Object>> x : expanders.entrySet()) {
+                Object address = x.getValue().get("address");
+                if (ShowNumbers.isNumber(address)) {
+                    long bus = ShowNumbers.isNumber(x.getValue().get("bus")) ? ((Number) x.getValue().get("bus")).longValue() : 1;
+                    addresses.computeIfAbsent(bus + ":" + ((Number) address).longValue(), k -> new ArrayList<>()).add(x.getKey());
+                }
+            }
+            for (Map.Entry<String, List<String>> a : addresses.entrySet()) {
+                if (a.getValue().size() > 1) {
+                    String[] parts = a.getKey().split(":");
+                    issues.add(ShowIssue.error("E_I2C_ADDRESS_DUPLICATE", "L'adreça I2C 0x" + Long.toHexString(Long.parseLong(parts[1]))
+                            + " del bus " + parts[0] + " la fan servir més d'un expansor: " + String.join(", ", a.getValue()) + "."));
+                }
+            }
+        }
+        Map<String, List<String>> channels = new LinkedHashMap<>();
+        for (Map.Entry<String, Map<String, Object>> h : hardware.entrySet()) {
+            Map<String, Object> entry = h.getValue();
+            if (!"relay".equals(entry.get("kind")) || !entry.containsKey("expander")) continue;
+            String expander = String.valueOf(entry.get("expander"));
+            if (!expanders.containsKey(expander)) {
+                issues.add(ShowIssue.error("E_EXPANDER_MISSING", "El relé «" + h.getKey() + "» referencia l'expansor «" + expander
+                        + "», que no existeix com a gpio_expander.", null, h.getKey()));
+                continue;
+            }
+            if (ShowNumbers.isNumber(entry.get("channel"))) {
+                channels.computeIfAbsent(expander + ":" + ((Number) entry.get("channel")).longValue(), k -> new ArrayList<>()).add(h.getKey());
+            }
+        }
+        for (Map.Entry<String, List<String>> c : channels.entrySet()) {
+            if (c.getValue().size() > 1) {
+                int sep = c.getKey().lastIndexOf(':');
+                issues.add(ShowIssue.error("E_EXPANDER_CHANNEL_DUPLICATE", "El canal " + c.getKey().substring(sep + 1) + " de «"
+                        + c.getKey().substring(0, sep) + "» l'usen més d'un relé: " + String.join(", ", c.getValue()) + "."));
+            }
+        }
+
+        // --- moving heads: inside the universe, no overlaps ---------------------------------------
+        List<Object[]> dmxRanges = new ArrayList<>();
+        for (Map.Entry<String, Map<String, Object>> h : hardware.entrySet()) {
+            Map<String, Object> entry = h.getValue();
+            if (!"moving_head".equals(entry.get("kind"))) continue;
+            Optional<FixtureProfile> profile = catalog.movingHeadProfile(entry.get("profile") instanceof String s ? s : null);
+            if (profile.isEmpty() || !ShowNumbers.isInteger(entry.get("address"))) continue;
+            int address = ((Number) entry.get("address")).intValue();
+            int last = profile.get().lastChannel(address);
+            if (last > DMX_UNIVERSE) {
+                issues.add(ShowIssue.error("E_DMX_ADDRESS_RANGE", "El cap «" + h.getKey() + "» a l'adreça " + address + " necessita "
+                        + profile.get().channels() + " canals i surt de l'univers (fins a " + last + ").", null, h.getKey()));
+                continue;
+            }
+            for (Object[] other : dmxRanges) {
+                int a = (int) other[1];
+                int b = (int) other[2];
+                if (address <= b && a <= last) {
+                    issues.add(ShowIssue.error("E_DMX_ADDRESS_OVERLAP", "Els caps «" + other[0] + "» (" + a + "–" + b + ") i «"
+                            + h.getKey() + "» (" + address + "–" + last + ") solapen canals DMX.", null, h.getKey()));
+                }
+            }
+            dmxRanges.add(new Object[] {h.getKey(), address, last});
         }
 
         // --- segments ----------------------------------------------------------------------------
@@ -228,7 +333,7 @@ public final class ShowValidator {
         }
 
         // --- timeline ----------------------------------------------------------------------------
-        ShowAssets declared = assets == null ? new ShowAssets(List.of(), List.of()) : assets;
+        ShowAssets declared = assets == null ? new ShowAssets(List.of()) : assets;
         Map<String, Set<String>> referencedAssets = new HashMap<>();
         Set<String> usedTargets = new HashSet<>();
         Map<String, List<double[]>> continuous = new LinkedHashMap<>();
@@ -299,6 +404,18 @@ public final class ShowValidator {
                     }
                 }
             }
+            if (spec.kind() == OutputKind.MOTOR && "start_up".equals(ev.action()) && ShowNumbers.isNumber(params.get("time"))
+                    && ShowNumbers.isNumber(entry.get("maxUpTime"))
+                    && ((Number) params.get("time")).doubleValue() > ((Number) entry.get("maxUpTime")).doubleValue()) {
+                issues.add(ShowIssue.error("E_MOTOR_UP_TIME", where + ": time=" + ShowNumbers.toJsString((Number) params.get("time"))
+                        + " supera el maxUpTime (" + ShowNumbers.toJsString((Number) entry.get("maxUpTime")) + ") del motor «"
+                        + ev.target() + "».", null, ev.target()));
+            }
+            if (spec.kind() == OutputKind.MOVING_HEAD && "set".equals(ev.action())
+                    && params.keySet().stream().allMatch("time"::equals)) {
+                issues.add(ShowIssue.warning("W_EMPTY_CUE", where + ": el cue de «" + ev.target() + "» no canvia res (només time).",
+                        null, ev.target()));
+            }
             if ("animate".equals(ev.action()) && "fade".equals(animation) && !params.containsKey("from_color")) {
                 issues.add(ShowIssue.warning("W_FADE_FROM_BLACK", where + ": el fos a «" + ev.target()
                         + "» no indica from_color: començarà des de negre.", null, ev.target()));
@@ -332,7 +449,7 @@ public final class ShowValidator {
                 issues.add(ShowIssue.warning("W_PORT_UNUSED", "El port «" + h.getKey() + "» no té cap esdeveniment.",
                         null, h.getKey()));
             }
-            if (spec.kind() == OutputKind.MOTOR || spec.kind() == OutputKind.AUDIO || spec.kind() == OutputKind.VIDEO) {
+            if (spec.kind() == OutputKind.MOTOR || spec.kind() == OutputKind.AUDIO) {
                 singletons.computeIfAbsent(spec.kind().catalogId(), k -> new ArrayList<>()).add(h.getKey());
             }
         }
@@ -342,7 +459,7 @@ public final class ShowValidator {
                         + s.getKey() + "; n'hi ha " + s.getValue().size() + ": " + String.join(", ", s.getValue()) + "."));
             }
         }
-        for (String assetKind : List.of("audio", "video")) {
+        for (String assetKind : List.of("audio")) {
             for (String n : declaredOf(declared, assetKind)) {
                 if (!referencedAssets.getOrDefault(assetKind, Set.of()).contains(n)) {
                     issues.add(ShowIssue.warning("W_ASSET_UNUSED", "El fitxer «" + n + "» és a assets." + assetKind
@@ -398,7 +515,7 @@ public final class ShowValidator {
     }
 
     private static List<String> declaredOf(ShowAssets assets, String kind) {
-        List<String> list = "audio".equals(kind) ? assets.audio() : "video".equals(kind) ? assets.video() : null;
+        List<String> list = "audio".equals(kind) ? assets.audio() : null;
         return list == null ? List.of() : list;
     }
 }

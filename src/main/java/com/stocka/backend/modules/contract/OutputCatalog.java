@@ -38,6 +38,7 @@ public class OutputCatalog {
     private final int version;
     private final Map<OutputKind, CatalogKind> kinds = new EnumMap<>(OutputKind.class);
     private final Map<String, BoardSpec> boards = new LinkedHashMap<>();
+    private final Map<String, FixtureProfile> movingHeadProfiles = new LinkedHashMap<>();
 
     public OutputCatalog() {
         this(new ClassPathResource(RESOURCE));
@@ -60,6 +61,7 @@ public class OutputCatalog {
         this.version = raw.path("version").asInt();
         parseKinds(raw.path("kinds"));
         parseBoards(raw.path("boards"));
+        parseProfiles(raw.path("profiles").path("moving_head"));
         for (OutputKind kind : OutputKind.values()) {
             if (!kinds.containsKey(kind)) {
                 throw new IllegalStateException(RESOURCE + " no define el kind " + kind.catalogId());
@@ -98,13 +100,38 @@ public class OutputCatalog {
     }
 
     /**
-     * Whether ports of {@code kind} carry a single GPIO pin in {@code Port.pin}.
+     * Whether ports of {@code kind} may carry a GPIO pin in {@code Port.pin} (always or optionally).
      *
      * @param kind output kind
      * @return {@code true} when the kind has a pin
      */
     public boolean hasPin(OutputKind kind) {
+        return kinds.get(kind).hasPin();
+    }
+
+    /**
+     * How ports of {@code kind} carry their pin.
+     *
+     * @param kind output kind
+     * @return the pin mode
+     */
+    public PinMode pinMode(OutputKind kind) {
         return kinds.get(kind).pin();
+    }
+
+    /**
+     * A DMX fixture profile for moving heads.
+     *
+     * @param id profile id as the {@code profile} config key names it
+     * @return the profile, or empty when the catalog does not describe it
+     */
+    public Optional<FixtureProfile> movingHeadProfile(String id) {
+        return Optional.ofNullable(id == null ? null : movingHeadProfiles.get(id));
+    }
+
+    /** @return every moving head profile, by id */
+    public Map<String, FixtureProfile> movingHeadProfiles() {
+        return Collections.unmodifiableMap(movingHeadProfiles);
     }
 
     /**
@@ -157,7 +184,7 @@ public class OutputCatalog {
                     kind,
                     spec.path("controller").asText(),
                     spec.path("infrastructure").asBoolean(false),
-                    spec.path("pin").asBoolean(false),
+                    PinMode.parse(spec.path("pin").isBoolean() ? spec.path("pin").asBoolean() : textOrNull(spec.path("pin"))),
                     Collections.unmodifiableMap(config),
                     Collections.unmodifiableMap(actions)));
         }
@@ -228,6 +255,20 @@ public class OutputCatalog {
                     b.path("dma").path("min").asInt(0),
                     b.path("dma").path("max").asInt(14),
                     Collections.unmodifiableSet(avoid)));
+        }
+    }
+
+    private void parseProfiles(JsonNode node) {
+        for (Map.Entry<String, JsonNode> entry : node.properties()) {
+            JsonNode p = entry.getValue();
+            movingHeadProfiles.put(entry.getKey(), new FixtureProfile(
+                    entry.getKey(),
+                    p.path("name").asText(entry.getKey()),
+                    p.path("channels").asInt(1),
+                    p.path("pan").path("max").asDouble(540),
+                    p.path("tilt").path("max").asDouble(270),
+                    p.path("zoom").path("min").asDouble(0),
+                    p.path("zoom").path("max").asDouble(100)));
         }
     }
 

@@ -279,8 +279,8 @@ class ActionCatalogValidatorTest {
         @Test
         @DisplayName("rejects isDuration on an action without a duration parameter")
         void should_rejectDurationOnActionWithoutOne() {
-            assertThatThrownBy(() -> sut.validate(OutputKind.RELAY, "focoOn",
-                    List.of(dynamic("hold_time", AttributeType.DECIMAL).setIsDuration(true))))
+            assertThatThrownBy(() -> sut.validate(OutputKind.LED_SEGMENT, "fill",
+                    List.of(dynamic("first", AttributeType.INTEGER).setIsDuration(true))))
                     .isInstanceOfSatisfying(ApiException.class, ex -> {
                         assertThat(ex.getCode()).isEqualTo(ErrorCodes.PIECE_TYPES_ACTION_DURATION_PARAM_MISMATCH);
                         assertThat(ex.getParams()).containsEntry("expected", "-");

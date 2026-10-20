@@ -51,7 +51,7 @@ public class ReferenceResources implements ResourceSource {
                         "How to use the Stocka tools: recommended workflows, ids and versions, limits.",
                         "text/markdown", caller -> guide),
                 new ResourceDefinition(CATALOG_URI, "Output catalog",
-                        "Hardware output kinds (relay, led_strip, led_segment, motor, audio, video, button), "
+                        "Hardware output kinds (relay, gpio_expander, led_strip, led_segment, motor, audio, moving_head, button), "
                                 + "their actions and parameters, and the Raspberry Pi board profile. Needed to "
                                 + "write clip parameters and port configurations.",
                         "application/json", caller -> catalog),

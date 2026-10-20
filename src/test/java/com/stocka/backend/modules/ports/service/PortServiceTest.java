@@ -54,6 +54,7 @@ class PortServiceTest {
     private static final Integer RELAY_TYPE_ID = 5;
     private static final Integer SEGMENT_TYPE_ID = 6;
     private static final Integer UNTYPED_TYPE_ID = 7;
+    private static final Integer HEAD_TYPE_ID = 8;
 
     @Mock private OrganizationService organizationService;
     @Mock private PortRepository portRepository;
@@ -68,6 +69,7 @@ class PortServiceTest {
     private PieceType relayType;
     private PieceType segmentType;
     private PieceType untypedType;
+    private PieceType headType;
 
     @BeforeEach
     void setUp() {
@@ -77,6 +79,7 @@ class PortServiceTest {
         relayType = new PieceType().setId(RELAY_TYPE_ID).setName("Figura amb relé").setKind(OutputKind.RELAY);
         segmentType = new PieceType().setId(SEGMENT_TYPE_ID).setName("Edifici amb llum").setKind(OutputKind.LED_SEGMENT);
         untypedType = new PieceType().setId(UNTYPED_TYPE_ID).setName("Caixa");
+        headType = new PieceType().setId(HEAD_TYPE_ID).setName("Cabezal").setKind(OutputKind.MOVING_HEAD);
         lenient().when(organizationService.findById(ORG_ID)).thenReturn(org);
         lenient().when(portRepository.saveAndFlush(any(Port.class))).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(portRepository.save(any(Port.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -85,6 +88,7 @@ class PortServiceTest {
         lenient().when(pieceTypeService.findInOrg(ORG_ID, RELAY_TYPE_ID)).thenReturn(relayType);
         lenient().when(pieceTypeService.findInOrg(ORG_ID, SEGMENT_TYPE_ID)).thenReturn(segmentType);
         lenient().when(pieceTypeService.findInOrg(ORG_ID, UNTYPED_TYPE_ID)).thenReturn(untypedType);
+        lenient().when(pieceTypeService.findInOrg(ORG_ID, HEAD_TYPE_ID)).thenReturn(headType);
     }
 
     // ------------------------------------------------------------------ fixtures
@@ -115,7 +119,46 @@ class PortServiceTest {
         cfg.put("pinL", pinL);
         cfg.put("sensorPin", sensorPin);
         cfg.put("downTime", 15);
+        cfg.put("maxUpTime", 20);
         return cfg;
+    }
+
+    private static CreatePortDto expanderDto(String name, int address) {
+        Map<String, Object> cfg = new LinkedHashMap<>();
+        cfg.put("chip", "mcp23017");
+        cfg.put("bus", 1);
+        cfg.put("address", address);
+        cfg.put("activeLow", true);
+        return new CreatePortDto().setName(name).setKind("gpio_expander").setConfig(cfg);
+    }
+
+    private static CreatePortDto expanderRelayDto(String name, String expander, int channel) {
+        Map<String, Object> cfg = new LinkedHashMap<>();
+        cfg.put("expander", expander);
+        cfg.put("channel", channel);
+        return new CreatePortDto().setName(name).setKind("relay").setPieceTypeId(RELAY_TYPE_ID).setConfig(cfg);
+    }
+
+    private static CreatePortDto headDto(String name, int address) {
+        Map<String, Object> cfg = new LinkedHashMap<>();
+        cfg.put("profile", "varytec-hero-wash-712z");
+        cfg.put("address", address);
+        return new CreatePortDto().setName(name).setKind("moving_head").setPieceTypeId(HEAD_TYPE_ID).setConfig(cfg);
+    }
+
+    private Port expanderPort(int id, String name, int address) {
+        return new Port().setId(id).setName(name).setKind(OutputKind.GPIO_EXPANDER).setOrganization(org)
+                .setConfigJson(configCodec.serialize(expanderDto(name, address).getConfig()));
+    }
+
+    private Port expanderRelayPort(int id, String name, String expander, int channel) {
+        return new Port().setId(id).setName(name).setKind(OutputKind.RELAY).setPieceTypeId(RELAY_TYPE_ID).setOrganization(org)
+                .setConfigJson(configCodec.serialize(expanderRelayDto(name, expander, channel).getConfig()));
+    }
+
+    private Port headPort(int id, String name, int address) {
+        return new Port().setId(id).setName(name).setKind(OutputKind.MOVING_HEAD).setPieceTypeId(HEAD_TYPE_ID).setOrganization(org)
+                .setConfigJson(configCodec.serialize(headDto(name, address).getConfig()));
     }
 
     private Port relayPort(int id, String name, Integer pin) {
@@ -330,7 +373,7 @@ class PortServiceTest {
             @Test
             @DisplayName("requires a pin for kinds that have one, within the board range")
             void should_requireValidPin() {
-                assertApi(() -> sut.create(ORG_ID, relayDto("Focos", null)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_INVALID);
+                assertApi(() -> sut.create(ORG_ID, relayDto("Focos", null)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_RELAY_PIN_OR_EXPANDER, "reason", "none");
                 assertApi(() -> sut.create(ORG_ID, relayDto("Focos", -1)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_INVALID);
                 assertApi(() -> sut.create(ORG_ID, relayDto("Focos", 28)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_INVALID);
                 assertApi(() -> sut.create(ORG_ID, stripDto("LedStrip3", null, 10, 1, 300)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_INVALID);
@@ -419,6 +462,162 @@ class PortServiceTest {
         }
 
         @Nested
+        @DisplayName("expander rules (contract v3)")
+        class ExpanderRules {
+
+            @Test
+            @DisplayName("persists an expander (infrastructure, no pin) and a relay on one of its channels")
+            void should_persistExpanderAndRelay() {
+                Port exp = sut.create(ORG_ID, expanderDto("exp1", 32));
+                assertThat(exp.getKind()).isEqualTo(OutputKind.GPIO_EXPANDER);
+                assertThat(exp.getPin()).isNull();
+                assertThat(exp.getPieceTypeId()).isNull();
+                existingPorts(expanderPort(1, "exp1", 32));
+                Port relay = sut.create(ORG_ID, expanderRelayDto("Estable", "exp1", 3));
+                assertThat(relay.getPin()).isNull();
+                assertThat(sut.configOf(relay)).containsExactly(Map.entry("expander", "exp1"), Map.entry("channel", 3));
+            }
+
+            @Test
+            @DisplayName("a relay takes a pin or an expander, never both nor neither")
+            void should_requirePinXorExpander() {
+                existingPorts(expanderPort(1, "exp1", 32));
+                assertApi(() -> sut.create(ORG_ID, expanderRelayDto("Estable", "exp1", 3).setPin(26)),
+                        HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_RELAY_PIN_OR_EXPANDER, "reason", "both");
+                assertApi(() -> sut.create(ORG_ID, relayDto("Sembra", null)),
+                        HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_RELAY_PIN_OR_EXPANDER, "reason", "none");
+            }
+
+            @Test
+            @DisplayName("the expander must exist as a gpio_expander of the organization")
+            void should_requireExistingExpander() {
+                existingPorts(relayPort(1, "Focos", 27));
+                assertApi(() -> sut.create(ORG_ID, expanderRelayDto("Estable", "exp9", 3)),
+                        HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_EXPANDER_NOT_FOUND, "expander", "exp9");
+                assertApi(() -> sut.create(ORG_ID, expanderRelayDto("Estable", "Focos", 3)),
+                        HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_EXPANDER_NOT_FOUND, "expander", "Focos");
+            }
+
+            @Test
+            @DisplayName("each channel of an expander takes one relay")
+            void should_rejectChannelConflict() {
+                existingPorts(expanderPort(1, "exp1", 32), expanderRelayPort(2, "Estable", "exp1", 3));
+                assertApi(() -> sut.create(ORG_ID, expanderRelayDto("Pou", "exp1", 3)),
+                        HttpStatus.CONFLICT, ErrorCodes.PORTS_EXPANDER_CHANNEL_CONFLICT, "port", "Estable");
+                assertThat(sut.create(ORG_ID, expanderRelayDto("Pou", "exp1", 4)).getName()).isEqualTo("Pou");
+            }
+
+            @Test
+            @DisplayName("each I2C address takes one expander per bus")
+            void should_rejectAddressConflict() {
+                existingPorts(expanderPort(1, "exp1", 32));
+                assertApi(() -> sut.create(ORG_ID, expanderDto("exp2", 32)),
+                        HttpStatus.CONFLICT, ErrorCodes.PORTS_EXPANDER_ADDRESS_CONFLICT, "port", "exp1");
+                assertThat(sut.create(ORG_ID, expanderDto("exp2", 33)).getName()).isEqualTo("exp2");
+                CreatePortDto otherBus = expanderDto("exp3", 32);
+                otherBus.getConfig().put("bus", 0);
+                assertThat(sut.create(ORG_ID, otherBus).getName()).isEqualTo("exp3");
+            }
+
+            @Test
+            @DisplayName("GPIO 2 and 3 are reserved for I2C while an expander exists, in both directions")
+            void should_reserveI2cPins() {
+                existingPorts(expanderPort(1, "exp1", 32));
+                assertApi(() -> sut.create(ORG_ID, relayDto("Sembra", 2)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_I2C_PIN_RESERVED, "pin", 2);
+                PieceType motorType = new PieceType().setId(9).setKind(OutputKind.MOTOR).setName("Àngel");
+                when(pieceTypeService.findInOrg(ORG_ID, 9)).thenReturn(motorType);
+                CreatePortDto motor = new CreatePortDto().setName("Angel").setKind("motor").setPieceTypeId(9).setConfig(motorConfig(3, 4, 7));
+                assertApi(() -> sut.create(ORG_ID, motor), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_I2C_PIN_RESERVED, "pin", 3);
+                existingPorts(relayPort(1, "Sembra", 3));
+                assertApi(() -> sut.create(ORG_ID, expanderDto("exp2", 32)), HttpStatus.CONFLICT, ErrorCodes.PORTS_I2C_PIN_RESERVED, "port", "Sembra");
+                existingPorts(relayPort(1, "Sembra", 26));
+                assertThat(sut.create(ORG_ID, expanderDto("exp3", 32)).getName()).isEqualTo("exp3");
+            }
+
+            @Test
+            @DisplayName("without an expander GPIO 2 and 3 stay usable")
+            void should_allowI2cPinsWithoutExpander() {
+                assertThat(sut.create(ORG_ID, relayDto("Sembra", 2)).getPin()).isEqualTo(2);
+            }
+
+            @Test
+            @DisplayName("deleting an expander with relays is refused and renaming it cascades")
+            void should_protectAndCascade() {
+                Port exp = expanderPort(1, "exp1", 32);
+                Port relay = expanderRelayPort(2, "Estable", "exp1", 3);
+                existingPorts(exp, relay);
+                assertApi(() -> sut.softDelete(ORG_ID, 1), HttpStatus.CONFLICT, ErrorCodes.PORTS_EXPANDER_IN_USE, "relays", "Estable");
+                sut.update(ORG_ID, 1, new UpdatePortDto().setName("expansor"));
+                assertThat(exp.getName()).isEqualTo("expansor");
+                assertThat(sut.configOf(relay)).containsEntry("expander", "expansor");
+                existingPorts(exp);
+                sut.softDelete(ORG_ID, 1);
+                assertThat(exp.getDeletedAt()).isNotNull();
+            }
+
+            @Test
+            @DisplayName("updating a relay can move it between a GPIO and an expander")
+            void should_moveRelayBetweenGpioAndExpander() {
+                Port relay = relayPort(2, "Sembra", 26);
+                existingPorts(expanderPort(1, "exp1", 32), relay);
+                Map<String, Object> onExpander = new LinkedHashMap<>();
+                onExpander.put("expander", "exp1");
+                onExpander.put("channel", 5);
+                sut.update(ORG_ID, 2, new UpdatePortDto().setConfig(onExpander));
+                assertThat(relay.getPin()).isNull();
+                assertThat(sut.configOf(relay)).containsEntry("channel", 5);
+                assertApi(() -> sut.update(ORG_ID, 2, new UpdatePortDto().setConfig(Map.of())),
+                        HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_RELAY_PIN_OR_EXPANDER, "reason", "none");
+                sut.update(ORG_ID, 2, new UpdatePortDto().setConfig(Map.of()).setPin(24));
+                assertThat(relay.getPin()).isEqualTo(24);
+                assertThat(sut.configOf(relay)).isEmpty();
+                assertApi(() -> sut.update(ORG_ID, 2, new UpdatePortDto().setPin(3)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_I2C_PIN_RESERVED, "pin", 3);
+            }
+        }
+
+        @Nested
+        @DisplayName("moving head rules (contract v3)")
+        class MovingHeadRules {
+
+            @Test
+            @DisplayName("persists a head with profile and address, without pin")
+            void should_persistHead() {
+                Port head = sut.create(ORG_ID, headDto("Foco", 1));
+                assertThat(head.getKind()).isEqualTo(OutputKind.MOVING_HEAD);
+                assertThat(head.getPin()).isNull();
+                assertThat(sut.configOf(head)).containsEntry("address", 1);
+                assertApi(() -> sut.create(ORG_ID, headDto("Foco2", 16).setPin(5)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_NOT_ALLOWED, "kind", "moving_head");
+            }
+
+            @Test
+            @DisplayName("the fixture must fit the 512-channel universe")
+            void should_rejectOutOfUniverse() {
+                assertThatThrownBy(() -> sut.create(ORG_ID, headDto("Foco", 500)))
+                        .isInstanceOfSatisfying(ApiException.class, ex -> {
+                            assertThat(ex.getCode()).isEqualTo(ErrorCodes.PORTS_DMX_ADDRESS_RANGE);
+                            assertThat(ex.getParams()).containsEntry("address", 500).containsEntry("channels", 15).containsEntry("last", 514);
+                        });
+                assertThat(sut.create(ORG_ID, headDto("Foco", 498)).getName()).isEqualTo("Foco");
+            }
+
+            @Test
+            @DisplayName("two heads cannot overlap channels")
+            void should_rejectOverlap() {
+                existingPorts(headPort(1, "Foco", 1));
+                assertApi(() -> sut.create(ORG_ID, headDto("Foco2", 15)), HttpStatus.CONFLICT, ErrorCodes.PORTS_DMX_ADDRESS_CONFLICT, "port", "Foco");
+                assertThat(sut.create(ORG_ID, headDto("Foco2", 16)).getName()).isEqualTo("Foco2");
+                Port second = headPort(2, "Foco2", 16);
+                existingPorts(headPort(1, "Foco", 1), second);
+                Map<String, Object> moved = new LinkedHashMap<>(sut.configOf(second));
+                moved.put("address", 10);
+                assertApi(() -> sut.update(ORG_ID, 2, new UpdatePortDto().setConfig(moved)), HttpStatus.CONFLICT, ErrorCodes.PORTS_DMX_ADDRESS_CONFLICT, "port", "Foco");
+                moved.put("address", 31);
+                sut.update(ORG_ID, 2, new UpdatePortDto().setConfig(moved));
+                assertThat(sut.configOf(second)).containsEntry("address", 31);
+            }
+        }
+
+        @Nested
         @DisplayName("name rules")
         class NameRules {
 
@@ -491,8 +690,8 @@ class PortServiceTest {
             @Test
             @DisplayName("delegates config validation to PortConfigValidator")
             void should_delegateConfigValidation() {
-                assertApi(() -> sut.create(ORG_ID, relayDto("Focos", 27).setConfig(Map.of("activeLow", true))),
-                        HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_CONFIG_UNKNOWN_KEY, "key", "activeLow");
+                assertApi(() -> sut.create(ORG_ID, relayDto("Focos", 27).setConfig(Map.of("dma", 10))),
+                        HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_CONFIG_UNKNOWN_KEY, "key", "dma");
                 assertApi(() -> sut.create(ORG_ID, stripDto("LedStrip3", 13, 10, 1, 0)),
                         HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_CONFIG_OUT_OF_RANGE, "key", "length");
             }

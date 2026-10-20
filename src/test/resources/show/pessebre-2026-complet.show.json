@@ -1,0 +1,247 @@
+{
+  "format": "stocka-show",
+  "version": 3,
+  "meta": {
+    "name": "Pessebre 2026 (complet)",
+    "timelineId": null,
+    "exportedAt": "2026-10-20T18:00:00.000Z",
+    "hash": "sha256:ede79c247bab924dd421d6215e36a2399eee8e59fb75aeaf9a96ac90d688f381"
+  },
+  "board": "rpi4b",
+  "mode": {
+    "on": "pulse",
+    "cycles": 1
+  },
+  "hardware": {
+    "exp1": {
+      "kind": "gpio_expander",
+      "chip": "mcp23017",
+      "bus": 1,
+      "address": 32,
+      "activeLow": true
+    },
+    "Sembra": {
+      "kind": "relay",
+      "pin": 26
+    },
+    "Cartes": {
+      "kind": "relay",
+      "pin": 24,
+      "activeLow": false
+    },
+    "Estable": {
+      "kind": "relay",
+      "expander": "exp1",
+      "channel": 3
+    },
+    "Pou": {
+      "kind": "relay",
+      "expander": "exp1",
+      "channel": 0
+    },
+    "Angel": {
+      "kind": "motor",
+      "pinR": 17,
+      "pinL": 27,
+      "sensorPin": 22,
+      "downTime": 18,
+      "maxUpTime": 24
+    },
+    "LedStrip4": {
+      "kind": "led_strip",
+      "pin": 10,
+      "dma": 8,
+      "channel": 0,
+      "length": 44
+    },
+    "CasaSimple": {
+      "kind": "led_segment",
+      "strip": "LedStrip4",
+      "first": 0,
+      "last": 15
+    },
+    "Audio": {
+      "kind": "audio"
+    },
+    "Foco": {
+      "kind": "moving_head",
+      "profile": "varytec-hero-wash-712z",
+      "address": 1
+    },
+    "Foco2": {
+      "kind": "moving_head",
+      "profile": "varytec-hero-wash-712z",
+      "address": 16
+    },
+    "Pulsador Belen": {
+      "kind": "button",
+      "pin": 20
+    }
+  },
+  "timeline": [
+    {
+      "t": 0,
+      "target": "Audio",
+      "action": "play",
+      "params": {
+        "audio_name": "nature.mp3"
+      }
+    },
+    {
+      "t": 0,
+      "target": "CasaSimple",
+      "action": "fill",
+      "params": {
+        "color": [
+          255,
+          50,
+          0
+        ]
+      }
+    },
+    {
+      "t": 0,
+      "target": "Foco",
+      "action": "set",
+      "params": {
+        "pan": 270,
+        "tilt": 95,
+        "zoom": 15,
+        "color": [
+          255,
+          160,
+          60
+        ],
+        "white": 40,
+        "intensity": 80,
+        "time": 2
+      }
+    },
+    {
+      "t": 0,
+      "target": "Foco2",
+      "action": "set",
+      "params": {
+        "pan": 200,
+        "tilt": 60,
+        "color": [
+          40,
+          80,
+          255
+        ],
+        "intensity": 50
+      }
+    },
+    {
+      "t": 1000,
+      "target": "Estable",
+      "action": "turn_on",
+      "params": {}
+    },
+    {
+      "t": 2000,
+      "target": "Pou",
+      "action": "pulse",
+      "params": {
+        "duration": 0.5
+      }
+    },
+    {
+      "t": 2000,
+      "target": "Angel",
+      "action": "start_down",
+      "params": {
+        "time": 1
+      }
+    },
+    {
+      "t": 3000,
+      "target": "Sembra",
+      "action": "turn_on",
+      "params": {
+        "time": 5
+      }
+    },
+    {
+      "t": 4000,
+      "target": "Cartes",
+      "action": "turn_on",
+      "params": {}
+    },
+    {
+      "t": 5000,
+      "target": "Foco",
+      "action": "set",
+      "params": {
+        "pan": 320,
+        "tilt": 120,
+        "time": 3
+      }
+    },
+    {
+      "t": 6000,
+      "target": "Angel",
+      "action": "start_up",
+      "params": {
+        "time": 1
+      }
+    },
+    {
+      "t": 9000,
+      "target": "Cartes",
+      "action": "turn_off",
+      "params": {}
+    },
+    {
+      "t": 10000,
+      "target": "Estable",
+      "action": "turn_off",
+      "params": {}
+    },
+    {
+      "t": 11000,
+      "target": "CasaSimple",
+      "action": "animate",
+      "params": {
+        "animation_type": "fade",
+        "color": [
+          0,
+          0,
+          0
+        ],
+        "from_color": [
+          255,
+          50,
+          0
+        ],
+        "duration": 1
+      }
+    },
+    {
+      "t": 11000,
+      "target": "Audio",
+      "action": "stop",
+      "params": {}
+    },
+    {
+      "t": 11000,
+      "target": "Foco",
+      "action": "blackout",
+      "params": {
+        "time": 1
+      }
+    },
+    {
+      "t": 11000,
+      "target": "Foco2",
+      "action": "blackout",
+      "params": {}
+    }
+  ],
+  "durationMs": 12500,
+  "assets": {
+    "audio": [
+      "nature.mp3"
+    ]
+  }
+}

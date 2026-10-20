@@ -113,8 +113,6 @@ class ShowControllerIntegrationTest {
         types.put("audio", createPieceType(slug, "Àudio", "audio"));
         types.put("timedRelay", createPieceType(slug, "Relé temporitzat", "relay"));
 
-        actions.put("focoOn", createAction(slug, types.get("relay"), "focoOn", "Encendre focus", List.of()));
-        actions.put("focoOff", createAction(slug, types.get("relay"), "focoOff", "Apagar focus", List.of()));
         actions.put("turn_on", createAction(slug, types.get("relay"), "turn_on", "Encendre", List.of()));
         actions.put("turn_off", createAction(slug, types.get("relay"), "turn_off", "Apagar", List.of()));
         actions.put("timed_on", createAction(slug, types.get("timedRelay"), "turn_on", "Encendre un temps", List.of(
@@ -172,14 +170,14 @@ class ShowControllerIntegrationTest {
             tracks.add(Map.of("id", "t-" + it[0], "itemId", it[0], "name", it[0]));
         }
         List<Map<String, Object>> clips = new ArrayList<>();
-        clips.add(clip("c01", "i-focos", "focoOn", 0, 1000, Map.of()));
+        clips.add(clip("c01", "i-focos", "turn_on", 0, 1000, Map.of()));
         clips.add(clip("c02", "i-fondo1", "fill", 0, 1000, Map.of("color", "[255,50,0]")));
         clips.add(clip("c03", "i-fondo2", "fill", 0, 1000, Map.of("color", "[255,50,0]")));
         clips.add(clip("c04", "i-casasimple", "fill", 0, 1000, Map.of("color", "[255,50,0]")));
         clips.add(clip("c05", "i-casadoble", "fill", 0, 1000, Map.of("color", "[50,16,0]")));
         clips.add(clip("c06", "i-audio", "play", 0, 1000, Map.of("audio_name", audioName)));
         clips.add(clip("c07", "i-sembra", "turn_on", 7000, 1000, Map.of()));
-        clips.add(clip("c08", "i-focos", "focoOff", 20000, 1000, Map.of()));
+        clips.add(clip("c08", "i-focos", "turn_off", 20000, 1000, Map.of()));
         clips.add(clip("c09", "i-sembra", "turn_off", 23000, 1000, Map.of()));
         clips.add(clip("c10", "i-casasimple", "animate", 24000, 3000, fade("[0,0,0]", "[255,50,0]")));
         clips.add(clip("c11", "i-casadoble", "animate", 24000, 3000, fade("[0,0,0]", "[50,16,0]")));
@@ -189,7 +187,7 @@ class ShowControllerIntegrationTest {
         clips.add(clip("c15", "i-llumse", "timed_on", 30000, 21000, Map.of()));
         clips.add(clip("c16", "i-sembra", "turn_off", 118000, 1000, Map.of()));
         clips.add(clip("c17", "i-audio", "stop", 118000, 1000, Map.of()));
-        clips.add(clip("c18", "i-focos", "focoOff", 118000, 1000, Map.of()));
+        clips.add(clip("c18", "i-focos", "turn_off", 118000, 1000, Map.of()));
         clips.add(clip("c19", "i-casasimple", "animate", 118000, 4000, fade("[0,0,0]", "[255,50,0]")));
         clips.add(clip("c20", "i-casadoble", "animate", 118000, 4000, fade("[0,0,0]", "[50,16,0]")));
         clips.add(clip("c21", "i-fondo1", "animate", 118000, 4000, fade("[0,0,0]", "[255,50,0]")));
@@ -240,7 +238,7 @@ class ShowControllerIntegrationTest {
             assertThat(body.path("meta").path("hash").asText()).isEqualTo(ShowCanonicalJson.showHash(expected));
             assertThat(ShowCanonicalJson.showHash(body)).isEqualTo(body.path("meta").path("hash").asText());
             assertThat(body.path("format").asText()).isEqualTo("stocka-show");
-            assertThat(body.path("version").asInt()).isEqualTo(2);
+            assertThat(body.path("version").asInt()).isEqualTo(3);
             assertThat(body.path("meta").path("name").asText()).isEqualTo(Belen2026Fixture.TIMELINE_NAME);
             assertThat(body.path("meta").path("timelineId").asInt()).isEqualTo(timelineId);
             assertThat(body.path("meta").path("exportedAt").asText()).matches("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z");

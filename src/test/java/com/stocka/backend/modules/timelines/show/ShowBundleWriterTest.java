@@ -201,15 +201,20 @@ class ShowBundleWriterTest {
         }
 
         @Test
-        @DisplayName("video assets go under assets/video with kind video")
-        void videoAssets() throws IOException {
-            when(r2.open("v")).thenReturn(new ByteArrayInputStream(new byte[] {1, 2, 3}));
-            ShowBundle bundle = new ShowBundle(pkg, "x.belen.zip", List.of(new BundleAsset("assets/video/3-clip.mp4", "video", "3-clip.mp4", "v")));
+        @DisplayName("several audio assets keep their order under assets/audio with kind audio")
+        void severalAudioAssets() throws IOException {
+            when(r2.open("a")).thenReturn(new ByteArrayInputStream(new byte[] {1, 2, 3}));
+            when(r2.open("b")).thenReturn(new ByteArrayInputStream(new byte[] {4, 5}));
+            ShowBundle bundle = new ShowBundle(pkg, "x.belen.zip", List.of(
+                    new BundleAsset("assets/audio/3-clip.mp3", "audio", "3-clip.mp3", "a"),
+                    new BundleAsset("assets/audio/4-night.mp3", "audio", "4-night.mp3", "b")));
             List<Entry> entries = unzip(write(bundle));
-            assertThat(entries.get(1).name()).isEqualTo("assets/video/3-clip.mp4");
-            JsonNode manifest = json.readTree(entries.get(2).bytes());
-            assertThat(manifest.path("files").get(1).path("kind").asText()).isEqualTo("video");
+            assertThat(entries.get(1).name()).isEqualTo("assets/audio/3-clip.mp3");
+            assertThat(entries.get(2).name()).isEqualTo("assets/audio/4-night.mp3");
+            JsonNode manifest = json.readTree(entries.get(3).bytes());
+            assertThat(manifest.path("files").get(1).path("kind").asText()).isEqualTo("audio");
             assertThat(manifest.path("files").get(1).path("size").asInt()).isEqualTo(3);
+            assertThat(manifest.path("files").get(2).path("size").asInt()).isEqualTo(2);
         }
 
         @Test

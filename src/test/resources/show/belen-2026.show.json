@@ -1,11 +1,11 @@
 {
   "format": "stocka-show",
-  "version": 2,
+  "version": 3,
   "meta": {
     "name": "Pessebre 2026 (mostra)",
     "timelineId": null,
     "exportedAt": "2026-10-12T00:00:00.000Z",
-    "hash": "sha256:6e46887ddeaebe56360f7b617a91dbd4e0a5c71ea814f3d27d2e2532a9eb173f"
+    "hash": "sha256:48a434c027e3fe7420d094bb5cbf119924f1e0c93b385cddd9766d808a00c92d"
   },
   "board": "rpi4b",
   "mode": {
@@ -75,7 +75,7 @@
     {
       "t": 0,
       "target": "Focos",
-      "action": "focoOn",
+      "action": "turn_on",
       "params": {}
     },
     {
@@ -143,7 +143,7 @@
     {
       "t": 20000,
       "target": "Focos",
-      "action": "focoOff",
+      "action": "turn_off",
       "params": {}
     },
     {
@@ -257,7 +257,7 @@
     {
       "t": 118000,
       "target": "Focos",
-      "action": "focoOff",
+      "action": "turn_off",
       "params": {}
     },
     {
@@ -341,7 +341,6 @@
   "assets": {
     "audio": [
       "nature.mp3"
-    ],
-    "video": []
+    ]
   }
 }

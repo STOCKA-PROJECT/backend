@@ -83,10 +83,10 @@ public class HardwareTools implements ToolSource {
     public record CreatePortInput(
             @Param(value = "Organization slug", required = true) String org,
             @Param(value = "Port name, unique in the organization", required = true) String name,
-            @Param(value = "Kind from the catalog: relay, led_strip, led_segment, motor, audio, video, button", required = true) String kind,
-            @Param("Piece type id whose kind matches (omit for infrastructure kinds led_strip and button)") Integer pieceTypeId,
-            @Param("BCM GPIO pin for kinds that take one (relay, led_strip, button)") Integer pin,
-            @Param("Kind-specific configuration as in the catalog (e.g. led_strip: dma, channel, length; led_segment: strip, first, last; motor: pinR, pinL, sensorPin, downTime)") Map<String, Object> config) {
+            @Param(value = "Kind from the catalog: relay, gpio_expander, led_strip, led_segment, motor, audio, moving_head, button", required = true) String kind,
+            @Param("Piece type id whose kind matches (omit for infrastructure kinds gpio_expander, led_strip and button)") Integer pieceTypeId,
+            @Param("BCM GPIO pin for kinds that take one (led_strip, button; relay unless it uses expander + channel)") Integer pin,
+            @Param("Kind-specific configuration as in the catalog (e.g. relay: expander + channel 0-15 instead of pin, activeLow; gpio_expander: chip mcp23017, bus, address 32-39, activeLow; led_strip: dma, channel, length; led_segment: strip, first, last; motor: pinR, pinL, sensorPin, downTime, maxUpTime; moving_head: profile, address 1-512)") Map<String, Object> config) {
     }
 
     public record UpdatePortInput(

@@ -14,11 +14,12 @@ import com.fasterxml.jackson.annotation.JsonValue;
  */
 public enum OutputKind {
     RELAY("relay"),
+    GPIO_EXPANDER("gpio_expander"),
     LED_STRIP("led_strip"),
     LED_SEGMENT("led_segment"),
     MOTOR("motor"),
     AUDIO("audio"),
-    VIDEO("video"),
+    MOVING_HEAD("moving_head"),
     BUTTON("button");
 
     private final String catalogId;

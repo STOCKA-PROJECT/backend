@@ -42,7 +42,7 @@ class PortConfigValidatorTest {
     }
 
     private static Map<String, Object> motor() {
-        return new HashMap<>(Map.of("pinR", 3, "pinL", 4, "sensorPin", 7, "downTime", 15));
+        return new HashMap<>(Map.of("pinR", 3, "pinL", 4, "sensorPin", 7, "downTime", 15, "maxUpTime", 20));
     }
 
     private static void assertCode(Runnable call, String code) {
@@ -67,10 +67,10 @@ class PortConfigValidatorTest {
         @Test
         @DisplayName("rejects an unknown key with ports.config_unknown_key")
         void should_rejectUnknownKey() {
-            assertThatThrownBy(() -> sut.normalize(OutputKind.RELAY, Map.of("activeLow", true)))
+            assertThatThrownBy(() -> sut.normalize(OutputKind.RELAY, Map.of("dma", 10)))
                     .isInstanceOfSatisfying(ApiException.class, ex -> {
                         assertThat(ex.getCode()).isEqualTo(ErrorCodes.PORTS_CONFIG_UNKNOWN_KEY);
-                        assertThat(ex.getParams()).containsEntry("key", "activeLow");
+                        assertThat(ex.getParams()).containsEntry("key", "dma");
                     });
         }
 
@@ -240,7 +240,7 @@ class PortConfigValidatorTest {
         @DisplayName("accepts three distinct pins and a down time")
         void should_acceptMotor() {
             Map<String, Object> out = sut.normalize(OutputKind.MOTOR, motor());
-            assertThat(out.keySet()).containsExactly("pinR", "pinL", "sensorPin", "downTime");
+            assertThat(out.keySet()).containsExactly("pinR", "pinL", "sensorPin", "downTime", "maxUpTime");
             assertThat(out).containsEntry("downTime", 15);
         }
 
@@ -280,13 +280,81 @@ class PortConfigValidatorTest {
     }
 
     @Nested
+    @DisplayName("relay on an expander (contract v3)")
+    class RelayExpander {
+
+        @Test
+        @DisplayName("accepts expander + channel and a native activeLow flag")
+        void should_acceptExpanderChannel() {
+            assertThat(sut.normalize(OutputKind.RELAY, Map.of("expander", "exp1", "channel", 3)))
+                    .containsExactly(Map.entry("expander", "exp1"), Map.entry("channel", 3));
+            assertThat(sut.normalize(OutputKind.RELAY, Map.of("activeLow", true))).containsExactly(Map.entry("activeLow", true));
+        }
+
+        @Test
+        @DisplayName("rejects channel without expander, expander without channel and activeLow on an expander")
+        void should_rejectInconsistentRelay() {
+            assertCode(() -> sut.normalize(OutputKind.RELAY, Map.of("channel", 3)), ErrorCodes.PORTS_RELAY_CHANNEL_WITHOUT_EXPANDER);
+            assertCode(() -> sut.normalize(OutputKind.RELAY, Map.of("expander", "exp1")), ErrorCodes.PORTS_RELAY_CHANNEL_REQUIRED);
+            assertCode(() -> sut.normalize(OutputKind.RELAY, Map.of("expander", "exp1", "channel", 1, "activeLow", true)),
+                    ErrorCodes.PORTS_RELAY_ACTIVE_LOW_ON_EXPANDER);
+        }
+
+        @Test
+        @DisplayName("bounds the channel to 0–15 and types the keys")
+        void should_boundChannel() {
+            assertCode(() -> sut.normalize(OutputKind.RELAY, Map.of("expander", "exp1", "channel", 16)), ErrorCodes.PORTS_CONFIG_OUT_OF_RANGE);
+            assertCode(() -> sut.normalize(OutputKind.RELAY, Map.of("expander", "exp1", "channel", -1)), ErrorCodes.PORTS_CONFIG_OUT_OF_RANGE);
+            assertCode(() -> sut.normalize(OutputKind.RELAY, Map.of("expander", "exp1", "channel", "3")), ErrorCodes.PORTS_CONFIG_TYPE_MISMATCH);
+            assertCode(() -> sut.normalize(OutputKind.RELAY, Map.of("expander", " ", "channel", 3)), ErrorCodes.PORTS_CONFIG_TYPE_MISMATCH);
+            assertCode(() -> sut.normalize(OutputKind.RELAY, Map.of("activeLow", "yes")), ErrorCodes.PORTS_CONFIG_TYPE_MISMATCH);
+        }
+    }
+
+    @Nested
+    @DisplayName("gpio_expander and moving_head (contract v3)")
+    class NewKinds {
+
+        @Test
+        @DisplayName("an expander needs chip and address in 0x20–0x27")
+        void should_validateExpander() {
+            assertThat(sut.normalize(OutputKind.GPIO_EXPANDER, Map.of("chip", "mcp23017", "address", 32, "activeLow", true)))
+                    .containsExactly(Map.entry("chip", "mcp23017"), Map.entry("address", 32), Map.entry("activeLow", true));
+            assertCode(() -> sut.normalize(OutputKind.GPIO_EXPANDER, Map.of("address", 32)), ErrorCodes.PORTS_CONFIG_MISSING_KEY);
+            assertCode(() -> sut.normalize(OutputKind.GPIO_EXPANDER, Map.of("chip", "mcp23017")), ErrorCodes.PORTS_CONFIG_MISSING_KEY);
+            assertCode(() -> sut.normalize(OutputKind.GPIO_EXPANDER, Map.of("chip", "pcf8574", "address", 32)), ErrorCodes.PORTS_CONFIG_TYPE_MISMATCH);
+            assertCode(() -> sut.normalize(OutputKind.GPIO_EXPANDER, Map.of("chip", "mcp23017", "address", 40)), ErrorCodes.PORTS_CONFIG_OUT_OF_RANGE);
+            assertCode(() -> sut.normalize(OutputKind.GPIO_EXPANDER, Map.of("chip", "mcp23017", "address", 32, "bus", 2)), ErrorCodes.PORTS_CONFIG_OUT_OF_RANGE);
+        }
+
+        @Test
+        @DisplayName("a moving head needs a known profile and an address in 1–512")
+        void should_validateMovingHead() {
+            assertThat(sut.normalize(OutputKind.MOVING_HEAD, Map.of("profile", "varytec-hero-wash-712z", "address", 1)))
+                    .containsExactly(Map.entry("profile", "varytec-hero-wash-712z"), Map.entry("address", 1));
+            assertCode(() -> sut.normalize(OutputKind.MOVING_HEAD, Map.of("address", 1)), ErrorCodes.PORTS_CONFIG_MISSING_KEY);
+            assertCode(() -> sut.normalize(OutputKind.MOVING_HEAD, Map.of("profile", "generic", "address", 1)), ErrorCodes.PORTS_CONFIG_TYPE_MISMATCH);
+            assertCode(() -> sut.normalize(OutputKind.MOVING_HEAD, Map.of("profile", "varytec-hero-wash-712z", "address", 0)), ErrorCodes.PORTS_CONFIG_OUT_OF_RANGE);
+            assertCode(() -> sut.normalize(OutputKind.MOVING_HEAD, Map.of("profile", "varytec-hero-wash-712z", "address", 513)), ErrorCodes.PORTS_CONFIG_OUT_OF_RANGE);
+        }
+
+        @Test
+        @DisplayName("a motor needs maxUpTime")
+        void should_requireMaxUpTime() {
+            Map<String, Object> cfg = motor();
+            cfg.remove("maxUpTime");
+            assertCode(() -> sut.normalize(OutputKind.MOTOR, cfg), ErrorCodes.PORTS_CONFIG_MISSING_KEY);
+        }
+    }
+
+    @Nested
     @DisplayName("kinds without config")
     class NoConfigKinds {
 
         @Test
-        @DisplayName("audio, video and button accept only an empty config")
+        @DisplayName("audio and button accept only an empty config")
         void should_acceptOnlyEmpty() {
-            for (OutputKind kind : List.of(OutputKind.AUDIO, OutputKind.VIDEO, OutputKind.BUTTON)) {
+            for (OutputKind kind : List.of(OutputKind.AUDIO, OutputKind.BUTTON)) {
                 assertThat(sut.normalize(kind, Map.of())).as(kind.name()).isEmpty();
                 assertCode(() -> sut.normalize(kind, Map.of("file", "x.mp3")), ErrorCodes.PORTS_CONFIG_UNKNOWN_KEY);
             }

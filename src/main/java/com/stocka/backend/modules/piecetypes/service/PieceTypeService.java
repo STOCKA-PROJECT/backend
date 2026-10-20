@@ -347,7 +347,7 @@ public class PieceTypeService {
      * Validates the technical name of an action or of an action/port parameter: a lowercase letter
      * followed by up to 79 letters (any case), digits or underscores. Looser than
      * {@link #validateAttributeName(String)} because catalog actions are the real controller
-     * methods of the player ({@code focoOn}, {@code setBrightness}).
+     * methods of the player ({@code turn_on}, {@code setBrightness}).
      *
      * @param name technical name proposed by the caller
      * @throws ApiException with status 400 and code {@code piece_types.action_name_invalid} when

@@ -1,14 +1,19 @@
 {
   "format": "stocka-catalog",
-  "version": 2,
+  "version": 3,
   "types": ["int", "number", "bool", "string", "rgb", "rgb_list", "enum"],
   "kinds": {
     "relay": {
       "controller": "RelayController",
       "infrastructure": false,
-      "pin": true,
+      "pin": "optional",
+      "notes": "Sortida tot/res. O bé un GPIO natiu (pin) o bé un canal d'un expansor (expander + channel), mai els dos. activeLow només per a relés natius; en un expansor la polaritat és de tota la placa.",
       "legacy": { "addressing": "name", "pinType": "Relé", "module": "output" },
-      "config": {},
+      "config": {
+        "expander": { "type": "string", "ref": "gpio_expander", "notes": "Nom d'un port gpio_expander; amb expander cal channel i no hi pot haver pin." },
+        "channel": { "type": "int", "min": 0, "max": 15 },
+        "activeLow": { "type": "bool", "default": false, "notes": "Placa de relés activa a nivell baix: nivell alt = apagat." }
+      },
       "actions": {
         "turn_on": {
           "params": { "time": { "type": "number", "min": 0, "duration": true } }
@@ -16,16 +21,24 @@
         "turn_off": {
           "params": { "time": { "type": "number", "min": 0, "duration": true } }
         },
-        "focoOn": {
-          "params": { "hold_time": { "type": "number", "min": 0, "default": 5 } }
-        },
-        "focoOff": {
-          "params": {
-            "hold_time": { "type": "number", "min": 0, "default": 5 },
-            "pulse_delay": { "type": "number", "min": 0, "default": 0.2 }
-          }
+        "pulse": {
+          "params": { "duration": { "type": "number", "min": 0, "required": true, "duration": true, "notes": "Tanca el relé duration segons i l'obre (polsar un botó)." } }
         }
       }
+    },
+    "gpio_expander": {
+      "controller": "RelayController",
+      "infrastructure": true,
+      "pin": false,
+      "notes": "Expansor MCP23017 per I2C amb 16 canals per a relés; infraestructura sense tipus de peça ni accions. Amb un expansor al show, els GPIO 2 i 3 (I2C) queden reservats.",
+      "legacy": { "addressing": "name" },
+      "config": {
+        "chip": { "type": "enum", "required": true, "values": ["mcp23017"] },
+        "bus": { "type": "int", "min": 0, "max": 1, "default": 1 },
+        "address": { "type": "int", "required": true, "min": 32, "max": 39, "notes": "Adreça I2C 0x20–0x27 (32–39), única per bus." },
+        "activeLow": { "type": "bool", "default": false }
+      },
+      "actions": {}
     },
     "led_strip": {
       "controller": "LedsController",
@@ -253,7 +266,8 @@
         "pinR": { "type": "int", "required": true },
         "pinL": { "type": "int", "required": true },
         "sensorPin": { "type": "int", "required": true },
-        "downTime": { "type": "number", "required": true, "min": 0 }
+        "downTime": { "type": "number", "required": true, "min": 0, "notes": "Segons de baixada per defecte." },
+        "maxUpTime": { "type": "number", "required": true, "min": 0, "notes": "Segons màxims amb el motor pujant encara que el sensor no detecti (tall dur de seguretat). Mesura la pujada més lenta al banc i posa-hi 1,3 vegades." }
       },
       "actions": {
         "start_up": {
@@ -283,17 +297,35 @@
         "stop": { "params": {}, "unsupported": ["player_id"] }
       }
     },
-    "video": {
-      "controller": "VideoController",
+    "moving_head": {
+      "controller": "DmxController",
       "infrastructure": false,
       "pin": false,
-      "legacy": { "addressing": "controller" },
-      "config": {},
+      "notes": "Cap mòbil (wash) per DMX512 a través d'un adaptador USB→DMX. address és el primer canal del aparell (menú DMX Address); profile diu quants canals ocupa i com es converteixen les unitats físiques (graus, percentatge, RGBW) a canals (vegeu profiles.moving_head). Diversos caps comparteixen el mateix univers; els seus rangs de canals no es poden solapar.",
+      "legacy": { "addressing": "name" },
+      "config": {
+        "profile": { "type": "enum", "required": true, "values": ["varytec-hero-wash-712z"] },
+        "address": { "type": "int", "required": true, "min": 1, "max": 512, "notes": "Primer canal DMX (1–512); address + canals − 1 ≤ 512." }
+      },
       "actions": {
-        "play": {
-          "params": { "video_name": { "type": "string", "required": true, "asset": "video" } }
+        "set": {
+          "transition": true,
+          "notes": "Un cue: porta els paràmetres indicats des del valor actual al nou en time segons (sense time, immediat). Els no indicats no canvien.",
+          "params": {
+            "color": { "type": "rgb" },
+            "white": { "type": "int", "min": 0, "max": 255 },
+            "intensity": { "type": "number", "min": 0, "max": 100, "notes": "Percentatge del dimmer." },
+            "pan": { "type": "number", "min": 0, "max": 540, "notes": "Graus (0 … pan màxim del perfil)." },
+            "tilt": { "type": "number", "min": 0, "max": 190, "notes": "Graus (0 … tilt màxim del perfil)." },
+            "zoom": { "type": "number", "min": 6, "max": 36, "notes": "Angle del feix en graus (rang del perfil)." },
+            "time": { "type": "number", "min": 0, "duration": true }
+          }
         },
-        "stop": { "params": {} }
+        "blackout": {
+          "transition": true,
+          "notes": "intensity → 0 en time segons; el cap no es mou.",
+          "params": { "time": { "type": "number", "min": 0, "duration": true } }
+        }
       }
     },
     "button": {
@@ -305,12 +337,27 @@
       "actions": {}
     }
   },
+  "profiles": {
+    "moving_head": {
+      "varytec-hero-wash-712z": {
+        "name": "Varytec Hero Wash 712 Z RGBW Zoom",
+        "mode": "DMX 15 Ch",
+        "channels": 15,
+        "pan": { "max": 540 },
+        "tilt": { "max": 190 },
+        "zoom": { "min": 6, "max": 36 },
+        "map": { "pan": 1, "panFine": 2, "tilt": 3, "tiltFine": 4, "speed": 5, "dimmer": 6, "shutter": 7, "red": 8, "green": 9, "blue": 10, "white": 11, "colorTemp": 12, "macros": 13, "zoom": 14, "programs": 15 },
+        "fixed": { "speed": 0, "shutter": 0, "colorTemp": 0, "macros": 0, "programs": 0 },
+        "notes": "Manual Varytec §7.4. Al menú de l'aparell: DMX Channel = DMX 15 Ch, Running Mode = DMX, Settings → Dmx Fail = OFF (sense senyal s'apaga)."
+      }
+    }
+  },
   "excludedMethods": {
     "RelayController": ["stop", "is_process_running", "wait_for_process_completion", "get_relay_state"],
     "LedsController": ["add_segment", "setPixel", "show", "getBrightness", "getLength", "getStripNames", "getSegmentNames", "getAllNames", "getSegmentInfo", "getStripInfo", "fade", "stop_fade", "is_fading", "getCurrentColor", "stop_animation", "is_animating", "stars", "fire", "window_light", "candle", "sunrise", "sunset", "moonlight", "clouds", "shooting_star", "aurora", "snow"],
     "AngelController": ["is_process_running", "wait_for_process_completion"],
     "AudioController": ["is_playing", "get_active_players", "wait_for_completion"],
-    "VideoController": ["is_process_running", "wait_for_process_completion"],
+    "DmxController": ["stop", "is_process_running", "close", "status", "start", "tick"],
     "ButtonController": ["should_continue_timeline", "notify_cycle_completed", "get_button_state", "stop"]
   },
   "boards": {
@@ -337,7 +384,7 @@
         "21": { "channel": 0, "via": "PCM", "warning": "pot interferir amb l'àudio" }
       },
       "dma": { "min": 0, "max": 14, "avoid": [2, 3, 6, 7] },
-      "capabilities": ["relay", "led_strip", "led_segment", "motor", "audio", "video", "button"]
+      "capabilities": ["relay", "gpio_expander", "led_strip", "led_segment", "motor", "audio", "moving_head", "button"]
     }
   }
 }
