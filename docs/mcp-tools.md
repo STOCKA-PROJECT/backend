@@ -165,10 +165,10 @@ No arguments.
 |---|---|---|---|
 | `org` | string | yes | Organization slug |
 | `name` | string | yes | Port name, unique in the organization |
-| `kind` | string | yes | Kind from the catalog: relay, gpio_expander, led_strip, led_segment, motor, audio, moving_head, button |
-| `pieceTypeId` | integer | no | Piece type id whose kind matches (omit for infrastructure kinds gpio_expander, led_strip and button) |
-| `pin` | integer | no | BCM GPIO pin for kinds that take one (led_strip, button; relay unless it uses expander + channel) |
-| `config` | object | no | Kind-specific configuration as in the catalog (e.g. relay: expander + channel 0-15 instead of pin, activeLow; gpio_expander: chip mcp23017, bus, address 32-39, activeLow; led_strip: dma, channel, length; led_segment: strip, first, last; motor: pinR, pinL, sensorPin, downTime, maxUpTime; moving_head: profile, address 1-512) |
+| `kind` | string | yes | Kind from the catalog: relay, gpio_expander, led_strip, led_segment, motor, audio, moving_head, sensor |
+| `pieceTypeId` | integer | no | Piece type id whose kind matches (omit for infrastructure kinds gpio_expander, led_strip and sensor) |
+| `pin` | integer | no | BCM GPIO pin for kinds that take one (led_strip; relay and sensor unless they use expander + channel) |
+| `config` | object | no | Kind-specific configuration as in the catalog (e.g. relay: expander + channel 0-15 instead of pin, activeLow; gpio_expander: chip mcp23017, bus, address 32-39, activeLow; led_strip: dma, channel, length; led_segment: strip, first, last; motor: pinForward + pinReverse or expander + channelForward + channelReverse, maxTimeForward, maxTimeReverse, optional limitForward/limitReverse naming sensor ports, lockOnTimeout, switchDelayMs; sensor: expander + channel instead of pin, activeLow, pull up/down/none, debounceMs, onActive none/play/stop_show/panic; moving_head: profile, address 1-512) |
 
 #### `port_update`
 
@@ -589,7 +589,7 @@ No arguments.
 | URI | Name | Description |
 |---|---|---|
 | `stocka://guide` | Stocka MCP guide | How to use the Stocka tools: recommended workflows, ids and versions, limits. |
-| `stocka://catalog` | Output catalog | Hardware output kinds (relay, gpio_expander, led_strip, led_segment, motor, audio, moving_head, button), their actions and parameters, and the Raspberry Pi board profile. Needed to write clip parameters and port configurations. |
+| `stocka://catalog` | Output catalog | Hardware output kinds (relay, gpio_expander, led_strip, led_segment, motor, audio, moving_head, sensor), their actions and parameters, and the Raspberry Pi board profile. Needed to write clip parameters and port configurations. |
 | `stocka://schema/scene` | Timeline scene schema | JSON Schema of the timeline scene document (board, layers, items, tracks, clips) with the semantics of every field. |
 | `stocka://org/{slug}/overview` | Organization overview | Counts of pieces (by status), types, locations and timelines of an organization: a cheap first look. |
 

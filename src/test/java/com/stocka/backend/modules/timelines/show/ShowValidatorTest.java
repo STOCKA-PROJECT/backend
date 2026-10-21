@@ -186,19 +186,33 @@ class ShowValidatorTest {
         }
 
         @Test
-        @DisplayName("motors need maxUpTime; start_up cannot exceed it and a short one warns")
+        @DisplayName("motors need both max times; a clip longer than one is an error, or a warning with a limit sensor")
         void motor() {
-            port("Angel", "kind", "motor", "pinR", 17, "pinL", 27, "sensorPin", 22, "downTime", 18);
-            event(0, "Angel", "start_down");
+            port("Angel", "kind", "motor", "pinForward", 27, "pinReverse", 17, "maxTimeReverse", 18);
+            event(0, "Angel", "reverse");
             assertThat(errors()).containsExactly("E_CONFIG_INVALID");
-            hardware.get("Angel").put("maxUpTime", 24);
+            hardware.get("Angel").put("maxTimeForward", 24);
             assertThat(errors()).isEmpty();
-            event(1000, "Angel", "start_up", "time", 25);
-            assertThat(errors()).containsExactly("E_MOTOR_UP_TIME");
-            timeline.remove(timeline.size() - 1);
-            hardware.get("Angel").put("maxUpTime", 10);
+            event(1000, "Angel", "forward", "time", 25);
+            assertThat(errors()).containsExactly("E_MOTOR_TIME");
+            port("AngelDalt", "kind", "sensor", "pin", 22);
+            hardware.get("Angel").put("limitForward", "AngelDalt");
             assertThat(errors()).isEmpty();
-            assertThat(warnings()).contains("W_MOTOR_UP_TIME_SHORT");
+            assertThat(warnings()).containsExactly("W_MOTOR_TIME_CAPPED");
+            event(2000, "Angel", "reverse", "time", 19);
+            assertThat(errors()).containsExactly("E_MOTOR_TIME");
+        }
+
+        @Test
+        @DisplayName("a clip within the max time, or without time, is clean; the old actions are gone")
+        void motorActions() {
+            port("Angel", "kind", "motor", "pinForward", 27, "pinReverse", 17, "maxTimeForward", 24, "maxTimeReverse", 18);
+            event(0, "Angel", "forward", "time", 24);
+            event(30000, "Angel", "reverse");
+            event(60000, "Angel", "stop");
+            assertThat(validate()).isEmpty();
+            event(90000, "Angel", "start_up");
+            assertThat(errors()).containsExactly("E_ACTION_UNKNOWN");
         }
     }
 
@@ -289,22 +303,12 @@ class ShowValidatorTest {
         @DisplayName("a pin used twice is an error, motor pins included")
         void duplicatePins() {
             port("A", "kind", "relay", "pin", 26);
-            port("M", "kind", "motor", "pinR", 26, "pinL", 27, "sensorPin", 25, "downTime", 15, "maxUpTime", 20);
+            port("M", "kind", "motor", "pinForward", 26, "pinReverse", 27, "maxTimeForward", 20, "maxTimeReverse", 15);
             event(0, "A", "turn_on");
             event(0, "M", "stop");
             List<ShowIssue> issues = validate();
             assertThat(codes(issues)).containsExactly("E_PIN_DUPLICATE");
-            assertThat(issues.get(0).message()).contains("A, M.pinR");
-        }
-
-        @Test
-        @DisplayName("a motor cannot repeat a pin among its own three")
-        void motorPins() {
-            port("M", "kind", "motor", "pinR", 26, "pinL", 26, "sensorPin", 25, "downTime", 15, "maxUpTime", 20);
-            event(0, "M", "stop");
-            // The repeated pin is also, by construction, a pin used by two outputs of the board.
-            assertThat(errors()).containsExactly("E_CONFIG_INVALID", "E_PIN_DUPLICATE");
-            assertThat(validate().get(0).message()).contains("repeteix un pin");
+            assertThat(issues.get(0).message()).contains("A, M.pinForward");
         }
 
         @Test
@@ -325,6 +329,173 @@ class ShowValidatorTest {
             assertThat(warnings()).containsExactly("W_PCM_AUDIO", "W_DMA_AVOID");
             assertThat(validate().stream().filter(i -> i.code().equals("W_PCM_AUDIO")).findFirst().get().message())
                     .contains("pot interferir");
+        }
+    }
+
+    @Nested
+    @DisplayName("motor outputs and sensors (contract v3)")
+    class MotorsAndSensors {
+
+        private void expander(String name) {
+            port(name, "kind", "gpio_expander", "chip", "mcp23017", "address", 32);
+        }
+
+        private void nativeMotor(String name, Object... extra) {
+            port(name, "kind", "motor", "pinForward", 27, "pinReverse", 17, "maxTimeForward", 24, "maxTimeReverse", 18);
+            hardware.get(name).putAll(Belen2026Fixture.config(extra));
+            event(0, name, "stop");
+        }
+
+        private void expanderMotor(String name, Object... extra) {
+            port(name, "kind", "motor", "expander", "exp1", "channelForward", 6, "channelReverse", 7,
+                    "maxTimeForward", 60, "maxTimeReverse", 60);
+            hardware.get(name).putAll(Belen2026Fixture.config(extra));
+            event(0, name, "stop");
+        }
+
+        @Test
+        @DisplayName("a motor on the expander with two distinct channels is clean")
+        void expanderMotorClean() {
+            expander("exp1");
+            expanderMotor("Noria");
+            assertThat(validate()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("native outputs: a missing pin or stray channels are E_MOTOR_OUTPUTS")
+        void nativeOutputsIncoherent() {
+            nativeMotor("A");
+            hardware.get("A").remove("pinReverse");
+            assertThat(errors()).contains("E_MOTOR_OUTPUTS");
+            hardware.get("A").put("pinReverse", 17);
+            hardware.get("A").put("channelForward", 1);
+            assertThat(errors()).containsExactly("E_MOTOR_OUTPUTS");
+            assertThat(validate().get(0).message()).contains("només tenen sentit amb «expander»");
+        }
+
+        @Test
+        @DisplayName("expander outputs: pins, a missing or repeated channel and activeLow are E_MOTOR_OUTPUTS")
+        void expanderOutputsIncoherent() {
+            expander("exp1");
+            expanderMotor("N1", "pinForward", 5);
+            port("N2", "kind", "motor", "expander", "exp1", "channelForward", 8, "maxTimeForward", 1, "maxTimeReverse", 1);
+            event(0, "N2", "stop");
+            port("N3", "kind", "motor", "expander", "exp1", "channelForward", 9, "channelReverse", 9,
+                    "maxTimeForward", 1, "maxTimeReverse", 1);
+            event(0, "N3", "stop");
+            port("N4", "kind", "motor", "expander", "exp1", "channelForward", 10, "channelReverse", 11, "activeLow", true,
+                    "maxTimeForward", 1, "maxTimeReverse", 1);
+            event(0, "N4", "stop");
+            List<ShowIssue> outputs = validate().stream().filter(i -> "E_MOTOR_OUTPUTS".equals(i.code())).toList();
+            assertThat(outputs).extracting(ShowIssue::port).containsExactly("N1", "N2", "N3", "N4");
+        }
+
+        @Test
+        @DisplayName("a motor repeating its own native pin is E_PIN_DUPLICATE")
+        void motorPinsMustDiffer() {
+            nativeMotor("M", "pinReverse", 27);
+            List<ShowIssue> issues = validate();
+            assertThat(codes(issues)).containsExactly("E_PIN_DUPLICATE");
+            assertThat(issues.get(0).message()).contains("M.pinForward, M.pinReverse");
+        }
+
+        @Test
+        @DisplayName("motor channels count against relays and sensors on the same expander")
+        void sharedChannels() {
+            expander("exp1");
+            expanderMotor("Noria");
+            port("R", "kind", "relay", "expander", "exp1", "channel", 7);
+            event(0, "R", "turn_on");
+            List<ShowIssue> issues = validate();
+            assertThat(codes(issues)).containsExactly("E_EXPANDER_CHANNEL_DUPLICATE");
+            assertThat(issues.get(0).message()).contains("Noria.channelReverse, R");
+            hardware.remove("R");
+            timeline.removeIf(e -> "R".equals(e.target()));
+            port("S", "kind", "sensor", "expander", "exp1", "channel", 6, "onActive", "play");
+            assertThat(errors()).containsExactly("E_EXPANDER_CHANNEL_DUPLICATE");
+        }
+
+        @Test
+        @DisplayName("a motor or sensor on a missing expander is E_EXPANDER_MISSING")
+        void missingExpander() {
+            expanderMotor("Noria");
+            port("S", "kind", "sensor", "expander", "exp9", "channel", 1, "onActive", "play");
+            assertThat(errors()).containsExactly("E_EXPANDER_MISSING", "E_EXPANDER_MISSING");
+        }
+
+        @Test
+        @DisplayName("a limit must name a sensor port")
+        void limitMustBeSensor() {
+            port("Focos", "kind", "relay", "pin", 26);
+            event(0, "Focos", "turn_on");
+            nativeMotor("Angel", "limitForward", "Fantasma", "limitReverse", "Focos");
+            assertThat(errors()).containsExactly("E_SENSOR_MISSING", "E_SENSOR_MISSING");
+            port("AngelDalt", "kind", "sensor", "pin", 22);
+            hardware.get("Angel").put("limitForward", "AngelDalt");
+            hardware.get("Angel").remove("limitReverse");
+            assertThat(validate()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("motor pins are reserved on I2C GPIO 2/3 when an expander exists")
+        void motorPinsOnI2c() {
+            expander("exp1");
+            nativeMotor("Angel", "pinForward", 3);
+            assertThat(errors()).containsExactly("E_PIN_RESERVED");
+        }
+
+        @Test
+        @DisplayName("sensor pins count as pins")
+        void sensorPinsCount() {
+            nativeMotor("Angel");
+            port("S", "kind", "sensor", "pin", 17, "onActive", "play");
+            assertThat(errors()).containsExactly("E_PIN_DUPLICATE");
+        }
+
+        @Test
+        @DisplayName("a sensor on an expander may set its polarity and pull none, never pull down")
+        void expanderSensorPull() {
+            expander("exp1");
+            port("S", "kind", "sensor", "expander", "exp1", "channel", 1, "activeLow", false, "pull", "none", "onActive", "play");
+            assertThat(validate()).isEmpty();
+            hardware.get("S").put("pull", "down");
+            assertThat(errors()).containsExactly("E_CONFIG_INVALID");
+        }
+
+        @Test
+        @DisplayName("a sensor takes a pin or expander + channel")
+        void sensorPinXorExpander() {
+            expander("exp1");
+            port("S", "kind", "sensor", "pin", 22, "expander", "exp1", "channel", 1, "onActive", "play");
+            assertThat(errors()).contains("E_CONFIG_INVALID");
+            port("S", "kind", "sensor", "onActive", "play");
+            assertThat(errors()).contains("E_CONFIG_INVALID");
+        }
+
+        @Test
+        @DisplayName("an unknown onActive is E_CONFIG_INVALID")
+        void unknownOnActive() {
+            port("S", "kind", "sensor", "pin", 22, "onActive", "explode");
+            assertThat(errors()).containsExactly("E_CONFIG_INVALID");
+        }
+
+        @Test
+        @DisplayName("a sensor without onActive that no motor uses warns W_SENSOR_UNUSED; a limit sensor does not")
+        void unusedSensor() {
+            port("Solt", "kind", "sensor", "pin", 23);
+            port("AngelDalt", "kind", "sensor", "pin", 22, "onActive", "none");
+            nativeMotor("Angel", "limitForward", "AngelDalt");
+            List<ShowIssue> issues = validate();
+            assertThat(codes(issues)).containsExactly("W_SENSOR_UNUSED");
+            assertThat(issues.get(0).port()).isEqualTo("Solt");
+        }
+
+        @Test
+        @DisplayName("sensors have no actions")
+        void sensorsHaveNoActions() {
+            port("S", "kind", "sensor", "pin", 22, "onActive", "play");
+            event(0, "S", "press");
+            assertThat(errors()).containsExactly("E_ACTION_UNKNOWN");
         }
     }
 
@@ -442,14 +613,18 @@ class ShowValidatorTest {
         void unusedPorts() {
             port("Focos", "kind", "relay", "pin", 27);
             port("T", "kind", "led_strip", "pin", 13, "dma", 10, "channel", 1, "length", 44);
-            port("Boto", "kind", "button", "pin", 20);
+            port("Boto", "kind", "sensor", "pin", 20, "onActive", "play");
             assertThat(warnings()).containsExactly("W_PORT_UNUSED");
             assertThat(validate().get(0).port()).isEqualTo("Focos");
         }
 
         @Test
-        @DisplayName("the legacy player accepts a single motor and audio port")
+        @DisplayName("the player accepts a single audio port; several motors are fine")
         void singletons() {
+            port("M1", "kind", "motor", "pinForward", 22, "pinReverse", 23, "maxTimeForward", 10, "maxTimeReverse", 10);
+            port("M2", "kind", "motor", "pinForward", 12, "pinReverse", 16, "maxTimeForward", 10, "maxTimeReverse", 10);
+            event(0, "M1", "stop");
+            event(0, "M2", "stop");
             port("A1", "kind", "audio");
             port("A2", "kind", "audio");
             event(0, "A1", "stop");

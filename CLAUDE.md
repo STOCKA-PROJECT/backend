@@ -134,12 +134,21 @@ Org membership roles: `OWNER`, `MANAGER`, `USER`, `SPECTATOR` (read-only).
 
 Ports (`/organizations/{orgId}/ports`, gated to admin-owned orgs) carry a closed `kind` from the
 output catalog v3 (`relay`, `gpio_expander`, `led_strip`, `led_segment`, `motor`, `audio`, `moving_head`,
-`button`; the projector kind `video` disappeared on 2026-10-20, migration `V25__contract_v3.sql` cleans its rows) plus a
+`sensor`; the projector kind `video` disappeared on 2026-10-20, migration `V25__contract_v3.sql` cleans its rows, and
+`button` became `sensor` with `onActive: play` on 2026-10-21, `V26__motors_and_sensors.sql`) plus a
 per-kind `config` validated by `PortConfigValidator`. A relay takes either `pin` (native GPIO, optional `activeLow`)
 or `expander` + `channel` (0–15) naming a `gpio_expander` port (MCP23017: `chip`, `bus`, `address` 0x20–0x27,
 `activeLow`), mirroring strips and segments: channel unique per expander, address unique per bus, rename cascades,
 delete refused while relays depend on it (`ports.expander_in_use`), and GPIO 2/3 reserved for I2C while an expander
-exists (`ports.i2c_pin_reserved`). Motors need `maxUpTime`. Moving heads (`moving_head`: `profile`
+exists (`ports.i2c_pin_reserved`). Motors are H-bridge outputs: `pinForward` + `pinReverse` or `expander` +
+`channelForward` + `channelReverse` (`ports.motor_outputs_invalid`, `params.reason`), required `maxTimeForward` /
+`maxTimeReverse` (hard cuts), optional `limitForward` / `limitReverse` naming `sensor` ports (`ports.sensor_not_found`;
+deleting one in use is `ports.sensor_in_use`, renaming cascades), `lockOnTimeout`, `switchDelayMs`; actions `forward`,
+`reverse` (time = clip length) and `stop`. Sensors (infrastructure) take `pin` or `expander` + `channel` like relays
+(`ports.pin_or_expander`), `activeLow` (default true), `pull` (no `down` on an expander), `debounceMs` and `onActive`
+`none|play|stop_show|panic`; expander channels are shared by relays, motors and sensors. V26 converts old motors
+(`pinR`/`pinL`/`sensorPin`/`downTime`/`maxUpTime` → new keys + a `<motor>-límit` sensor) and renames the type actions
+`start_up`/`start_down` to `forward`/`reverse`. Moving heads (`moving_head`: `profile`
 `varytec-hero-wash-712z`, `address` 1–512) must fit `profiles.moving_head.<id>.channels` inside the 512-channel
 universe without overlapping (`ports.dmx_address_range` / `ports.dmx_address_conflict`); piece types may declare a `kind`, in which
 case their actions are validated against the catalog by `ActionCatalogValidator`. The catalog JSON
@@ -151,7 +160,8 @@ players of an organization. Registering one returns a heartbeat token (`bht_` + 
 exactly once; the row keeps only its sha256 (`token_hash`, unique) and first 8 chars (`token_prefix`). The Pi,
 when it has Internet, posts `POST /player/heartbeat` (public, rate-limited `player.heartbeat.ip` 120/min) with
 `Authorization: Device <token>` and `{deviceId, state, showHash?, showName?, overrides?, version?, uptimeS?,
-netMode?, error?}`; `DeviceService.recordHeartbeat` binds `device_id` on the first call (a different uuid
+netMode?, error?, alerts?}` (alerts: last ≤ 20 `{code, port, message, at}`, stored in `last_alerts` and exposed as
+`lastAlerts`); `DeviceService.recordHeartbeat` binds `device_id` on the first call (a different uuid
 later is accepted and logged at WARN), stores every `last_*` column and `last_ip` from `ClientIpResolver`.
 `online` = `lastSeenAt` within `stocka.devices.online-window` (`DEVICES_ONLINE_WINDOW`, default `PT5M`);
 `heartbeatUrl` in the creation response comes from `stocka.devices.heartbeat-base-url`

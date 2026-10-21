@@ -94,6 +94,9 @@ class HeartbeatControllerIntegrationTest {
                     .andExpect(jsonPath("$[0].lastShowName").value("Nadal 2026"))
                     .andExpect(jsonPath("$[0].lastOverrides", hasSize(2)))
                     .andExpect(jsonPath("$[0].lastOverrides", hasItem("Angel")))
+                    .andExpect(jsonPath("$[0].lastAlerts", hasSize(1)))
+                    .andExpect(jsonPath("$[0].lastAlerts[0].code").value("motor_timeout"))
+                    .andExpect(jsonPath("$[0].lastAlerts[0].port").value("Angel"))
                     .andExpect(jsonPath("$[0].lastVersion").value("2.0.1"))
                     .andExpect(jsonPath("$[0].lastIp").value("127.0.0.1"))
                     .andExpect(jsonPath("$[0].lastError").value("relay 3 timeout"))
@@ -117,6 +120,7 @@ class HeartbeatControllerIntegrationTest {
                     .andExpect(jsonPath("$[0].lastShowHash").value(nullValue()))
                     .andExpect(jsonPath("$[0].lastShowName").value(nullValue()))
                     .andExpect(jsonPath("$[0].lastOverrides", hasSize(0)))
+                    .andExpect(jsonPath("$[0].lastAlerts", hasSize(0)))
                     .andExpect(jsonPath("$[0].lastError").value(nullValue()))
                     .andExpect(jsonPath("$[0].online").value(true));
         }
@@ -307,6 +311,26 @@ class HeartbeatControllerIntegrationTest {
         }
 
         @Test
+        @DisplayName("more than 20 alerts or an alert with an over-long field returns 400; 20 are accepted")
+        void alertsLimits_return400() throws Exception {
+            List<Map<String, Object>> tooMany = new ArrayList<>();
+            for (int i = 0; i < 21; i++) {
+                tooMany.add(Map.of("code", "motor_timeout", "port", "M" + i));
+            }
+            heartbeat("Device " + deviceToken, Map.of("deviceId", "uuid-1", "state", "IDLE", "alerts", tooMany))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("validation.failed"));
+            heartbeat("Device " + deviceToken, Map.of("deviceId", "uuid-1", "state", "IDLE",
+                            "alerts", List.of(Map.of("code", "c".repeat(41)))))
+                    .andExpect(status().isBadRequest());
+            heartbeat("Device " + deviceToken, Map.of("deviceId", "uuid-1", "state", "IDLE",
+                            "alerts", List.of(Map.of("code", "x", "message", "m".repeat(501)))))
+                    .andExpect(status().isBadRequest());
+            heartbeat("Device " + deviceToken, Map.of("deviceId", "uuid-1", "state", "IDLE", "alerts", tooMany.subList(0, 20)))
+                    .andExpect(status().isNoContent());
+        }
+
+        @Test
         @DisplayName("over-long optional strings and a negative uptime return 400")
         void otherLimits_return400() throws Exception {
             heartbeat("Device " + deviceToken, Map.of("deviceId", "uuid-1", "state", "IDLE", "showHash", "h".repeat(81)))
@@ -348,6 +372,7 @@ class HeartbeatControllerIntegrationTest {
         body.put("netMode", "ap");
         body.put("ssid", "belen");
         body.put("ip", "192.168.4.1");
+        body.put("alerts", List.of(Map.of("code", "motor_timeout", "port", "Angel", "message", "Temps màxim", "at", "2026-12-24T18:00:00Z")));
         body.put("error", "relay 3 timeout");
         return body;
     }

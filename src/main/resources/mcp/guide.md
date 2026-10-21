@@ -78,6 +78,13 @@ Only organizations whose owner is a Stocka administrator have ports and type act
 `ports_list` / `port_create` manage GPIO ports; `piece_type_actions_list` / `piece_type_action_create`
 manage the actions a type exposes to timelines.
 
+Motors (`motor`) are H-bridge outputs: two native pins (`pinForward`, `pinReverse`) or an expander with
+`channelForward`/`channelReverse`. Their actions are `forward` and `reverse` (the clip length is the turning
+time) and `stop`. `maxTimeForward`/`maxTimeReverse` are hard cuts; a clip longer than one is an error unless
+that direction has a limit sensor (`limitForward`/`limitReverse`, naming a `sensor` port), then only a warning.
+Sensors (`sensor`) are infrastructure inputs (pin or expander + channel) with no timeline actions; `onActive`
+says what the player does when one fires: `none` (limit switch), `play` (start button), `stop_show`, `panic`.
+
 ## Limits
 
 - Text fields are truncated at 2 000 characters in results; `piece_get` returns the full description.

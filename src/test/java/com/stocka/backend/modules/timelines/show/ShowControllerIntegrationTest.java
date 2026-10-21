@@ -150,7 +150,8 @@ class ShowControllerIntegrationTest {
         ports.put("CasaSimple", createSegment(slug, "CasaSimple", "LedStrip4", 0, 15));
         ports.put("CasaDoble", createSegment(slug, "CasaDoble", "LedStrip4", 16, 43));
         ports.put("Audio", createPort(slug, Map.of("name", "Audio", "kind", "audio", "pieceTypeId", types.get("audio"))));
-        ports.put("Pulsador Belen", createPort(slug, Map.of("name", "Pulsador Belen", "kind", "button", "pin", 20)));
+        ports.put("Pulsador Belen", createPort(slug, Map.of("name", "Pulsador Belen", "kind", "sensor", "pin", 20,
+                "config", Map.of("onActive", "play"))));
 
         attachmentId = uploadAudio(slug, pieces.get("Audio"), "nature.mp3", 61000L);
         assetName = attachmentId + "-nature.mp3";

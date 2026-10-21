@@ -5,7 +5,7 @@
     "name": "Pessebre 2026 (mostra)",
     "timelineId": null,
     "exportedAt": "2026-10-12T00:00:00.000Z",
-    "hash": "sha256:48a434c027e3fe7420d094bb5cbf119924f1e0c93b385cddd9766d808a00c92d"
+    "hash": "sha256:88db057d40d0926dab27200759f898fddc5161abc9104f84b192984fa9cb4ce5"
   },
   "board": "rpi4b",
   "mode": {
@@ -67,8 +67,9 @@
       "kind": "audio"
     },
     "Pulsador Belen": {
-      "kind": "button",
-      "pin": 20
+      "kind": "sensor",
+      "pin": 20,
+      "onActive": "play"
     }
   },
   "timeline": [

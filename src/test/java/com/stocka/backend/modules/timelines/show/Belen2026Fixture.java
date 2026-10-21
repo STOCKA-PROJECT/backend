@@ -38,7 +38,7 @@ public final class Belen2026Fixture {
 
     public static final String TIMELINE_NAME = "Pessebre 2026 (mostra)";
     public static final String EXPORTED_AT = "2026-10-12T00:00:00.000Z";
-    public static final String HASH = "sha256:48a434c027e3fe7420d094bb5cbf119924f1e0c93b385cddd9766d808a00c92d";
+    public static final String HASH = "sha256:88db057d40d0926dab27200759f898fddc5161abc9104f84b192984fa9cb4ce5";
     public static final String SAMPLE_RESOURCE = "/show/belen-2026.show.json";
 
     private Belen2026Fixture() {
@@ -57,7 +57,7 @@ public final class Belen2026Fixture {
         out.add(port(8, "CasaSimple", "led_segment", SEGMENT_TYPE, null, config("strip", "LedStrip4", "first", 0, "last", 15)));
         out.add(port(9, "CasaDoble", "led_segment", SEGMENT_TYPE, null, config("strip", "LedStrip4", "first", 16, "last", 43)));
         out.add(port(10, "Audio", "audio", AUDIO_TYPE, null, Map.of()));
-        out.add(port(11, "Pulsador Belen", "button", null, 20, Map.of()));
+        out.add(port(11, "Pulsador Belen", "sensor", null, 20, config("onActive", "play")));
         return out;
     }
 

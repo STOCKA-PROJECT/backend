@@ -24,16 +24,19 @@ body:json {
     "kind": "motor",
     "pieceTypeId": {{pieceTypeId}},
     "config": {
-      "pinR": 3,
-      "pinL": 4,
-      "sensorPin": 7,
-      "downTime": 15,
-      "maxUpTime": 20
+      "pinForward": 27,
+      "pinReverse": 17,
+      "maxTimeForward": 24,
+      "maxTimeReverse": 18
     }
   }
 }
 
 docs {
-  Sin pin: los tres pines van en config y cuentan para los conflictos de pin de la organización.
-  `maxUpTime` (segundos máximos subiendo aunque el sensor no detecte) es obligatorio. Requiere un tipo con kind=motor.
+  Motor con puente H en dos GPIO nativos (sin `pin` de puerto: los dos van en config y cuentan para los
+  conflictos de pin). `maxTimeForward` y `maxTimeReverse` (segundos, corte duro) son obligatorios.
+  Opcionales: `limitForward`/`limitReverse` nombran puertos `sensor` existentes (400 `ports.sensor_not_found`;
+  borrar un sensor en uso es 409 `ports.sensor_in_use`), `lockOnTimeout` bloquea el motor si un sentido con
+  final de carrera acaba por tiempo, `activeLow` para placas activas a nivel bajo. `switchDelayMs` (50) es el tiempo muerto al invertir. Requiere un tipo
+  con kind=motor, cuyas acciones son `forward`, `reverse` y `stop`.
 }

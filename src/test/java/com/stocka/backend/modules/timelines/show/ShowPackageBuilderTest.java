@@ -152,7 +152,7 @@ class ShowPackageBuilderTest {
         @DisplayName("maps every kind: kind, pin when the kind has one, config keys; port order kept")
         void mapsKinds() {
             List<ShowPort> ports = new ArrayList<>(Belen2026Fixture.ports());
-            Map<String, Object> motor = Belen2026Fixture.config("pinR", 3, "pinL", 4, "sensorPin", 7, "downTime", 15, "pin", 99, "kind", "x", "note", null);
+            Map<String, Object> motor = Belen2026Fixture.config("pinForward", 3, "pinReverse", 4, "maxTimeForward", 20, "maxTimeReverse", 15, "pin", 99, "kind", "x", "note", null);
             ports.add(Belen2026Fixture.port(12, "Angel", "motor", 9, null, motor));
             Assembled assembled = builder.assemble(ShowBuildInput.of(Belen2026Fixture.document(), Belen2026Fixture.context(), ports));
             assertThat(assembled.hardware().keySet()).containsExactly("Focos", "Sembra", "LlumsE", "LedStrip3", "LedStrip4", "Fondo1",
@@ -163,10 +163,11 @@ class ShowPackageBuilderTest {
             assertThat(assembled.hardware().get("Fondo2")).containsExactly(Map.entry("kind", "led_segment"),
                     Map.entry("strip", "LedStrip3"), Map.entry("first", 298), Map.entry("last", 149));
             assertThat(assembled.hardware().get("Audio")).containsExactly(Map.entry("kind", "audio"));
-            assertThat(assembled.hardware().get("Pulsador Belen")).containsExactly(Map.entry("kind", "button"), Map.entry("pin", 20));
+            assertThat(assembled.hardware().get("Pulsador Belen")).containsExactly(Map.entry("kind", "sensor"), Map.entry("pin", 20),
+                    Map.entry("onActive", "play"));
             // Motors have no single pin: the stray pin/kind/null config keys never reach the package.
-            assertThat(assembled.hardware().get("Angel")).containsExactly(Map.entry("kind", "motor"), Map.entry("pinR", 3),
-                    Map.entry("pinL", 4), Map.entry("sensorPin", 7), Map.entry("downTime", 15));
+            assertThat(assembled.hardware().get("Angel")).containsExactly(Map.entry("kind", "motor"), Map.entry("pinForward", 3),
+                    Map.entry("pinReverse", 4), Map.entry("maxTimeForward", 20), Map.entry("maxTimeReverse", 15));
         }
 
         @Test

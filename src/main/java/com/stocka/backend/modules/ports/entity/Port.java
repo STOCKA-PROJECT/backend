@@ -28,17 +28,17 @@ import jakarta.persistence.UniqueConstraint;
  * A hardware port declared by an {@link Organization}: one output (or input) of the belén
  * controller, typed by a closed {@link OutputKind} from the output catalog. Examples: a relay on GPIO
  * 26, a WS281x strip on GPIO 13 with its DMA/channel/length, a segment of that strip, the angel
- * motor with its three pins, the audio output, or the start button.
+ * motor with its two outputs, the audio output, or a sensor (start button, limit switch, emergency stop).
  *
  * <p>{@link #kind} is immutable after creation. {@link #pin} holds the single GPIO number for kinds
- * that have one (relay, led_strip, button); it is {@code null} for the others. Everything else the
+ * that have one (relay, led_strip, sensor); it is {@code null} for the others. Everything else the
  * kind needs lives in {@link #configJson}, a JSON object validated against the catalog's config
  * schema for that kind (e.g. {@code {"strip":"LedStrip3","first":0,"last":148}} for a segment).
  *
  * <p>{@code pieceTypeId} is mapped as a plain column (not a {@code @ManyToOne}) on purpose: piece
  * types carry {@code @SQLRestriction("deleted_at IS NULL")}, so an eager association to a piece type
  * that gets soft-deleted while a port still references it would break hydration when listing ports.
- * It is {@code null} for infrastructure kinds (strips, button) and otherwise must point at a piece
+ * It is {@code null} for infrastructure kinds (strips, expanders, sensors) and otherwise must point at a piece
  * type of the same organization whose own {@code kind} equals the port's.
  *
  * <p>{@link #parametersJson} is the legacy typed-parameter list kept for compatibility; the show

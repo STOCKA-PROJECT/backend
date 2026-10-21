@@ -28,7 +28,10 @@ body:json {
     "netMode": "ap",
     "ssid": "belen",
     "ip": "192.168.4.1",
-    "error": null
+    "error": null,
+    "alerts": [
+      {"code": "motor_timeout", "port": "Angel", "message": "L'Àngel ha esgotat maxTimeForward sense tocar el final de carrera", "at": "2026-12-24T18:00:00Z"}
+    ]
   }
 }
 
@@ -40,7 +43,7 @@ docs {
   401 `devices.token_invalid` si falta la capçalera, usa un altre esquema (`Bearer`) o el token no existeix /
   s'ha rotat / el dispositiu s'ha esborrat; 400 `validation.failed` si el cos no compleix:
   `deviceId` obligatori (≤ 36), `state` ∈ BOOT|SAFE|IDLE|PLAYING|TEST|ERROR, `overrides` ≤ 200 elements
-  de ≤ 160 caràcters, `showHash` ≤ 80, `showName` ≤ 160, `version` ≤ 40, `netMode` ≤ 8, `uptimeS` ≥ 0.
+  de ≤ 160 caràcters, `alerts` ≤ 20 elements (`code` ≤ 40, `port` ≤ 160, `message` ≤ 500, `at` ≤ 40), `showHash` ≤ 80, `showName` ≤ 160, `version` ≤ 40, `netMode` ≤ 8, `uptimeS` ≥ 0.
   `name`, `ssid` i `ip` s'accepten però no es desen. El primer batec lliga `deviceId`; un uuid diferent
   després s'accepta (targeta reinstal·lada) i es registra a WARN. Un token de dispositiu no val per a la resta
   de l'API (401 `auth.unauthenticated`).

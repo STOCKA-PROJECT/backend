@@ -5,7 +5,7 @@
     "name": "Pessebre 2026 (complet)",
     "timelineId": null,
     "exportedAt": "2026-10-20T18:00:00.000Z",
-    "hash": "sha256:ede79c247bab924dd421d6215e36a2399eee8e59fb75aeaf9a96ac90d688f381"
+    "hash": "sha256:12089181e07a0b5915da2cb231d5e62bb4f256f900a89907ad18d8d2d30f3feb"
   },
   "board": "rpi4b",
   "mode": {
@@ -41,11 +41,36 @@
     },
     "Angel": {
       "kind": "motor",
-      "pinR": 17,
-      "pinL": 27,
-      "sensorPin": 22,
-      "downTime": 18,
-      "maxUpTime": 24
+      "pinForward": 27,
+      "pinReverse": 17,
+      "switchDelayMs": 50,
+      "maxTimeForward": 24,
+      "limitForward": "AngelDalt",
+      "maxTimeReverse": 18,
+      "lockOnTimeout": true
+    },
+    "Noria": {
+      "kind": "motor",
+      "expander": "exp1",
+      "channelForward": 6,
+      "channelReverse": 7,
+      "maxTimeForward": 60,
+      "maxTimeReverse": 60
+    },
+    "AngelDalt": {
+      "kind": "sensor",
+      "pin": 22
+    },
+    "Seta": {
+      "kind": "sensor",
+      "pin": 23,
+      "onActive": "panic"
+    },
+    "PortaCaixa": {
+      "kind": "sensor",
+      "expander": "exp1",
+      "channel": 15,
+      "onActive": "stop_show"
     },
     "LedStrip4": {
       "kind": "led_strip",
@@ -74,8 +99,9 @@
       "address": 16
     },
     "Pulsador Belen": {
-      "kind": "button",
-      "pin": 20
+      "kind": "sensor",
+      "pin": 20,
+      "onActive": "play"
     }
   },
   "timeline": [
@@ -149,7 +175,7 @@
     {
       "t": 2000,
       "target": "Angel",
-      "action": "start_down",
+      "action": "reverse",
       "params": {
         "time": 1
       }
@@ -160,6 +186,14 @@
       "action": "turn_on",
       "params": {
         "time": 5
+      }
+    },
+    {
+      "t": 3000,
+      "target": "Noria",
+      "action": "forward",
+      "params": {
+        "time": 2
       }
     },
     {
@@ -179,11 +213,19 @@
       }
     },
     {
-      "t": 6000,
-      "target": "Angel",
-      "action": "start_up",
+      "t": 5500,
+      "target": "Noria",
+      "action": "reverse",
       "params": {
         "time": 1
+      }
+    },
+    {
+      "t": 6000,
+      "target": "Angel",
+      "action": "forward",
+      "params": {
+        "time": 30
       }
     },
     {

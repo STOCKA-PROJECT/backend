@@ -91,6 +91,10 @@ public class Device {
     @Column(name = "last_overrides", columnDefinition = "TEXT")
     private String lastOverrides;
 
+    @Lob
+    @Column(name = "last_alerts", columnDefinition = "TEXT")
+    private String lastAlerts;
+
     @Column(name = "last_version", length = 40)
     private String lastVersion;
 
@@ -218,6 +222,16 @@ public class Device {
 
     public Device setLastShowName(String lastShowName) {
         this.lastShowName = lastShowName;
+        return this;
+    }
+
+    /** @return JSON array of the alerts in the last heartbeat (see {@code DeviceAlertDto}) */
+    public String getLastAlerts() {
+        return lastAlerts;
+    }
+
+    public Device setLastAlerts(String lastAlerts) {
+        this.lastAlerts = lastAlerts;
         return this;
     }
 

@@ -42,7 +42,19 @@ class PortConfigValidatorTest {
     }
 
     private static Map<String, Object> motor() {
-        return new HashMap<>(Map.of("pinR", 3, "pinL", 4, "sensorPin", 7, "downTime", 15, "maxUpTime", 20));
+        return new HashMap<>(Map.of("pinForward", 3, "pinReverse", 4, "maxTimeForward", 20, "maxTimeReverse", 15));
+    }
+
+    private static Map<String, Object> expanderMotor() {
+        return new HashMap<>(Map.of("expander", "exp1", "channelForward", 6, "channelReverse", 7, "maxTimeForward", 60, "maxTimeReverse", 60));
+    }
+
+    private static void assertMotorOutputs(Map<String, Object> cfg, String reason) {
+        assertThatThrownBy(() -> sut.normalize(OutputKind.MOTOR, cfg))
+                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                    assertThat(ex.getCode()).isEqualTo(ErrorCodes.PORTS_MOTOR_OUTPUTS_INVALID);
+                    assertThat(ex.getParams()).containsEntry("reason", reason);
+                });
     }
 
     private static void assertCode(Runnable call, String code) {
@@ -237,45 +249,177 @@ class PortConfigValidatorTest {
     class Motor {
 
         @Test
-        @DisplayName("accepts three distinct pins and a down time")
-        void should_acceptMotor() {
+        @DisplayName("accepts two distinct native pins and both max times, in catalog order")
+        void should_acceptNativeMotor() {
             Map<String, Object> out = sut.normalize(OutputKind.MOTOR, motor());
-            assertThat(out.keySet()).containsExactly("pinR", "pinL", "sensorPin", "downTime", "maxUpTime");
-            assertThat(out).containsEntry("downTime", 15);
+            assertThat(out.keySet()).containsExactly("pinForward", "pinReverse", "maxTimeForward", "maxTimeReverse");
+            assertThat(out).containsEntry("maxTimeReverse", 15);
         }
 
         @Test
-        @DisplayName("accepts a decimal down time")
-        void should_acceptDecimalDownTime() {
+        @DisplayName("accepts decimal max times, limit sensors, lockOnTimeout, activeLow and switchDelayMs")
+        void should_acceptOptionalKeys() {
             Map<String, Object> cfg = motor();
-            cfg.put("downTime", 12.5);
-            assertThat(sut.normalize(OutputKind.MOTOR, cfg)).containsEntry("downTime", 12.5);
+            cfg.put("maxTimeReverse", 12.5);
+            cfg.put("limitForward", "AngelDalt");
+            cfg.put("limitReverse", "AngelBaix");
+            cfg.put("lockOnTimeout", true);
+            cfg.put("activeLow", true);
+            cfg.put("switchDelayMs", 100);
+            assertThat(sut.normalize(OutputKind.MOTOR, cfg))
+                    .containsEntry("maxTimeReverse", 12.5)
+                    .containsEntry("limitForward", "AngelDalt")
+                    .containsEntry("limitReverse", "AngelBaix")
+                    .containsEntry("lockOnTimeout", true)
+                    .containsEntry("activeLow", true)
+                    .containsEntry("switchDelayMs", 100);
         }
 
         @Test
-        @DisplayName("rejects repeated pins with ports.motor_pins_not_distinct")
+        @DisplayName("accepts the expander with two distinct channels")
+        void should_acceptExpanderMotor() {
+            assertThat(sut.normalize(OutputKind.MOTOR, expanderMotor()).keySet())
+                    .containsExactly("expander", "channelForward", "channelReverse", "maxTimeForward", "maxTimeReverse");
+        }
+
+        @Test
+        @DisplayName("rejects a repeated native pin with ports.motor_pins_not_distinct")
         void should_rejectRepeatedPins() {
             Map<String, Object> cfg = motor();
-            cfg.put("pinL", 3);
+            cfg.put("pinReverse", 3);
             assertCode(() -> sut.normalize(OutputKind.MOTOR, cfg), ErrorCodes.PORTS_MOTOR_PINS_NOT_DISTINCT);
         }
 
         @Test
-        @DisplayName("rejects a negative down time and a missing pin")
-        void should_rejectNegativeAndMissing() {
-            Map<String, Object> negative = motor();
-            negative.put("downTime", -1);
-            assertCode(() -> sut.normalize(OutputKind.MOTOR, negative), ErrorCodes.PORTS_CONFIG_OUT_OF_RANGE);
-            Map<String, Object> missing = motor();
-            missing.remove("sensorPin");
-            assertCode(() -> sut.normalize(OutputKind.MOTOR, missing), ErrorCodes.PORTS_CONFIG_MISSING_KEY);
+        @DisplayName("rejects a repeated expander channel with ports.motor_pins_not_distinct")
+        void should_rejectRepeatedChannels() {
+            Map<String, Object> cfg = expanderMotor();
+            cfg.put("channelReverse", 6);
+            assertCode(() -> sut.normalize(OutputKind.MOTOR, cfg), ErrorCodes.PORTS_MOTOR_PINS_NOT_DISTINCT);
         }
 
         @Test
-        @DisplayName("exposes its three pins as config pins")
+        @DisplayName("rejects a missing native pin with reason missing_pin")
+        void should_rejectMissingPin() {
+            Map<String, Object> cfg = motor();
+            cfg.remove("pinReverse");
+            assertMotorOutputs(cfg, "missing_pin");
+            Map<String, Object> none = motor();
+            none.remove("pinForward");
+            none.remove("pinReverse");
+            assertMotorOutputs(none, "missing_pin");
+        }
+
+        @Test
+        @DisplayName("rejects pins mixed with an expander with reason pins_and_expander")
+        void should_rejectPinsAndExpander() {
+            Map<String, Object> cfg = expanderMotor();
+            cfg.put("pinForward", 3);
+            assertMotorOutputs(cfg, "pins_and_expander");
+        }
+
+        @Test
+        @DisplayName("rejects an expander with a single channel with reason missing_channel")
+        void should_rejectMissingChannel() {
+            Map<String, Object> cfg = expanderMotor();
+            cfg.remove("channelReverse");
+            assertMotorOutputs(cfg, "missing_channel");
+        }
+
+        @Test
+        @DisplayName("rejects channels without an expander and activeLow on an expander")
+        void should_rejectInconsistentExpanderKeys() {
+            Map<String, Object> channels = motor();
+            channels.put("channelForward", 1);
+            assertCode(() -> sut.normalize(OutputKind.MOTOR, channels), ErrorCodes.PORTS_CHANNEL_WITHOUT_EXPANDER);
+            Map<String, Object> activeLow = expanderMotor();
+            activeLow.put("activeLow", true);
+            assertCode(() -> sut.normalize(OutputKind.MOTOR, activeLow), ErrorCodes.PORTS_ACTIVE_LOW_ON_EXPANDER);
+        }
+
+        @Test
+        @DisplayName("rejects negative max times, an out-of-range switch delay and the old keys")
+        void should_rejectOutOfRangeAndLegacy() {
+            Map<String, Object> negative = motor();
+            negative.put("maxTimeForward", -1);
+            assertCode(() -> sut.normalize(OutputKind.MOTOR, negative), ErrorCodes.PORTS_CONFIG_OUT_OF_RANGE);
+            Map<String, Object> delay = motor();
+            delay.put("switchDelayMs", 5001);
+            assertCode(() -> sut.normalize(OutputKind.MOTOR, delay), ErrorCodes.PORTS_CONFIG_OUT_OF_RANGE);
+            Map<String, Object> legacy = motor();
+            legacy.put("sensorPin", 7);
+            assertCode(() -> sut.normalize(OutputKind.MOTOR, legacy), ErrorCodes.PORTS_CONFIG_UNKNOWN_KEY);
+        }
+
+        @Test
+        @DisplayName("requires both max times")
+        void should_requireMaxTimes() {
+            for (String key : List.of("maxTimeForward", "maxTimeReverse")) {
+                Map<String, Object> cfg = motor();
+                cfg.remove(key);
+                assertCode(() -> sut.normalize(OutputKind.MOTOR, cfg), ErrorCodes.PORTS_CONFIG_MISSING_KEY);
+            }
+        }
+
+        @Test
+        @DisplayName("exposes its two native pins as config pins, none on an expander")
         void should_exposeConfigPins() {
-            assertThat(sut.configPins(OutputKind.MOTOR, sut.normalize(OutputKind.MOTOR, motor()))).containsExactly(3, 4, 7);
+            assertThat(sut.configPins(OutputKind.MOTOR, sut.normalize(OutputKind.MOTOR, motor()))).containsExactly(3, 4);
+            assertThat(sut.configPins(OutputKind.MOTOR, sut.normalize(OutputKind.MOTOR, expanderMotor()))).isEmpty();
             assertThat(sut.configPins(OutputKind.MOTOR, Map.of())).isEmpty();
+            assertThat(sut.configPins(OutputKind.RELAY, Map.of("pinForward", 3))).isEmpty();
+        }
+
+        @Test
+        @DisplayName("exposes its two expander channels, none when native")
+        void should_exposeExpanderChannels() {
+            assertThat(sut.expanderChannels(OutputKind.MOTOR, expanderMotor())).containsExactly(6, 7);
+            assertThat(sut.expanderChannels(OutputKind.MOTOR, motor())).isEmpty();
+            assertThat(sut.expanderChannels(OutputKind.MOTOR, null)).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("sensor")
+    class Sensor {
+
+        @Test
+        @DisplayName("a native sensor accepts an empty config and every optional key")
+        void should_acceptNativeSensor() {
+            assertThat(sut.normalize(OutputKind.SENSOR, Map.of())).isEmpty();
+            assertThat(sut.normalize(OutputKind.SENSOR, Map.of("activeLow", false, "pull", "down", "debounceMs", 20, "onActive", "play")))
+                    .containsExactly(Map.entry("activeLow", false), Map.entry("pull", "down"), Map.entry("debounceMs", 20),
+                            Map.entry("onActive", "play"));
+        }
+
+        @Test
+        @DisplayName("a sensor on an expander takes a channel, its own polarity and pull up or none")
+        void should_acceptExpanderSensor() {
+            assertThat(sut.normalize(OutputKind.SENSOR, Map.of("expander", "exp1", "channel", 15, "activeLow", true, "pull", "none")))
+                    .containsEntry("channel", 15).containsEntry("activeLow", true).containsEntry("pull", "none");
+            assertThat(sut.expanderChannels(OutputKind.SENSOR, Map.of("expander", "exp1", "channel", 15))).containsExactly(15);
+        }
+
+        @Test
+        @DisplayName("rejects pull down on an expander")
+        void should_rejectPullDownOnExpander() {
+            assertCode(() -> sut.normalize(OutputKind.SENSOR, Map.of("expander", "exp1", "channel", 1, "pull", "down")),
+                    ErrorCodes.PORTS_SENSOR_PULL_ON_EXPANDER);
+        }
+
+        @Test
+        @DisplayName("rejects a channel without expander and an expander without channel")
+        void should_rejectInconsistentChannel() {
+            assertCode(() -> sut.normalize(OutputKind.SENSOR, Map.of("channel", 3)), ErrorCodes.PORTS_CHANNEL_WITHOUT_EXPANDER);
+            assertCode(() -> sut.normalize(OutputKind.SENSOR, Map.of("expander", "exp1")), ErrorCodes.PORTS_CHANNEL_REQUIRED);
+        }
+
+        @Test
+        @DisplayName("rejects unknown enum values and an out-of-range debounce")
+        void should_rejectBadValues() {
+            assertCode(() -> sut.normalize(OutputKind.SENSOR, Map.of("onActive", "explode")), ErrorCodes.PORTS_CONFIG_TYPE_MISMATCH);
+            assertCode(() -> sut.normalize(OutputKind.SENSOR, Map.of("pull", "sideways")), ErrorCodes.PORTS_CONFIG_TYPE_MISMATCH);
+            assertCode(() -> sut.normalize(OutputKind.SENSOR, Map.of("debounceMs", 2001)), ErrorCodes.PORTS_CONFIG_OUT_OF_RANGE);
         }
     }
 
@@ -294,10 +438,10 @@ class PortConfigValidatorTest {
         @Test
         @DisplayName("rejects channel without expander, expander without channel and activeLow on an expander")
         void should_rejectInconsistentRelay() {
-            assertCode(() -> sut.normalize(OutputKind.RELAY, Map.of("channel", 3)), ErrorCodes.PORTS_RELAY_CHANNEL_WITHOUT_EXPANDER);
-            assertCode(() -> sut.normalize(OutputKind.RELAY, Map.of("expander", "exp1")), ErrorCodes.PORTS_RELAY_CHANNEL_REQUIRED);
+            assertCode(() -> sut.normalize(OutputKind.RELAY, Map.of("channel", 3)), ErrorCodes.PORTS_CHANNEL_WITHOUT_EXPANDER);
+            assertCode(() -> sut.normalize(OutputKind.RELAY, Map.of("expander", "exp1")), ErrorCodes.PORTS_CHANNEL_REQUIRED);
             assertCode(() -> sut.normalize(OutputKind.RELAY, Map.of("expander", "exp1", "channel", 1, "activeLow", true)),
-                    ErrorCodes.PORTS_RELAY_ACTIVE_LOW_ON_EXPANDER);
+                    ErrorCodes.PORTS_ACTIVE_LOW_ON_EXPANDER);
         }
 
         @Test
@@ -337,14 +481,6 @@ class PortConfigValidatorTest {
             assertCode(() -> sut.normalize(OutputKind.MOVING_HEAD, Map.of("profile", "varytec-hero-wash-712z", "address", 0)), ErrorCodes.PORTS_CONFIG_OUT_OF_RANGE);
             assertCode(() -> sut.normalize(OutputKind.MOVING_HEAD, Map.of("profile", "varytec-hero-wash-712z", "address", 513)), ErrorCodes.PORTS_CONFIG_OUT_OF_RANGE);
         }
-
-        @Test
-        @DisplayName("a motor needs maxUpTime")
-        void should_requireMaxUpTime() {
-            Map<String, Object> cfg = motor();
-            cfg.remove("maxUpTime");
-            assertCode(() -> sut.normalize(OutputKind.MOTOR, cfg), ErrorCodes.PORTS_CONFIG_MISSING_KEY);
-        }
     }
 
     @Nested
@@ -352,9 +488,9 @@ class PortConfigValidatorTest {
     class NoConfigKinds {
 
         @Test
-        @DisplayName("audio and button accept only an empty config")
+        @DisplayName("audio accepts only an empty config")
         void should_acceptOnlyEmpty() {
-            for (OutputKind kind : List.of(OutputKind.AUDIO, OutputKind.BUTTON)) {
+            for (OutputKind kind : List.of(OutputKind.AUDIO)) {
                 assertThat(sut.normalize(kind, Map.of())).as(kind.name()).isEmpty();
                 assertCode(() -> sut.normalize(kind, Map.of("file", "x.mp3")), ErrorCodes.PORTS_CONFIG_UNKNOWN_KEY);
             }

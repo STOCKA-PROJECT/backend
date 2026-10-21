@@ -26,7 +26,7 @@ body:json {
 }
 
 docs {
-  `kind` es opcional: relay | led_strip | led_segment | motor | audio | video | button.
+  `kind` es opcional: relay | gpio_expander | led_strip | led_segment | motor | audio | moving_head | sensor.
   Con kind, las acciones del tipo deben existir en el catálogo de ese kind y los puertos
   del tipo deben ser del mismo kind. Captura `pieceTypeId` de la respuesta.
 }

@@ -10,7 +10,7 @@ public enum PinMode {
     NONE,
     /** The kind carries a pin unless its config addresses it another way (relay: {@code expander} + {@code channel}). */
     OPTIONAL,
-    /** The kind always carries a pin (strips, button). */
+    /** The kind always carries a pin (strips). */
     REQUIRED;
 
     /**

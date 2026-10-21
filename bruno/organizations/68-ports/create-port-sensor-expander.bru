@@ -1,0 +1,37 @@
+meta {
+  name: Create Port (sensor on expander)
+  type: http
+  seq: 16
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/ports
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "PortaCaixa",
+    "kind": "sensor",
+    "config": {
+      "expander": "exp1",
+      "channel": 15,
+      "onActive": "stop_show"
+    }
+  }
+}
+
+docs {
+  Sensor en el canal 15 del expansor `exp1` (crea antes `create-port-expander`). Sin `pin`.
+  El canal se comparte con relés y motores del mismo expansor (409 `ports.expander_channel_conflict`).
+  En un expansor `pull` solo admite `up` o `none` (400 `ports.sensor_pull_on_expander`).
+}

@@ -20,7 +20,7 @@ public enum OutputKind {
     MOTOR("motor"),
     AUDIO("audio"),
     MOVING_HEAD("moving_head"),
-    BUTTON("button");
+    SENSOR("sensor");
 
     private final String catalogId;
 

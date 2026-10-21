@@ -10,8 +10,8 @@ import com.stocka.backend.modules.piecetypes.dto.ActionParameterDto;
  *
  * <p>{@code kind} is the catalog id of the output kind ({@code relay}, {@code led_strip},
  * {@code gpio_expander}, {@code led_segment}, {@code motor}, {@code audio}, {@code moving_head},
- * {@code button}) and is required. {@code pieceTypeId} is required for every kind except the
- * infrastructure ones (strips, expanders, button); the referenced type must have the same kind.
+ * {@code sensor}) and is required. {@code pieceTypeId} is required for every kind except the
+ * infrastructure ones (strips, expanders, sensors); the referenced type must have the same kind.
  * {@code pin} is required for kinds that have a GPIO pin and must be absent otherwise; a relay takes
  * either a pin or {@code expander} + {@code channel} in its config. {@code config} holds the kind-specific keys (DMA and length of a
  * strip, strip and range of a segment, the three pins of a motor...) and is validated against the

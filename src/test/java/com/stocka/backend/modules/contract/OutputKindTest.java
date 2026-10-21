@@ -65,7 +65,7 @@ class OutputKindTest {
         @Test
         @DisplayName("deserializes from the catalog id")
         void should_deserializeFromCatalogId() {
-            assertThat(mapper.readValue("\"button\"", OutputKind.class)).isEqualTo(OutputKind.BUTTON);
+            assertThat(mapper.readValue("\"sensor\"", OutputKind.class)).isEqualTo(OutputKind.SENSOR);
         }
     }
 }

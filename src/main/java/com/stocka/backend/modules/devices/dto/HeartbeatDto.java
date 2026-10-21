@@ -4,6 +4,7 @@ import java.util.List;
 
 import com.stocka.backend.modules.devices.entity.DeviceState;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -43,5 +44,6 @@ public record HeartbeatDto(
         @Size(max = 8) String netMode,
         @Size(max = 64) String ssid,
         @Size(max = 45) String ip,
-        @Size(max = 4000) String error
+        @Size(max = 4000) String error,
+        @Valid @Size(max = 20) List<DeviceAlertDto> alerts
 ) { }

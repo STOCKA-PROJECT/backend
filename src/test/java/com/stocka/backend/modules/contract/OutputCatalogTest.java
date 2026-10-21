@@ -93,25 +93,25 @@ class OutputCatalogTest {
     class Kinds {
 
         @Test
-        @DisplayName("strips, expanders and the button are infrastructure; the rest belong to pieces")
+        @DisplayName("strips, expanders and sensors are infrastructure; the rest belong to pieces")
         void should_flagInfrastructure() {
             assertThat(catalog.isInfrastructure(OutputKind.LED_STRIP)).isTrue();
             assertThat(catalog.isInfrastructure(OutputKind.GPIO_EXPANDER)).isTrue();
-            assertThat(catalog.isInfrastructure(OutputKind.BUTTON)).isTrue();
+            assertThat(catalog.isInfrastructure(OutputKind.SENSOR)).isTrue();
             for (OutputKind k : List.of(OutputKind.RELAY, OutputKind.LED_SEGMENT, OutputKind.MOTOR, OutputKind.AUDIO, OutputKind.MOVING_HEAD)) {
                 assertThat(catalog.isInfrastructure(k)).as(k.name()).isFalse();
             }
         }
 
         @Test
-        @DisplayName("strip and button always carry a pin, the relay optionally, the rest never")
+        @DisplayName("the strip always carries a pin, the relay and the sensor optionally, the rest never")
         void should_flagPin() {
             assertThat(catalog.pinMode(OutputKind.LED_STRIP)).isEqualTo(PinMode.REQUIRED);
-            assertThat(catalog.pinMode(OutputKind.BUTTON)).isEqualTo(PinMode.REQUIRED);
+            assertThat(catalog.pinMode(OutputKind.SENSOR)).isEqualTo(PinMode.OPTIONAL);
             assertThat(catalog.pinMode(OutputKind.RELAY)).isEqualTo(PinMode.OPTIONAL);
             assertThat(catalog.hasPin(OutputKind.RELAY)).isTrue();
             assertThat(catalog.hasPin(OutputKind.LED_STRIP)).isTrue();
-            assertThat(catalog.hasPin(OutputKind.BUTTON)).isTrue();
+            assertThat(catalog.hasPin(OutputKind.SENSOR)).isTrue();
             for (OutputKind k : List.of(OutputKind.LED_SEGMENT, OutputKind.MOTOR, OutputKind.AUDIO, OutputKind.MOVING_HEAD, OutputKind.GPIO_EXPANDER)) {
                 assertThat(catalog.hasPin(k)).as(k.name()).isFalse();
                 assertThat(catalog.pinMode(k)).as(k.name()).isEqualTo(PinMode.NONE);
@@ -164,8 +164,19 @@ class OutputCatalogTest {
             assertThat(segment.get("strip").ref()).isEqualTo("led_strip");
             assertThat(segment.get("first").type()).isEqualTo(CatalogType.INT);
 
-            assertThat(catalog.configSchema(OutputKind.MOTOR).get("downTime").required()).isTrue();
-            assertThat(catalog.configSchema(OutputKind.MOTOR).get("maxUpTime").required()).isTrue();
+            Map<String, CatalogParam> motor = catalog.configSchema(OutputKind.MOTOR);
+            assertThat(motor.get("maxTimeForward").required()).isTrue();
+            assertThat(motor.get("maxTimeReverse").required()).isTrue();
+            assertThat(motor.get("limitForward").ref()).isEqualTo("sensor");
+            assertThat(motor.get("limitReverse").ref()).isEqualTo("sensor");
+            assertThat(motor.get("expander").ref()).isEqualTo("gpio_expander");
+            assertThat(motor.get("switchDelayMs").defaultValue()).isEqualTo("50");
+            assertThat(motor.get("pinForward").required()).isFalse();
+            Map<String, CatalogParam> sensor = catalog.configSchema(OutputKind.SENSOR);
+            assertThat(sensor.get("onActive").type()).isEqualTo(CatalogType.ENUM);
+            assertThat(sensor.get("onActive").values()).containsExactly("none", "play", "stop_show", "panic");
+            assertThat(sensor.get("pull").values()).containsExactly("up", "down", "none");
+            assertThat(sensor.get("activeLow").defaultValue()).isEqualTo("true");
             assertThat(catalog.configSchema(OutputKind.AUDIO)).isEmpty();
             Map<String, CatalogParam> relay = catalog.configSchema(OutputKind.RELAY);
             assertThat(relay.keySet()).containsExactly("expander", "channel", "activeLow");
@@ -207,9 +218,11 @@ class OutputCatalogTest {
         }
 
         @Test
-        @DisplayName("the button has no show actions")
-        void should_haveNoButtonActions() {
-            assertThat(catalog.kind(OutputKind.BUTTON).actions()).isEmpty();
+        @DisplayName("the sensor has no show actions; the motor turns forward, reverse or stops")
+        void should_haveSensorAndMotorActions() {
+            assertThat(catalog.kind(OutputKind.SENSOR).actions()).isEmpty();
+            assertThat(catalog.kind(OutputKind.MOTOR).actions().keySet()).containsExactly("forward", "reverse", "stop");
+            assertThat(catalog.action(OutputKind.MOTOR, "start_up")).isEmpty();
         }
 
         @Test
@@ -234,7 +247,6 @@ class OutputCatalogTest {
             assertThat(play.params().get("audio_name").asset()).isEqualTo("audio");
             assertThat(play.params().get("audio_name").required()).isTrue();
             assertThat(catalog.action(OutputKind.AUDIO, "stop").orElseThrow().unsupported()).containsExactly("player_id");
-            assertThat(catalog.action(OutputKind.MOTOR, "start_up").orElseThrow().unsupported()).containsExactly("up_time");
         }
     }
 
@@ -293,7 +305,7 @@ class OutputCatalogTest {
 
         @ParameterizedTest
         @CsvSource({"RELAY,turn_on,time", "RELAY,turn_off,time", "RELAY,pulse,duration", "LED_SEGMENT,animate,duration",
-                "MOTOR,start_up,time", "MOTOR,start_down,time", "AUDIO,play,time", "MOVING_HEAD,set,time", "MOVING_HEAD,blackout,time"})
+                "MOTOR,forward,time", "MOTOR,reverse,time", "AUDIO,play,time", "MOVING_HEAD,set,time", "MOVING_HEAD,blackout,time"})
         @DisplayName("names the parameter that receives the clip length")
         void should_nameDurationParam(OutputKind kind, String action, String expected) {
             assertThat(catalog.action(kind, action).orElseThrow().durationParam()).contains(expected);

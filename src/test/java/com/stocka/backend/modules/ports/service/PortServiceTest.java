@@ -55,6 +55,7 @@ class PortServiceTest {
     private static final Integer SEGMENT_TYPE_ID = 6;
     private static final Integer UNTYPED_TYPE_ID = 7;
     private static final Integer HEAD_TYPE_ID = 8;
+    private static final Integer MOTOR_TYPE_ID = 9;
 
     @Mock private OrganizationService organizationService;
     @Mock private PortRepository portRepository;
@@ -70,6 +71,7 @@ class PortServiceTest {
     private PieceType segmentType;
     private PieceType untypedType;
     private PieceType headType;
+    private PieceType motorType;
 
     @BeforeEach
     void setUp() {
@@ -80,6 +82,7 @@ class PortServiceTest {
         segmentType = new PieceType().setId(SEGMENT_TYPE_ID).setName("Edifici amb llum").setKind(OutputKind.LED_SEGMENT);
         untypedType = new PieceType().setId(UNTYPED_TYPE_ID).setName("Caixa");
         headType = new PieceType().setId(HEAD_TYPE_ID).setName("Cabezal").setKind(OutputKind.MOVING_HEAD);
+        motorType = new PieceType().setId(MOTOR_TYPE_ID).setName("Àngel").setKind(OutputKind.MOTOR);
         lenient().when(organizationService.findById(ORG_ID)).thenReturn(org);
         lenient().when(portRepository.saveAndFlush(any(Port.class))).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(portRepository.save(any(Port.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -89,6 +92,7 @@ class PortServiceTest {
         lenient().when(pieceTypeService.findInOrg(ORG_ID, SEGMENT_TYPE_ID)).thenReturn(segmentType);
         lenient().when(pieceTypeService.findInOrg(ORG_ID, UNTYPED_TYPE_ID)).thenReturn(untypedType);
         lenient().when(pieceTypeService.findInOrg(ORG_ID, HEAD_TYPE_ID)).thenReturn(headType);
+        lenient().when(pieceTypeService.findInOrg(ORG_ID, MOTOR_TYPE_ID)).thenReturn(motorType);
     }
 
     // ------------------------------------------------------------------ fixtures
@@ -113,14 +117,38 @@ class PortServiceTest {
         return new CreatePortDto().setName(name).setKind("led_segment").setPieceTypeId(SEGMENT_TYPE_ID).setConfig(cfg);
     }
 
-    private static Map<String, Object> motorConfig(int pinR, int pinL, int sensorPin) {
+    private static Map<String, Object> motorConfig(int pinForward, int pinReverse) {
         Map<String, Object> cfg = new LinkedHashMap<>();
-        cfg.put("pinR", pinR);
-        cfg.put("pinL", pinL);
-        cfg.put("sensorPin", sensorPin);
-        cfg.put("downTime", 15);
-        cfg.put("maxUpTime", 20);
+        cfg.put("pinForward", pinForward);
+        cfg.put("pinReverse", pinReverse);
+        cfg.put("maxTimeForward", 20);
+        cfg.put("maxTimeReverse", 15);
         return cfg;
+    }
+
+    private static Map<String, Object> expanderMotorConfig(String expander, int channelForward, int channelReverse) {
+        Map<String, Object> cfg = new LinkedHashMap<>();
+        cfg.put("expander", expander);
+        cfg.put("channelForward", channelForward);
+        cfg.put("channelReverse", channelReverse);
+        cfg.put("maxTimeForward", 60);
+        cfg.put("maxTimeReverse", 60);
+        return cfg;
+    }
+
+    private static CreatePortDto motorDto(String name, Map<String, Object> config) {
+        return new CreatePortDto().setName(name).setKind("motor").setPieceTypeId(MOTOR_TYPE_ID).setConfig(config);
+    }
+
+    private static CreatePortDto sensorDto(String name, Integer pin) {
+        return new CreatePortDto().setName(name).setKind("sensor").setPin(pin).setConfig(Map.of("onActive", "none"));
+    }
+
+    private static CreatePortDto expanderSensorDto(String name, String expander, int channel) {
+        Map<String, Object> cfg = new LinkedHashMap<>();
+        cfg.put("expander", expander);
+        cfg.put("channel", channel);
+        return new CreatePortDto().setName(name).setKind("sensor").setConfig(cfg);
     }
 
     private static CreatePortDto expanderDto(String name, int address) {
@@ -184,9 +212,22 @@ class PortServiceTest {
                 .setOrganization(org).setConfigJson(configCodec.serialize(cfg));
     }
 
-    private Port motorPort(int id, String name, int pinR, int pinL, int sensorPin) {
-        return new Port().setId(id).setName(name).setKind(OutputKind.MOTOR).setOrganization(org)
-                .setConfigJson(configCodec.serialize(motorConfig(pinR, pinL, sensorPin)));
+    private Port motorPort(int id, String name, int pinForward, int pinReverse) {
+        return motorPort(id, name, motorConfig(pinForward, pinReverse));
+    }
+
+    private Port motorPort(int id, String name, Map<String, Object> config) {
+        return new Port().setId(id).setName(name).setKind(OutputKind.MOTOR).setPieceTypeId(MOTOR_TYPE_ID).setOrganization(org)
+                .setConfigJson(configCodec.serialize(config));
+    }
+
+    private Port sensorPort(int id, String name, Integer pin) {
+        return new Port().setId(id).setName(name).setKind(OutputKind.SENSOR).setPin(pin).setOrganization(org).setConfigJson("{}");
+    }
+
+    private Port expanderSensorPort(int id, String name, String expander, int channel) {
+        return new Port().setId(id).setName(name).setKind(OutputKind.SENSOR).setOrganization(org)
+                .setConfigJson(configCodec.serialize(expanderSensorDto(name, expander, channel).getConfig()));
     }
 
     /** Makes the given ports the organization's current ports, by list and by name. */
@@ -263,14 +304,12 @@ class PortServiceTest {
         @Test
         @DisplayName("persists a motor with its three pins in the config and no Port.pin")
         void should_persistMotor() {
-            PieceType motorType = new PieceType().setId(9).setKind(OutputKind.MOTOR).setName("Àngel");
-            when(pieceTypeService.findInOrg(ORG_ID, 9)).thenReturn(motorType);
 
             Port port = sut.create(ORG_ID, new CreatePortDto().setName("Angel").setKind("motor").setPieceTypeId(9)
-                    .setConfig(motorConfig(3, 4, 7)));
+                    .setConfig(motorConfig(3, 4)));
 
             assertThat(port.getPin()).isNull();
-            assertThat(sut.configOf(port)).containsEntry("pinR", 3).containsEntry("sensorPin", 7).containsEntry("downTime", 15);
+            assertThat(sut.configOf(port)).containsEntry("pinForward", 3).containsEntry("pinReverse", 4).containsEntry("maxTimeReverse", 15);
         }
 
         @Test
@@ -332,7 +371,7 @@ class PortServiceTest {
             @Test
             @DisplayName("accepts infrastructure kinds without a piece type and with a matching one")
             void should_allowInfrastructureWithOrWithoutType() {
-                assertThat(sut.create(ORG_ID, new CreatePortDto().setName("Pulsador").setKind("button").setPin(20)).getPieceTypeId()).isNull();
+                assertThat(sut.create(ORG_ID, new CreatePortDto().setName("Pulsador").setKind("sensor").setPin(20)).getPieceTypeId()).isNull();
                 PieceType stripType = new PieceType().setId(11).setKind(OutputKind.LED_STRIP).setName("Tira");
                 when(pieceTypeService.findInOrg(ORG_ID, 11)).thenReturn(stripType);
                 assertThat(sut.create(ORG_ID, stripDto("LedStrip2", 12, 10, 0, 150).setPieceTypeId(11)).getPieceTypeId()).isEqualTo(11);
@@ -373,7 +412,7 @@ class PortServiceTest {
             @Test
             @DisplayName("requires a pin for kinds that have one, within the board range")
             void should_requireValidPin() {
-                assertApi(() -> sut.create(ORG_ID, relayDto("Focos", null)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_RELAY_PIN_OR_EXPANDER, "reason", "none");
+                assertApi(() -> sut.create(ORG_ID, relayDto("Focos", null)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_OR_EXPANDER, "reason", "none");
                 assertApi(() -> sut.create(ORG_ID, relayDto("Focos", -1)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_INVALID);
                 assertApi(() -> sut.create(ORG_ID, relayDto("Focos", 28)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_INVALID);
                 assertApi(() -> sut.create(ORG_ID, stripDto("LedStrip3", null, 10, 1, 300)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_INVALID);
@@ -413,13 +452,11 @@ class PortServiceTest {
             }
 
             @Test
-            @DisplayName("motor pins in the config must be valid, non-reserved GPIOs")
+            @DisplayName("motor pins in the config must be inside the board and not reserved")
             void should_checkMotorConfigPins() {
-                PieceType motorType = new PieceType().setId(9).setKind(OutputKind.MOTOR).setName("Àngel");
-                when(pieceTypeService.findInOrg(ORG_ID, 9)).thenReturn(motorType);
-                CreatePortDto outOfBoard = new CreatePortDto().setName("Angel").setKind("motor").setPieceTypeId(9).setConfig(motorConfig(3, 4, 28));
-                assertApi(() -> sut.create(ORG_ID, outOfBoard), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_INVALID);
-                CreatePortDto reserved = new CreatePortDto().setName("Angel").setKind("motor").setPieceTypeId(9).setConfig(motorConfig(0, 4, 7));
+                CreatePortDto outOfBoard = new CreatePortDto().setName("Angel").setKind("motor").setPieceTypeId(9).setConfig(motorConfig(3, 28));
+                assertApi(() -> sut.create(ORG_ID, outOfBoard), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_CONFIG_OUT_OF_RANGE);
+                CreatePortDto reserved = new CreatePortDto().setName("Angel").setKind("motor").setPieceTypeId(9).setConfig(motorConfig(0, 4));
                 assertApi(() -> sut.create(ORG_ID, reserved), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_RESERVED, "pin", 0);
             }
         }
@@ -439,7 +476,7 @@ class PortServiceTest {
             @Test
             @DisplayName("counts the pins a motor keeps in its config")
             void should_rejectPinUsedByMotorConfig() {
-                existingPorts(motorPort(1, "Angel", 3, 4, 7));
+                existingPorts(motorPort(1, "Angel", 3, 4));
                 assertApi(() -> sut.create(ORG_ID, relayDto("Sembra", 4)), HttpStatus.CONFLICT, ErrorCodes.PORTS_PIN_CONFLICT);
             }
 
@@ -447,16 +484,14 @@ class PortServiceTest {
             @DisplayName("rejects a motor whose config pins collide with an existing port")
             void should_rejectMotorCollidingWithRelay() {
                 existingPorts(relayPort(1, "Focos", 27));
-                PieceType motorType = new PieceType().setId(9).setKind(OutputKind.MOTOR).setName("Àngel");
-                when(pieceTypeService.findInOrg(ORG_ID, 9)).thenReturn(motorType);
-                CreatePortDto dto = new CreatePortDto().setName("Angel").setKind("motor").setPieceTypeId(9).setConfig(motorConfig(3, 27, 7));
+                CreatePortDto dto = new CreatePortDto().setName("Angel").setKind("motor").setPieceTypeId(9).setConfig(motorConfig(3, 27));
                 assertApi(() -> sut.create(ORG_ID, dto), HttpStatus.CONFLICT, ErrorCodes.PORTS_PIN_CONFLICT);
             }
 
             @Test
             @DisplayName("accepts pins that are free")
             void should_acceptFreePins() {
-                existingPorts(relayPort(1, "Focos", 27), motorPort(2, "Angel", 3, 4, 7), stripPort(3, "LedStrip3", 13, 300));
+                existingPorts(relayPort(1, "Focos", 27), motorPort(2, "Angel", 3, 4), stripPort(3, "LedStrip3", 13, 300));
                 assertThat(sut.create(ORG_ID, relayDto("Sembra", 26)).getPin()).isEqualTo(26);
             }
         }
@@ -483,9 +518,9 @@ class PortServiceTest {
             void should_requirePinXorExpander() {
                 existingPorts(expanderPort(1, "exp1", 32));
                 assertApi(() -> sut.create(ORG_ID, expanderRelayDto("Estable", "exp1", 3).setPin(26)),
-                        HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_RELAY_PIN_OR_EXPANDER, "reason", "both");
+                        HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_OR_EXPANDER, "reason", "both");
                 assertApi(() -> sut.create(ORG_ID, relayDto("Sembra", null)),
-                        HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_RELAY_PIN_OR_EXPANDER, "reason", "none");
+                        HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_OR_EXPANDER, "reason", "none");
             }
 
             @Test
@@ -524,9 +559,7 @@ class PortServiceTest {
             void should_reserveI2cPins() {
                 existingPorts(expanderPort(1, "exp1", 32));
                 assertApi(() -> sut.create(ORG_ID, relayDto("Sembra", 2)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_I2C_PIN_RESERVED, "pin", 2);
-                PieceType motorType = new PieceType().setId(9).setKind(OutputKind.MOTOR).setName("Àngel");
-                when(pieceTypeService.findInOrg(ORG_ID, 9)).thenReturn(motorType);
-                CreatePortDto motor = new CreatePortDto().setName("Angel").setKind("motor").setPieceTypeId(9).setConfig(motorConfig(3, 4, 7));
+                CreatePortDto motor = new CreatePortDto().setName("Angel").setKind("motor").setPieceTypeId(9).setConfig(motorConfig(3, 4));
                 assertApi(() -> sut.create(ORG_ID, motor), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_I2C_PIN_RESERVED, "pin", 3);
                 existingPorts(relayPort(1, "Sembra", 3));
                 assertApi(() -> sut.create(ORG_ID, expanderDto("exp2", 32)), HttpStatus.CONFLICT, ErrorCodes.PORTS_I2C_PIN_RESERVED, "port", "Sembra");
@@ -567,7 +600,7 @@ class PortServiceTest {
                 assertThat(relay.getPin()).isNull();
                 assertThat(sut.configOf(relay)).containsEntry("channel", 5);
                 assertApi(() -> sut.update(ORG_ID, 2, new UpdatePortDto().setConfig(Map.of())),
-                        HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_RELAY_PIN_OR_EXPANDER, "reason", "none");
+                        HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_OR_EXPANDER, "reason", "none");
                 sut.update(ORG_ID, 2, new UpdatePortDto().setConfig(Map.of()).setPin(24));
                 assertThat(relay.getPin()).isEqualTo(24);
                 assertThat(sut.configOf(relay)).isEmpty();
@@ -743,6 +776,144 @@ class PortServiceTest {
     // ================================================================== update
 
     @Nested
+    @DisplayName("motors and sensors (contract v3)")
+    class MotorsAndSensors {
+
+        @Test
+        @DisplayName("persists a native sensor and one on an expander channel, both without piece type")
+        void should_persistSensors() {
+            Port gpio = sut.create(ORG_ID, sensorDto("Seta", 23));
+            assertThat(gpio.getKind()).isEqualTo(OutputKind.SENSOR);
+            assertThat(gpio.getPin()).isEqualTo(23);
+            assertThat(gpio.getPieceTypeId()).isNull();
+            existingPorts(expanderPort(1, "exp1", 32));
+            Port onExpander = sut.create(ORG_ID, expanderSensorDto("PortaCaixa", "exp1", 15));
+            assertThat(onExpander.getPin()).isNull();
+            assertThat(sut.configOf(onExpander)).containsEntry("channel", 15);
+        }
+
+        @Test
+        @DisplayName("a sensor takes a pin or an expander, never both nor neither")
+        void should_requireSensorPinXorExpander() {
+            existingPorts(expanderPort(1, "exp1", 32));
+            assertApi(() -> sut.create(ORG_ID, expanderSensorDto("PortaCaixa", "exp1", 15).setPin(23)),
+                    HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_OR_EXPANDER, "reason", "both");
+            assertApi(() -> sut.create(ORG_ID, sensorDto("Seta", null)),
+                    HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_OR_EXPANDER, "reason", "none");
+        }
+
+        @Test
+        @DisplayName("a sensor pin collides with motor pins like any other GPIO")
+        void should_checkSensorPins() {
+            existingPorts(motorPort(1, "Angel", 27, 17));
+            assertApi(() -> sut.create(ORG_ID, sensorDto("AngelDalt", 17)), HttpStatus.CONFLICT, ErrorCodes.PORTS_PIN_CONFLICT);
+            assertThat(sut.create(ORG_ID, sensorDto("AngelDalt", 22)).getPin()).isEqualTo(22);
+        }
+
+        @Test
+        @DisplayName("a motor on an expander has no pin and occupies two channels")
+        void should_persistExpanderMotor() {
+            existingPorts(expanderPort(1, "exp1", 32));
+            Port motor = sut.create(ORG_ID, motorDto("Noria", expanderMotorConfig("exp1", 6, 7)));
+            assertThat(motor.getPin()).isNull();
+            assertThat(sut.configOf(motor)).containsEntry("channelForward", 6).containsEntry("channelReverse", 7);
+        }
+
+        @Test
+        @DisplayName("relays, motors and sensors share the 16 channels of an expander")
+        void should_shareExpanderChannels() {
+            existingPorts(expanderPort(1, "exp1", 32), motorPort(2, "Noria", expanderMotorConfig("exp1", 6, 7)));
+            assertApi(() -> sut.create(ORG_ID, expanderRelayDto("Estable", "exp1", 7)),
+                    HttpStatus.CONFLICT, ErrorCodes.PORTS_EXPANDER_CHANNEL_CONFLICT, "port", "Noria");
+            assertApi(() -> sut.create(ORG_ID, expanderSensorDto("PortaCaixa", "exp1", 6)),
+                    HttpStatus.CONFLICT, ErrorCodes.PORTS_EXPANDER_CHANNEL_CONFLICT, "port", "Noria");
+            existingPorts(expanderPort(1, "exp1", 32), expanderSensorPort(2, "PortaCaixa", "exp1", 15));
+            assertApi(() -> sut.create(ORG_ID, motorDto("Riu", expanderMotorConfig("exp1", 14, 15))),
+                    HttpStatus.CONFLICT, ErrorCodes.PORTS_EXPANDER_CHANNEL_CONFLICT, "port", "PortaCaixa");
+            assertThat(sut.create(ORG_ID, motorDto("Riu", expanderMotorConfig("exp1", 6, 7))).getName()).isEqualTo("Riu");
+        }
+
+        @Test
+        @DisplayName("an expander used by a motor or a sensor cannot be deleted")
+        void should_protectExpanderUsedByMotorOrSensor() {
+            existingPorts(expanderPort(1, "exp1", 32), motorPort(2, "Noria", expanderMotorConfig("exp1", 6, 7)),
+                    expanderSensorPort(3, "PortaCaixa", "exp1", 15));
+            assertApi(() -> sut.softDelete(ORG_ID, 1), HttpStatus.CONFLICT, ErrorCodes.PORTS_EXPANDER_IN_USE, "relays", "Noria, PortaCaixa");
+        }
+
+        @Test
+        @DisplayName("renaming an expander cascades to motors and sensors on it")
+        void should_cascadeExpanderRenameToMotorsAndSensors() {
+            Port motor = motorPort(2, "Noria", expanderMotorConfig("exp1", 6, 7));
+            Port sensor = expanderSensorPort(3, "PortaCaixa", "exp1", 15);
+            existingPorts(expanderPort(1, "exp1", 32), motor, sensor);
+            sut.update(ORG_ID, 1, new UpdatePortDto().setName("expansor"));
+            assertThat(sut.configOf(motor)).containsEntry("expander", "expansor");
+            assertThat(sut.configOf(sensor)).containsEntry("expander", "expansor");
+        }
+
+        @Test
+        @DisplayName("a motor limit must name a sensor port of the organization")
+        void should_requireExistingLimitSensor() {
+            existingPorts(relayPort(1, "Focos", 26), sensorPort(2, "AngelDalt", 22));
+            Map<String, Object> missing = motorConfig(27, 17);
+            missing.put("limitForward", "AngelBaix");
+            assertThatThrownBy(() -> sut.create(ORG_ID, motorDto("Angel", missing)))
+                    .isInstanceOfSatisfying(ApiException.class, ex -> {
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                        assertThat(ex.getCode()).isEqualTo(ErrorCodes.PORTS_SENSOR_NOT_FOUND);
+                        assertThat(ex.getParams()).containsEntry("key", "limitForward").containsEntry("sensor", "AngelBaix");
+                    });
+            Map<String, Object> notASensor = motorConfig(27, 17);
+            notASensor.put("limitReverse", "Focos");
+            assertApi(() -> sut.create(ORG_ID, motorDto("Angel", notASensor)), HttpStatus.BAD_REQUEST,
+                    ErrorCodes.PORTS_SENSOR_NOT_FOUND, "key", "limitReverse");
+            Map<String, Object> ok = motorConfig(27, 17);
+            ok.put("limitForward", "AngelDalt");
+            ok.put("lockOnTimeout", true);
+            assertThat(sut.configOf(sut.create(ORG_ID, motorDto("Angel", ok)))).containsEntry("limitForward", "AngelDalt");
+        }
+
+        @Test
+        @DisplayName("an update re-checks the motor limits")
+        void should_recheckLimitsOnUpdate() {
+            existingPorts(motorPort(1, "Angel", 27, 17));
+            Map<String, Object> cfg = motorConfig(27, 17);
+            cfg.put("limitForward", "Fantasma");
+            assertApi(() -> sut.update(ORG_ID, 1, new UpdatePortDto().setConfig(cfg)), HttpStatus.BAD_REQUEST,
+                    ErrorCodes.PORTS_SENSOR_NOT_FOUND, "sensor", "Fantasma");
+        }
+
+        @Test
+        @DisplayName("deleting a sensor used as a limit is refused; an unused one is deleted")
+        void should_protectSensorInUse() {
+            Map<String, Object> cfg = motorConfig(27, 17);
+            cfg.put("limitForward", "AngelDalt");
+            Port used = sensorPort(2, "AngelDalt", 22);
+            Port unused = sensorPort(3, "Seta", 23);
+            existingPorts(motorPort(1, "Angel", cfg), used, unused);
+            assertApi(() -> sut.softDelete(ORG_ID, 2), HttpStatus.CONFLICT, ErrorCodes.PORTS_SENSOR_IN_USE, "motors", "Angel");
+            assertThat(used.getDeletedAt()).isNull();
+            sut.softDelete(ORG_ID, 3);
+            assertThat(unused.getDeletedAt()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("renaming a sensor cascades to both limits of every motor using it")
+        void should_cascadeSensorRename() {
+            Map<String, Object> cfg = motorConfig(27, 17);
+            cfg.put("limitForward", "Final");
+            cfg.put("limitReverse", "Final");
+            Port motor = motorPort(1, "Angel", cfg);
+            Port other = motorPort(3, "Noria", motorConfig(5, 6));
+            existingPorts(motor, sensorPort(2, "Final", 22), other);
+            sut.update(ORG_ID, 2, new UpdatePortDto().setName("FinalDalt"));
+            assertThat(sut.configOf(motor)).containsEntry("limitForward", "FinalDalt").containsEntry("limitReverse", "FinalDalt");
+            assertThat(sut.configOf(other)).doesNotContainKey("limitForward");
+        }
+    }
+
+    @Nested
     @DisplayName("update")
     class Update {
 
@@ -800,7 +971,7 @@ class PortServiceTest {
         @Test
         @DisplayName("changes the pin when free and rejects a used, reserved or invalid one")
         void should_changePin() {
-            existingPorts(relayPort(1, "Focos", 27), relayPort(2, "Sembra", 26), motorPort(3, "Angel", 3, 4, 7));
+            existingPorts(relayPort(1, "Focos", 27), relayPort(2, "Sembra", 26), motorPort(3, "Angel", 3, 4));
             assertThat(sut.update(ORG_ID, 1, new UpdatePortDto().setPin(22)).getPin()).isEqualTo(22);
             assertApi(() -> sut.update(ORG_ID, 1, new UpdatePortDto().setPin(26)), HttpStatus.CONFLICT, ErrorCodes.PORTS_PIN_CONFLICT);
             assertApi(() -> sut.update(ORG_ID, 1, new UpdatePortDto().setPin(4)), HttpStatus.CONFLICT, ErrorCodes.PORTS_PIN_CONFLICT);
@@ -862,9 +1033,9 @@ class PortServiceTest {
         @Test
         @DisplayName("a motor config change re-checks pin collisions")
         void should_recheckMotorPins() {
-            existingPorts(relayPort(1, "Focos", 27), motorPort(2, "Angel", 3, 4, 7));
-            assertApi(() -> sut.update(ORG_ID, 2, new UpdatePortDto().setConfig(motorConfig(3, 27, 7))), HttpStatus.CONFLICT, ErrorCodes.PORTS_PIN_CONFLICT);
-            assertThat(sut.configOf(sut.update(ORG_ID, 2, new UpdatePortDto().setConfig(motorConfig(3, 5, 7))))).containsEntry("pinL", 5);
+            existingPorts(relayPort(1, "Focos", 27), motorPort(2, "Angel", 3, 4));
+            assertApi(() -> sut.update(ORG_ID, 2, new UpdatePortDto().setConfig(motorConfig(3, 27))), HttpStatus.CONFLICT, ErrorCodes.PORTS_PIN_CONFLICT);
+            assertThat(sut.configOf(sut.update(ORG_ID, 2, new UpdatePortDto().setConfig(motorConfig(3, 5))))).containsEntry("pinReverse", 5);
         }
 
         @Test

@@ -43,7 +43,7 @@ import com.stocka.backend.modules.ports.repository.PortRepository;
  * <ol>
  *   <li>{@code kind} is required and must exist in the catalog; it is immutable afterwards.</li>
  *   <li>A port of a non-infrastructure kind needs a piece type of the same organization whose own
- *       kind equals the port's; infrastructure kinds (strips, button) carry no piece type.</li>
+ *       kind equals the port's; infrastructure kinds (strips, expanders, sensors) carry no piece type.</li>
  *   <li>Kinds with a pin need a valid, non-reserved GPIO in {@code Port.pin}; the others must not
  *       send one. A relay takes either a pin or {@code expander} + {@code channel} in its config, never
  *       both. A strip's pin must be a WS281x-capable pin and its config channel must match.</li>
@@ -195,6 +195,7 @@ public class PortService {
         validateSegment(org, kind, config);
         validateExpanderRules(org, kind, pin, config, null);
         validateMovingHead(org, kind, config, null);
+        validateMotorLimits(org, kind, config);
 
         int defaultPosition = portRepository.findByOrganizationOrderByPositionAscIdAsc(org).size();
         List<ActionParameterDto> parameters = normalizeParameters(dto.getParameters());
@@ -250,7 +251,7 @@ public class PortService {
         Integer newPin = port.getPin();
         if (dto.getPin() != null || dto.getConfig() != null) {
             // A relay moving to an expander drops its pin; one moving back to a GPIO needs the new pin in the same call.
-            Integer requested = dto.getPin() != null ? dto.getPin() : (kind == OutputKind.RELAY && config.containsKey(EXPANDER_KEY) ? null : port.getPin());
+            Integer requested = dto.getPin() != null ? dto.getPin() : (config.containsKey(EXPANDER_KEY) ? null : port.getPin());
             newPin = validatePinForKind(spec, requested, config);
             validateStripPin(kind, newPin, config);
             ensurePinsFree(org, ownPins(kind, newPin, config), port.getId());
@@ -262,6 +263,7 @@ public class PortService {
             }
             validateExpanderRules(org, kind, newPin, config, port.getId());
             validateMovingHead(org, kind, config, port.getId());
+            validateMotorLimits(org, kind, config);
         } else if (dto.getPin() != null) {
             ensureNotI2cPinWithExpanders(org, kind, newPin, port.getId());
         }
@@ -273,6 +275,9 @@ public class PortService {
             }
             if (kind == OutputKind.GPIO_EXPANDER) {
                 cascadeExpanderRename(org, port.getName(), newName);
+            }
+            if (kind == OutputKind.SENSOR) {
+                cascadeSensorRename(org, port.getName(), newName);
             }
             port.setName(newName);
         }
@@ -306,10 +311,17 @@ public class PortService {
             }
         }
         if (port.getKind() == OutputKind.GPIO_EXPANDER) {
-            List<Port> relays = relaysOfExpander(port.getOrganization(), port.getName());
-            if (!relays.isEmpty()) {
+            List<Port> users = portsOfExpander(port.getOrganization(), port.getName());
+            if (!users.isEmpty()) {
                 throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PORTS_EXPANDER_IN_USE,
-                        params("relays", String.join(", ", relays.stream().map(Port::getName).toList())));
+                        params("relays", String.join(", ", users.stream().map(Port::getName).toList())));
+            }
+        }
+        if (port.getKind() == OutputKind.SENSOR) {
+            List<Port> motors = motorsUsingSensor(port.getOrganization(), port.getName());
+            if (!motors.isEmpty()) {
+                throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PORTS_SENSOR_IN_USE,
+                        params("motors", String.join(", ", motors.stream().map(Port::getName).toList())));
             }
         }
         port.setName(buildSoftDeletedName(port.getName(), port.getId(), MAX_NAME_LENGTH));
@@ -381,14 +393,14 @@ public class PortService {
             case OPTIONAL -> {
                 boolean onExpander = config != null && config.containsKey(EXPANDER_KEY);
                 if (onExpander && pin != null) {
-                    throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_RELAY_PIN_OR_EXPANDER,
+                    throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_OR_EXPANDER,
                             params("reason", "both"));
                 }
                 if (onExpander) {
                     return null;
                 }
                 if (pin == null) {
-                    throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_RELAY_PIN_OR_EXPANDER,
+                    throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_OR_EXPANDER,
                             params("reason", "none"));
                 }
                 validateGpio(pin);
@@ -511,20 +523,76 @@ public class PortService {
     // ------------------------------------------------------------------ expanders
 
     /**
-     * Relays of the organization that hang from the expander named {@code expanderName}.
+     * Ports of the organization that hang from the expander named {@code expanderName}: relays,
+     * motors and sensors on its channels.
      *
      * @param org          owning organization
      * @param expanderName name of a {@code gpio_expander} port
-     * @return the dependent relay ports, in position order
+     * @return the dependent ports, in position order
      */
-    public List<Port> relaysOfExpander(Organization org, String expanderName) {
+    public List<Port> portsOfExpander(Organization org, String expanderName) {
         List<Port> out = new ArrayList<>();
         for (Port p : portRepository.findByOrganizationOrderByPositionAscIdAsc(org)) {
-            if (p.getKind() == OutputKind.RELAY && expanderName.equals(configOf(p).get(EXPANDER_KEY))) {
+            if (p.getKind() != OutputKind.GPIO_EXPANDER && expanderName.equals(configOf(p).get(EXPANDER_KEY))) {
                 out.add(p);
             }
         }
         return out;
+    }
+
+    /**
+     * Motors of the organization that use the sensor named {@code sensorName} as a limit switch.
+     *
+     * @param org        owning organization
+     * @param sensorName name of a {@code sensor} port
+     * @return the dependent motor ports, in position order
+     */
+    public List<Port> motorsUsingSensor(Organization org, String sensorName) {
+        List<Port> out = new ArrayList<>();
+        for (Port p : portRepository.findByOrganizationOrderByPositionAscIdAsc(org)) {
+            if (p.getKind() != OutputKind.MOTOR) {
+                continue;
+            }
+            Map<String, Object> cfg = configOf(p);
+            if (PortConfigValidator.MOTOR_LIMIT_KEYS.stream().anyMatch(k -> sensorName.equals(cfg.get(k)))) {
+                out.add(p);
+            }
+        }
+        return out;
+    }
+
+    private void validateMotorLimits(Organization org, OutputKind kind, Map<String, Object> config) {
+        if (kind != OutputKind.MOTOR) {
+            return;
+        }
+        for (String key : PortConfigValidator.MOTOR_LIMIT_KEYS) {
+            Object name = config.get(key);
+            if (name == null) {
+                continue;
+            }
+            boolean exists = portRepository.findByOrganizationAndName(org, String.valueOf(name))
+                    .filter(p -> p.getKind() == OutputKind.SENSOR)
+                    .isPresent();
+            if (!exists) {
+                Map<String, Object> p = new LinkedHashMap<>();
+                p.put("key", key);
+                p.put("sensor", name);
+                throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_SENSOR_NOT_FOUND, p);
+            }
+        }
+    }
+
+    private void cascadeSensorRename(Organization org, String oldName, String newName) {
+        for (Port motor : motorsUsingSensor(org, oldName)) {
+            Map<String, Object> cfg = configOf(motor);
+            for (String key : PortConfigValidator.MOTOR_LIMIT_KEYS) {
+                if (oldName.equals(cfg.get(key))) {
+                    cfg.put(key, newName);
+                }
+            }
+            motor.setConfigJson(configCodec.serialize(cfg));
+            portRepository.save(motor);
+        }
     }
 
     private void validateExpanderRules(Organization org, OutputKind kind, Integer pin, Map<String, Object> config, Integer excludeId) {
@@ -560,25 +628,25 @@ public class PortService {
                 }
             }
         }
-        if (kind == OutputKind.RELAY && config.containsKey(EXPANDER_KEY)) {
+        if (config.containsKey(EXPANDER_KEY) && kind != OutputKind.GPIO_EXPANDER) {
             String expanderName = String.valueOf(config.get(EXPANDER_KEY));
             Port expander = others.stream()
                     .filter(p -> p.getKind() == OutputKind.GPIO_EXPANDER && p.getName().equals(expanderName))
                     .findFirst()
                     .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_EXPANDER_NOT_FOUND,
                             params(EXPANDER_KEY, expanderName)));
-            int channel = ((Number) config.get(CHANNEL_KEY)).intValue();
-            for (Port other : others) {
-                if (other.getKind() != OutputKind.RELAY) {
-                    continue;
-                }
-                Map<String, Object> cfg = configOf(other);
-                if (expander.getName().equals(cfg.get(EXPANDER_KEY)) && cfg.get(CHANNEL_KEY) instanceof Number n && n.intValue() == channel) {
-                    Map<String, Object> p = new LinkedHashMap<>();
-                    p.put(EXPANDER_KEY, expander.getName());
-                    p.put(CHANNEL_KEY, channel);
-                    p.put("port", other.getName());
-                    throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PORTS_EXPANDER_CHANNEL_CONFLICT, p);
+            // Relays, motors and sensors share the expander's 16 channels.
+            for (Integer channel : configValidator.expanderChannels(kind, config)) {
+                for (Port other : others) {
+                    Map<String, Object> cfg = configOf(other);
+                    if (expander.getName().equals(cfg.get(EXPANDER_KEY))
+                            && configValidator.expanderChannels(other.getKind(), cfg).contains(channel)) {
+                        Map<String, Object> p = new LinkedHashMap<>();
+                        p.put(EXPANDER_KEY, expander.getName());
+                        p.put(CHANNEL_KEY, channel);
+                        p.put("port", other.getName());
+                        throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PORTS_EXPANDER_CHANNEL_CONFLICT, p);
+                    }
                 }
             }
         }
@@ -619,7 +687,7 @@ public class PortService {
     }
 
     private void cascadeExpanderRename(Organization org, String oldName, String newName) {
-        for (Port relay : relaysOfExpander(org, oldName)) {
+        for (Port relay : portsOfExpander(org, oldName)) {
             Map<String, Object> cfg = configOf(relay);
             cfg.put(EXPANDER_KEY, newName);
             relay.setConfigJson(configCodec.serialize(cfg));

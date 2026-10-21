@@ -11,6 +11,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import com.stocka.backend.modules.devices.dto.DeviceAlertDto;
+
 @DisplayName("DeviceOverridesJsonCodec")
 class DeviceOverridesJsonCodecTest {
 
@@ -64,6 +66,34 @@ class DeviceOverridesJsonCodecTest {
         void deserialize_should_toleratetCorruptJson() {
             assertThat(sut.deserialize("[\"Angel\"")).isEmpty();
             assertThat(sut.deserialize("{\"a\":1}")).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("alerts")
+    class Alerts {
+
+        @Test
+        @DisplayName("should round-trip the alert list")
+        void alerts_should_roundTrip() {
+            List<DeviceAlertDto> alerts = List.of(new DeviceAlertDto("motor_timeout", "Àngel", "No ha arribat \"a dalt\"", "2026-12-24T18:00:00Z"),
+                    new DeviceAlertDto("sensor_panic", "Seta", null, null));
+            assertThat(sut.deserializeAlerts(sut.serializeAlerts(alerts))).isEqualTo(alerts);
+        }
+
+        @Test
+        @DisplayName("should write null or empty as an empty array")
+        void serializeAlerts_should_writeEmptyArray() {
+            assertThat(sut.serializeAlerts(null)).isEqualTo("[]");
+            assertThat(sut.serializeAlerts(List.of())).isEqualTo("[]");
+        }
+
+        @ParameterizedTest
+        @NullAndEmptySource
+        @ValueSource(strings = {"   ", "[{\"code\":", "{\"code\":\"x\"}"})
+        @DisplayName("should read null, blank or corrupt JSON as empty")
+        void deserializeAlerts_should_tolerateBadInput(String json) {
+            assertThat(sut.deserializeAlerts(json)).isEmpty();
         }
     }
 }

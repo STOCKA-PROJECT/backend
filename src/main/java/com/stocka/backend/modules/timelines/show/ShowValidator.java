@@ -31,6 +31,13 @@ import com.stocka.backend.modules.timelines.show.ShowPackage.ShowEvent;
 public final class ShowValidator {
 
     private static final List<Integer> I2C_PINS = List.of(2, 3);
+    private static final List<String> MOTOR_PIN_KEYS = List.of("pinForward", "pinReverse");
+    private static final List<String> MOTOR_CHANNEL_KEYS = List.of("channelForward", "channelReverse");
+    private static final List<String> MOTOR_LIMIT_KEYS = List.of("limitForward", "limitReverse");
+    /** Action → {tope duro, final de carrera} del sentido. */
+    private static final Map<String, String[]> MOTOR_DIRECTIONS = Map.of(
+            "forward", new String[] {"maxTimeForward", "limitForward"},
+            "reverse", new String[] {"maxTimeReverse", "limitReverse"});
     private static final int DMX_UNIVERSE = 512;
 
     private ShowValidator() {
@@ -148,8 +155,11 @@ public final class ShowValidator {
                     if (!entry.containsKey("channel")) {
                         issues.add(ShowIssue.error("E_CONFIG_INVALID", "El port «" + name + "» necessita «channel» amb l'expansor.", null, name));
                     }
-                    if (entry.containsKey("activeLow")) {
+                    if (spec.kind() == OutputKind.RELAY && entry.containsKey("activeLow")) {
                         issues.add(ShowIssue.error("E_CONFIG_INVALID", "El port «" + name + "»: «activeLow» es declara a l'expansor, no al relé.", null, name));
+                    }
+                    if (spec.kind() == OutputKind.SENSOR && "down".equals(entry.get("pull"))) {
+                        issues.add(ShowIssue.error("E_CONFIG_INVALID", "El sensor «" + name + "»: un canal d'expansor només admet pull «up» o «none».", null, name));
                     }
                 } else if (!hasPin) {
                     issues.add(ShowIssue.error("E_CONFIG_INVALID", "El port «" + name + "» necessita «pin» o «expander» + «channel».", null, name));
@@ -201,19 +211,8 @@ public final class ShowValidator {
                 }
             }
             if (spec.kind() == OutputKind.MOTOR) {
-                List<Long> pins = new ArrayList<>();
-                for (String key : List.of("pinR", "pinL", "sensorPin")) {
-                    if (ShowNumbers.isNumber(entry.get(key))) pins.add(((Number) entry.get(key)).longValue());
-                }
-                if (new HashSet<>(pins).size() != pins.size()) {
-                    issues.add(ShowIssue.error("E_CONFIG_INVALID", "El motor «" + name
-                            + "» repeteix un pin entre pinR, pinL i sensorPin.", null, name));
-                }
-                if (ShowNumbers.isNumber(entry.get("downTime")) && ShowNumbers.isNumber(entry.get("maxUpTime"))
-                        && ((Number) entry.get("maxUpTime")).doubleValue() < ((Number) entry.get("downTime")).doubleValue()) {
-                    issues.add(ShowIssue.warning("W_MOTOR_UP_TIME_SHORT", "El motor «" + name + "»: maxUpTime ("
-                            + ShowNumbers.toJsString((Number) entry.get("maxUpTime")) + ") és menor que downTime ("
-                            + ShowNumbers.toJsString((Number) entry.get("downTime")) + "); potser no arribarà a dalt.", null, name));
+                for (String why : motorOutputProblems(entry)) {
+                    issues.add(ShowIssue.error("E_MOTOR_OUTPUTS", "El motor «" + name + "»: " + why + ".", null, name));
                 }
             }
         }
@@ -255,22 +254,53 @@ public final class ShowValidator {
         Map<String, List<String>> channels = new LinkedHashMap<>();
         for (Map.Entry<String, Map<String, Object>> h : hardware.entrySet()) {
             Map<String, Object> entry = h.getValue();
-            if (!"relay".equals(entry.get("kind")) || !entry.containsKey("expander")) continue;
+            Object kind = entry.get("kind");
+            if (!("relay".equals(kind) || "sensor".equals(kind) || "motor".equals(kind)) || !entry.containsKey("expander")) continue;
             String expander = String.valueOf(entry.get("expander"));
             if (!expanders.containsKey(expander)) {
-                issues.add(ShowIssue.error("E_EXPANDER_MISSING", "El relé «" + h.getKey() + "» referencia l'expansor «" + expander
+                issues.add(ShowIssue.error("E_EXPANDER_MISSING", "El port «" + h.getKey() + "» referencia l'expansor «" + expander
                         + "», que no existeix com a gpio_expander.", null, h.getKey()));
                 continue;
             }
-            if (ShowNumbers.isNumber(entry.get("channel"))) {
-                channels.computeIfAbsent(expander + ":" + ((Number) entry.get("channel")).longValue(), k -> new ArrayList<>()).add(h.getKey());
+            List<String> keys = "motor".equals(kind) ? MOTOR_CHANNEL_KEYS : List.of("channel");
+            for (String key : keys) {
+                if (ShowNumbers.isInteger(entry.get(key))) {
+                    String label = "channel".equals(key) ? h.getKey() : h.getKey() + "." + key;
+                    channels.computeIfAbsent(expander + ":" + ((Number) entry.get(key)).longValue(), k -> new ArrayList<>()).add(label);
+                }
             }
         }
         for (Map.Entry<String, List<String>> c : channels.entrySet()) {
             if (c.getValue().size() > 1) {
                 int sep = c.getKey().lastIndexOf(':');
                 issues.add(ShowIssue.error("E_EXPANDER_CHANNEL_DUPLICATE", "El canal " + c.getKey().substring(sep + 1) + " de «"
-                        + c.getKey().substring(0, sep) + "» l'usen més d'un relé: " + String.join(", ", c.getValue()) + "."));
+                        + c.getKey().substring(0, sep) + "» l'usen més d'un port: " + String.join(", ", c.getValue()) + "."));
+            }
+        }
+
+        // --- motors: limit switches; sensors nobody uses ----------------------------------------------
+        Set<String> referencedSensors = new HashSet<>();
+        for (Map.Entry<String, Map<String, Object>> h : hardware.entrySet()) {
+            Map<String, Object> entry = h.getValue();
+            if (!"motor".equals(entry.get("kind"))) continue;
+            for (String key : MOTOR_LIMIT_KEYS) {
+                if (!entry.containsKey(key)) continue;
+                Object sensor = entry.get(key);
+                Map<String, Object> target = sensor instanceof String n ? hardware.get(n) : null;
+                if (target == null || !"sensor".equals(target.get("kind"))) {
+                    issues.add(ShowIssue.error("E_SENSOR_MISSING", "El motor «" + h.getKey() + "»: «" + key + "» referencia «" + sensor
+                            + "», que no existeix com a sensor.", null, h.getKey()));
+                } else {
+                    referencedSensors.add((String) sensor);
+                }
+            }
+        }
+        for (Map.Entry<String, Map<String, Object>> h : hardware.entrySet()) {
+            Map<String, Object> entry = h.getValue();
+            if ("sensor".equals(entry.get("kind")) && "none".equals(entry.getOrDefault("onActive", "none"))
+                    && !referencedSensors.contains(h.getKey())) {
+                issues.add(ShowIssue.warning("W_SENSOR_UNUSED", "El sensor «" + h.getKey()
+                        + "» no fa res: cap motor el fa servir i no té onActive.", null, h.getKey()));
             }
         }
 
@@ -404,12 +434,24 @@ public final class ShowValidator {
                     }
                 }
             }
-            if (spec.kind() == OutputKind.MOTOR && "start_up".equals(ev.action()) && ShowNumbers.isNumber(params.get("time"))
-                    && ShowNumbers.isNumber(entry.get("maxUpTime"))
-                    && ((Number) params.get("time")).doubleValue() > ((Number) entry.get("maxUpTime")).doubleValue()) {
-                issues.add(ShowIssue.error("E_MOTOR_UP_TIME", where + ": time=" + ShowNumbers.toJsString((Number) params.get("time"))
-                        + " supera el maxUpTime (" + ShowNumbers.toJsString((Number) entry.get("maxUpTime")) + ") del motor «"
-                        + ev.target() + "».", null, ev.target()));
+            if (spec.kind() == OutputKind.MOTOR && MOTOR_DIRECTIONS.containsKey(ev.action()) && ShowNumbers.isNumber(params.get("time"))) {
+                String maxKey = MOTOR_DIRECTIONS.get(ev.action())[0];
+                String limitKey = MOTOR_DIRECTIONS.get(ev.action())[1];
+                Object limitTime = entry.get(maxKey);
+                double time = ((Number) params.get("time")).doubleValue();
+                if (ShowNumbers.isNumber(limitTime) && time > ((Number) limitTime).doubleValue()) {
+                    String t = ShowNumbers.toJsString((Number) params.get("time"));
+                    String max = ShowNumbers.toJsString((Number) limitTime);
+                    Object limit = entry.get(limitKey);
+                    if (limit != null && !"".equals(limit)) {
+                        issues.add(ShowIssue.warning("W_MOTOR_TIME_CAPPED", where + ": el clip dura " + t + " s però «" + ev.target()
+                                + "» mai gira més de " + max + " s en aquest sentit; pararà abans pel final de carrera o pel tall.",
+                                null, ev.target()));
+                    } else {
+                        issues.add(ShowIssue.error("E_MOTOR_TIME", where + ": time=" + t + " supera el " + maxKey + " (" + max
+                                + ") del motor «" + ev.target() + "».", null, ev.target()));
+                    }
+                }
             }
             if (spec.kind() == OutputKind.MOVING_HEAD && "set".equals(ev.action())
                     && params.keySet().stream().allMatch("time"::equals)) {
@@ -449,7 +491,7 @@ public final class ShowValidator {
                 issues.add(ShowIssue.warning("W_PORT_UNUSED", "El port «" + h.getKey() + "» no té cap esdeveniment.",
                         null, h.getKey()));
             }
-            if (spec.kind() == OutputKind.MOTOR || spec.kind() == OutputKind.AUDIO) {
+            if (spec.kind() == OutputKind.AUDIO) {
                 singletons.computeIfAbsent(spec.kind().catalogId(), k -> new ArrayList<>()).add(h.getKey());
             }
         }
@@ -495,13 +537,43 @@ public final class ShowValidator {
         return kind.map(catalog::kind).orElse(null);
     }
 
+    /**
+     * Problems of a motor's outputs (pins or expander), in Catalan; empty when coherent. Port of
+     * {@code motor_output_problems} in {@code contract/validate.py}.
+     *
+     * @param entry hardware entry of a motor
+     * @return the problems
+     */
+    static List<String> motorOutputProblems(Map<String, Object> entry) {
+        long pins = MOTOR_PIN_KEYS.stream().filter(entry::containsKey).count();
+        long channels = MOTOR_CHANNEL_KEYS.stream().filter(entry::containsKey).count();
+        List<String> problems = new ArrayList<>();
+        if (entry.containsKey("expander")) {
+            if (pins > 0) problems.add("no pot tenir pins i expansor alhora");
+            if (channels != 2) {
+                problems.add("amb expansor necessita channelForward i channelReverse");
+            } else if (sameValue(entry.get("channelForward"), entry.get("channelReverse"))) {
+                problems.add("channelForward i channelReverse han de ser diferents");
+            }
+            if (entry.containsKey("activeLow")) problems.add("«activeLow» es declara a l'expansor");
+        } else {
+            if (channels > 0) problems.add("els canals només tenen sentit amb «expander»");
+            if (pins != 2) problems.add("necessita pinForward i pinReverse, o expander amb els dos canals");
+        }
+        return problems;
+    }
+
+    private static boolean sameValue(Object a, Object b) {
+        return ShowNumbers.isNumber(a) && ShowNumbers.isNumber(b) && ((Number) a).doubleValue() == ((Number) b).doubleValue();
+    }
+
     private static List<Map.Entry<String, Long>> pinsOf(String name, Map<String, Object> entry, boolean hasPin) {
         List<Map.Entry<String, Long>> out = new ArrayList<>();
         if (hasPin && ShowNumbers.isNumber(entry.get("pin"))) {
             out.add(Map.entry(name, ((Number) entry.get("pin")).longValue()));
         }
         if ("motor".equals(entry.get("kind"))) {
-            for (String key : List.of("pinR", "pinL", "sensorPin")) {
+            for (String key : MOTOR_PIN_KEYS) {
                 if (ShowNumbers.isNumber(entry.get(key))) {
                     out.add(Map.entry(name + "." + key, ((Number) entry.get(key)).longValue()));
                 }

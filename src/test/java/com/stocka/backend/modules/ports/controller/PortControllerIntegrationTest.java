@@ -301,11 +301,11 @@ class PortControllerIntegrationTest {
     @DisplayName("a motor keeps its pins in the config and they count for pin conflicts")
     void motor_pinsConflict() throws Exception {
         Integer motorTypeId = createPieceType(adminToken, acmeSlug, "Àngel", "motor");
-        Map<String, Object> config = Map.of("pinR", 3, "pinL", 4, "sensorPin", 7, "downTime", 15, "maxUpTime", 20);
+        Map<String, Object> config = Map.of("pinForward", 3, "pinReverse", 4, "maxTimeForward", 20, "maxTimeReverse", 15);
         postPort(adminToken, acmeSlug, Map.of("name", "Angel", "kind", "motor", "pieceTypeId", motorTypeId, "config", config))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.pin").value(org.hamcrest.Matchers.nullValue()))
-                .andExpect(jsonPath("$.config.pinR").value(3));
+                .andExpect(jsonPath("$.config.pinForward").value(3));
 
         createPort(adminToken, acmeSlug, "Sembra", 4, acmePieceTypeId)
                 .andExpect(status().isConflict())
@@ -336,7 +336,7 @@ class PortControllerIntegrationTest {
         postPort(adminToken, acmeSlug, Map.of("name", "Pou", "kind", "relay", "pieceTypeId", acmePieceTypeId, "pin", 26,
                         "config", Map.of("expander", "exp1", "channel", 4)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("ports.relay_pin_or_expander"));
+                .andExpect(jsonPath("$.code").value("ports.pin_or_expander"));
         postPort(adminToken, acmeSlug, Map.of("name", "Pou", "kind", "relay", "pieceTypeId", acmePieceTypeId,
                         "config", Map.of("expander", "exp9", "channel", 4)))
                 .andExpect(status().isBadRequest())
@@ -366,7 +366,7 @@ class PortControllerIntegrationTest {
     }
 
     @Test
-    @DisplayName("a moving head fits the DMX universe and does not overlap another; a motor needs maxUpTime (contract v3)")
+    @DisplayName("a moving head fits the DMX universe and does not overlap another; a motor needs maxTimeForward (contract v3)")
     void movingHead_andMotorRules() throws Exception {
         Integer headTypeId = createPieceType(adminToken, acmeSlug, "Cabezal", "moving_head");
         postPort(adminToken, acmeSlug, Map.of("name", "Foco", "kind", "moving_head", "pieceTypeId", headTypeId,
@@ -387,10 +387,10 @@ class PortControllerIntegrationTest {
                 .andExpect(status().isCreated());
         Integer motorTypeId = createPieceType(adminToken, acmeSlug, "Àngel", "motor");
         postPort(adminToken, acmeSlug, Map.of("name", "Angel", "kind", "motor", "pieceTypeId", motorTypeId,
-                        "config", Map.of("pinR", 17, "pinL", 27, "sensorPin", 22, "downTime", 18)))
+                        "config", Map.of("pinForward", 27, "pinReverse", 17, "maxTimeReverse", 18)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("ports.config_missing_key"))
-                .andExpect(jsonPath("$.params.key").value("maxUpTime"));
+                .andExpect(jsonPath("$.params.key").value("maxTimeForward"));
         postPort(adminToken, acmeSlug, Map.of("name", "Video", "kind", "video", "pieceTypeId", acmePieceTypeId))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("ports.kind_invalid"));
@@ -405,7 +405,7 @@ class PortControllerIntegrationTest {
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(portsPath(acmeSlug) + "/" + portId)
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(om.writeValueAsString(Map.of("kind", "button"))))
+                        .content(om.writeValueAsString(Map.of("kind", "sensor"))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("ports.kind_immutable"));
     }

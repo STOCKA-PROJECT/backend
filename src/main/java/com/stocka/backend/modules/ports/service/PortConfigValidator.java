@@ -23,16 +23,24 @@ import com.stocka.backend.modules.contract.OutputKind;
  *
  * <p>Rules: no unknown keys, every required key present, JSON types matching the catalog type
  * ({@code int} must be an integral number, {@code number} any number, {@code bool} a boolean,
- * {@code string} a string), bounds respected, for motors the three pins distinct, and for relays
- * {@code channel} only together with {@code expander} and {@code activeLow} only without it (the
- * polarity of an expander's board is declared on the expander). {@code pin} inside the config is
+ * {@code string} a string), bounds respected; relays and sensors carry {@code channel} only
+ * together with {@code expander}; a relay or motor on an expander takes the board's polarity (no
+ * {@code activeLow}), a sensor on an expander cannot pull down; a motor takes both native outputs or
+ * the expander with both channels, all distinct. {@code pin} inside the config is
  * ignored because it lives in {@code Port.pin}; whether a relay needs a pin or an expander is decided
  * by {@link PortService}, which sees both. Cross-port rules (strip existence, segment range, pin
  * collisions, expander channels, DMX addresses) are checked by {@link PortService} too.
  */
 @Component
 public class PortConfigValidator {
-    private static final List<String> MOTOR_PIN_KEYS = List.of("pinR", "pinL", "sensorPin");
+    /** Motor config keys holding native GPIO outputs (forward = IN1, reverse = IN2 of the H-bridge). */
+    public static final List<String> MOTOR_PIN_KEYS = List.of("pinForward", "pinReverse");
+    /** Motor config keys holding expander channels. */
+    public static final List<String> MOTOR_CHANNEL_KEYS = List.of("channelForward", "channelReverse");
+    /** Motor config keys naming the limit-switch sensors of each direction. */
+    public static final List<String> MOTOR_LIMIT_KEYS = List.of("limitForward", "limitReverse");
+    /** Sensor config key: internal resistor. */
+    public static final String PULL_KEY = "pull";
     /** Relay config key naming the {@code gpio_expander} port the relay hangs from. */
     public static final String EXPANDER_KEY = "expander";
     /** Relay config key: channel (0–15) on the expander. */
@@ -78,31 +86,30 @@ public class PortConfigValidator {
             out.put(field.name(), coerce(field, value));
         }
 
-        if (kind == OutputKind.RELAY) {
+        if (kind == OutputKind.RELAY || kind == OutputKind.SENSOR) {
             boolean onExpander = out.containsKey(EXPANDER_KEY);
             if (!onExpander && out.containsKey(CHANNEL_KEY)) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_RELAY_CHANNEL_WITHOUT_EXPANDER);
+                throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_CHANNEL_WITHOUT_EXPANDER);
             }
             if (onExpander && !out.containsKey(CHANNEL_KEY)) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_RELAY_CHANNEL_REQUIRED);
+                throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_CHANNEL_REQUIRED);
             }
-            if (onExpander && out.containsKey(ACTIVE_LOW_KEY)) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_RELAY_ACTIVE_LOW_ON_EXPANDER);
+            // A relay on an expander takes the polarity of the expander's board; a sensor keeps its own.
+            if (kind == OutputKind.RELAY && onExpander && out.containsKey(ACTIVE_LOW_KEY)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_ACTIVE_LOW_ON_EXPANDER);
+            }
+            if (kind == OutputKind.SENSOR && onExpander && "down".equals(out.get(PULL_KEY))) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_SENSOR_PULL_ON_EXPANDER);
             }
         }
         if (kind == OutputKind.MOTOR) {
-            Set<Integer> distinct = new HashSet<>();
-            for (String key : MOTOR_PIN_KEYS) {
-                if (!distinct.add(((Number) out.get(key)).intValue())) {
-                    throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_MOTOR_PINS_NOT_DISTINCT);
-                }
-            }
+            validateMotorOutputs(out);
         }
         return out;
     }
 
     /**
-     * Pins declared inside a config (today only the three motor pins).
+     * Pins declared inside a config (today only the two native motor outputs).
      *
      * @param kind   output kind
      * @param config normalized config
@@ -119,6 +126,69 @@ public class PortConfigValidator {
             }
         }
         return pins;
+    }
+
+    /**
+     * A motor takes both native outputs or the expander with both channels, never a mix; the two
+     * outputs must differ, and the polarity of an expander's outputs belongs to the expander.
+     */
+    private static void validateMotorOutputs(Map<String, Object> out) {
+        long pins = MOTOR_PIN_KEYS.stream().filter(out::containsKey).count();
+        long channels = MOTOR_CHANNEL_KEYS.stream().filter(out::containsKey).count();
+        if (out.containsKey(EXPANDER_KEY)) {
+            if (pins > 0) {
+                throw motorOutputs("pins_and_expander");
+            }
+            if (channels != MOTOR_CHANNEL_KEYS.size()) {
+                throw motorOutputs("missing_channel");
+            }
+            if (out.containsKey(ACTIVE_LOW_KEY)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_ACTIVE_LOW_ON_EXPANDER);
+            }
+            if (out.get("channelForward").equals(out.get("channelReverse"))) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_MOTOR_PINS_NOT_DISTINCT);
+            }
+            return;
+        }
+        if (channels > 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_CHANNEL_WITHOUT_EXPANDER);
+        }
+        if (pins != MOTOR_PIN_KEYS.size()) {
+            throw motorOutputs("missing_pin");
+        }
+        Set<Integer> distinct = new HashSet<>();
+        for (String key : MOTOR_PIN_KEYS) {
+            if (!distinct.add(((Number) out.get(key)).intValue())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_MOTOR_PINS_NOT_DISTINCT);
+            }
+        }
+    }
+
+    private static ApiException motorOutputs(String reason) {
+        return new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_MOTOR_OUTPUTS_INVALID, params("reason", reason));
+    }
+
+    /**
+     * Expander channels a port occupies, by config key ({@code channel} for relays and sensors, the
+     * two motor channels for motors).
+     *
+     * @param kind   output kind
+     * @param config normalized config
+     * @return the channels; empty when the port is not on an expander
+     */
+    public List<Integer> expanderChannels(OutputKind kind, Map<String, Object> config) {
+        List<Integer> out = new ArrayList<>();
+        if (config == null || !config.containsKey(EXPANDER_KEY)) {
+            return out;
+        }
+        List<String> keys = kind == OutputKind.MOTOR ? MOTOR_CHANNEL_KEYS
+                : (kind == OutputKind.RELAY || kind == OutputKind.SENSOR) ? List.of(CHANNEL_KEY) : List.of();
+        for (String key : keys) {
+            if (config.get(key) instanceof Number n) {
+                out.add(n.intValue());
+            }
+        }
+        return out;
     }
 
     private static Object coerce(CatalogParam field, Object value) {

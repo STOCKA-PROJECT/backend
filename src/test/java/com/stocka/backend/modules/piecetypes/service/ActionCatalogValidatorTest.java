@@ -96,7 +96,7 @@ class ActionCatalogValidatorTest {
         @Test
         @DisplayName("the button has no actions at all")
         void should_rejectAnyButtonAction() {
-            assertCode(() -> sut.validate(OutputKind.BUTTON, "press", List.of()), ErrorCodes.PIECE_TYPES_ACTION_NOT_IN_CATALOG);
+            assertCode(() -> sut.validate(OutputKind.SENSOR, "press", List.of()), ErrorCodes.PIECE_TYPES_ACTION_NOT_IN_CATALOG);
         }
     }
 

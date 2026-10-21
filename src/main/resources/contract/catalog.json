@@ -258,24 +258,31 @@
       }
     },
     "motor": {
-      "controller": "AngelController",
+      "controller": "MotorController",
       "infrastructure": false,
       "pin": false,
-      "legacy": { "addressing": "controller", "name": "Angel" },
+      "notes": "Motor bidireccional amb pont H (IN1/IN2): dues sortides, sentit normal i invertit, que mai s'activen alhora. O bé dos GPIO (pinForward + pinReverse) o bé dos canals del mateix expansor (expander + channelForward + channelReverse). El temps de gir és la durada del clip; maxTime de cada sentit és el tall dur i limit<Sentit> el final de carrera (un port sensor).",
+      "legacy": { "addressing": "name" },
       "config": {
-        "pinR": { "type": "int", "required": true },
-        "pinL": { "type": "int", "required": true },
-        "sensorPin": { "type": "int", "required": true },
-        "downTime": { "type": "number", "required": true, "min": 0, "notes": "Segons de baixada per defecte." },
-        "maxUpTime": { "type": "number", "required": true, "min": 0, "notes": "Segons màxims amb el motor pujant encara que el sensor no detecti (tall dur de seguretat). Mesura la pujada més lenta al banc i posa-hi 1,3 vegades." }
+        "pinForward": { "type": "int", "min": 0, "max": 27, "notes": "GPIO de la sortida de sentit normal (IN1)." },
+        "pinReverse": { "type": "int", "min": 0, "max": 27, "notes": "GPIO de la sortida de sentit invertit (IN2)." },
+        "expander": { "type": "string", "ref": "gpio_expander", "notes": "Expansor de les dues sortides; amb expander calen channelForward i channelReverse i no hi pot haver pins." },
+        "channelForward": { "type": "int", "min": 0, "max": 15 },
+        "channelReverse": { "type": "int", "min": 0, "max": 15 },
+        "activeLow": { "type": "bool", "default": false, "notes": "Només sortides natives; en un expansor mana la placa." },
+        "switchDelayMs": { "type": "int", "min": 0, "max": 5000, "default": 50, "notes": "Temps amb les dues sortides apagades en invertir el sentit." },
+        "maxTimeForward": { "type": "number", "required": true, "min": 0, "notes": "Segons màxims seguits girant en sentit normal (tall dur)." },
+        "maxTimeReverse": { "type": "number", "required": true, "min": 0, "notes": "Segons màxims seguits girant en sentit invertit (tall dur)." },
+        "limitForward": { "type": "string", "ref": "sensor", "notes": "Final de carrera del sentit normal: en activar-se, el motor para." },
+        "limitReverse": { "type": "string", "ref": "sensor", "notes": "Final de carrera del sentit invertit." },
+        "lockOnTimeout": { "type": "bool", "default": false, "notes": "Si un sentit amb final de carrera acaba per maxTime, el motor queda bloquejat fins que algú el desbloquegi." }
       },
       "actions": {
-        "start_up": {
-          "params": { "time": { "type": "number", "min": 0, "duration": true } },
-          "unsupported": ["up_time"]
+        "forward": {
+          "params": { "time": { "type": "number", "min": 0, "duration": true, "notes": "Segons de gir (la durada del clip); sense valor, fins al final de carrera o maxTimeForward." } }
         },
-        "start_down": {
-          "params": { "time": { "type": "number", "min": 0, "duration": true } }
+        "reverse": {
+          "params": { "time": { "type": "number", "min": 0, "duration": true, "notes": "Segons de gir (la durada del clip); sense valor, fins al final de carrera o maxTimeReverse." } }
         },
         "stop": { "params": {} }
       }
@@ -328,12 +335,20 @@
         }
       }
     },
-    "button": {
-      "controller": "ButtonController",
+    "sensor": {
+      "controller": "InputController",
       "infrastructure": true,
-      "pin": true,
+      "pin": "optional",
+      "notes": "Entrada digital amb nom (IR, final de carrera, seta, polsador). O bé un GPIO (pin) o bé un canal d'un expansor (expander + channel). Actiu a nivell baix amb pull-up per defecte. onActive diu què fa el reproductor amb el show quan s'activa: play arrenca un passi (el polsador, amb la pulsació llarga de rescat: 10 s Wi-Fi pròpia, 30 s tot en segur), stop_show para el passi i panic ho posa tot en segur.",
       "legacy": { "addressing": "name", "pinType": "Pulsador", "module": "input" },
-      "config": {},
+      "config": {
+        "expander": { "type": "string", "ref": "gpio_expander", "notes": "Expansor del qual és el canal d'entrada; amb expander cal channel i no hi pot haver pin." },
+        "channel": { "type": "int", "min": 0, "max": 15 },
+        "activeLow": { "type": "bool", "default": true, "notes": "Actiu quan l'entrada és a nivell baix (contacte a massa)." },
+        "pull": { "type": "enum", "values": ["up", "down", "none"], "default": "up", "notes": "Resistència interna; en un expansor, només up o none." },
+        "debounceMs": { "type": "int", "min": 0, "max": 2000, "default": 50 },
+        "onActive": { "type": "enum", "values": ["none", "play", "stop_show", "panic"], "default": "none" }
+      },
       "actions": {}
     }
   },
@@ -355,10 +370,10 @@
   "excludedMethods": {
     "RelayController": ["stop", "is_process_running", "wait_for_process_completion", "get_relay_state"],
     "LedsController": ["add_segment", "setPixel", "show", "getBrightness", "getLength", "getStripNames", "getSegmentNames", "getAllNames", "getSegmentInfo", "getStripInfo", "fade", "stop_fade", "is_fading", "getCurrentColor", "stop_animation", "is_animating", "stars", "fire", "window_light", "candle", "sunrise", "sunset", "moonlight", "clouds", "shooting_star", "aurora", "snow"],
-    "AngelController": ["is_process_running", "wait_for_process_completion"],
+    "MotorController": ["is_process_running", "status", "unlock", "close", "alerts"],
     "AudioController": ["is_playing", "get_active_players", "wait_for_completion"],
     "DmxController": ["stop", "is_process_running", "close", "status", "start", "tick"],
-    "ButtonController": ["should_continue_timeline", "notify_cycle_completed", "get_button_state", "stop"]
+    "InputController": ["is_active", "snapshot", "on_change", "poll", "start", "close", "status"]
   },
   "boards": {
     "rpi4b": {
@@ -384,7 +399,7 @@
         "21": { "channel": 0, "via": "PCM", "warning": "pot interferir amb l'àudio" }
       },
       "dma": { "min": 0, "max": 14, "avoid": [2, 3, 6, 7] },
-      "capabilities": ["relay", "gpio_expander", "led_strip", "led_segment", "motor", "audio", "moving_head", "button"]
+      "capabilities": ["relay", "gpio_expander", "led_strip", "led_segment", "motor", "audio", "moving_head", "sensor"]
     }
   }
 }

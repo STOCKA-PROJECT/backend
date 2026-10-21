@@ -1,0 +1,40 @@
+meta {
+  name: Create Port (motor on expander)
+  type: http
+  seq: 17
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/ports
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Noria",
+    "kind": "motor",
+    "pieceTypeId": {{pieceTypeId}},
+    "config": {
+      "expander": "exp1",
+      "channelForward": 6,
+      "channelReverse": 7,
+      "maxTimeForward": 60,
+      "maxTimeReverse": 60
+    }
+  }
+}
+
+docs {
+  Motor en dos canales del expansor `exp1`. Sin pines ni `activeLow` (la polaridad es la del expansor);
+  mezclar pines y expansor o dar un solo canal es 400 `ports.motor_outputs_invalid` (`params.reason`).
+  Los dos canales deben ser distintos (400 `ports.motor_pins_not_distinct`).
+}

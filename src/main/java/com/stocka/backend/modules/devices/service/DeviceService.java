@@ -216,6 +216,7 @@ public class DeviceService {
                 .setLastShowHash(dto.showHash())
                 .setLastShowName(dto.showName())
                 .setLastOverrides(overridesCodec.serialize(dto.overrides()))
+                .setLastAlerts(overridesCodec.serializeAlerts(dto.alerts()))
                 .setLastVersion(dto.version())
                 .setLastUptimeS(dto.uptimeS())
                 .setLastNetMode(dto.netMode())
@@ -247,7 +248,8 @@ public class DeviceService {
      * @return response DTO with {@code online} and the deserialized overrides
      */
     public DeviceResponseDto toResponse(Device device) {
-        return DeviceResponseDto.from(device, isOnline(device), overridesCodec.deserialize(device.getLastOverrides()));
+        return DeviceResponseDto.from(device, isOnline(device), overridesCodec.deserialize(device.getLastOverrides()),
+                overridesCodec.deserializeAlerts(device.getLastAlerts()));
     }
 
     /**
