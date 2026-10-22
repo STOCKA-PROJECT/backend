@@ -560,6 +560,36 @@ class ShowPackageBuilderTest {
         }
 
         @Test
+        @DisplayName("a double pulse exports its three static durations as numbers, ignoring the clip length")
+        void doublePulseStatics() {
+            StubSceneContext ctx = Belen2026Fixture.context()
+                    .action(13, "double_pulse", "Doble pulsació", Belen2026Fixture.RELAY_TYPE, "Tipus 1", "relay",
+                            Belen2026Fixture.param("first_press", AttributeType.DECIMAL, true, false, "0.3", false),
+                            Belen2026Fixture.param("gap", AttributeType.DECIMAL, true, false, "0.2", false),
+                            Belen2026Fixture.param("second_press", AttributeType.DECIMAL, true, false, "5", false));
+            Assembled assembled = builder.assemble(ShowBuildInput.of(Belen2026Fixture.document(), ctx, Belen2026Fixture.ports()));
+            assertThat(errors(assembled)).isEmpty();
+            assertThat(find(assembled.timeline(), "Sembra", 7000).action()).isEqualTo("double_pulse");
+            assertThat(find(assembled.timeline(), "Sembra", 7000).params())
+                    .containsExactly(Map.entry("first_press", 0.3), Map.entry("gap", 0.2), Map.entry("second_press", 5L));
+            assertThat(ShowCanonicalJson.canonical(find(assembled.timeline(), "Sembra", 7000).params()))
+                    .isEqualTo("{\"first_press\":0.3,\"gap\":0.2,\"second_press\":5}");
+        }
+
+        @Test
+        @DisplayName("a double pulse without one of its static values is E_PARAM_REQUIRED")
+        void doublePulseMissingStatic() {
+            StubSceneContext ctx = Belen2026Fixture.context()
+                    .action(13, "double_pulse", "Doble pulsació", Belen2026Fixture.RELAY_TYPE, "Tipus 1", "relay",
+                            Belen2026Fixture.param("first_press", AttributeType.DECIMAL, true, false, "0.3", false),
+                            Belen2026Fixture.param("gap", AttributeType.DECIMAL, true, false, "", false),
+                            Belen2026Fixture.param("second_press", AttributeType.DECIMAL, true, false, "0.3", false));
+            Assembled assembled = builder.assemble(ShowBuildInput.of(Belen2026Fixture.document(), ctx, Belen2026Fixture.ports()));
+            assertThat(codes(errors(assembled))).contains("E_PARAM_REQUIRED");
+            assertThat(errors(assembled)).anySatisfy(e -> assertThat(e.message()).contains("«gap»"));
+        }
+
+        @Test
         @DisplayName("parses static values by type and uses the clip label in messages")
         void staticValues() {
             StubSceneContext ctx = Belen2026Fixture.context()

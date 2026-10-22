@@ -5,7 +5,7 @@
     "name": "Pessebre 2026 (complet)",
     "timelineId": null,
     "exportedAt": "2026-10-20T18:00:00.000Z",
-    "hash": "sha256:12089181e07a0b5915da2cb231d5e62bb4f256f900a89907ad18d8d2d30f3feb"
+    "hash": "sha256:3b34827b653730826a51fb56d1e6cff4958e645d14501bfd34e0586fa860fec4"
   },
   "board": "rpi4b",
   "mode": {
@@ -167,9 +167,11 @@
     {
       "t": 2000,
       "target": "Pou",
-      "action": "pulse",
+      "action": "double_pulse",
       "params": {
-        "duration": 0.5
+        "first_press": 0.3,
+        "gap": 0.2,
+        "second_press": 0.3
       }
     },
     {

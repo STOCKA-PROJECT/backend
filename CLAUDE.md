@@ -134,13 +134,17 @@ Org membership roles: `OWNER`, `MANAGER`, `USER`, `SPECTATOR` (read-only).
 
 Ports (`/organizations/{orgId}/ports`, gated to admin-owned orgs) carry a closed `kind` from the
 output catalog v3 (`relay`, `gpio_expander`, `led_strip`, `led_segment`, `motor`, `audio`, `moving_head`,
-`sensor`; the projector kind `video` disappeared on 2026-10-20, migration `V25__contract_v3.sql` cleans its rows, and
-`button` became `sensor` with `onActive: play` on 2026-10-21, `V26__motors_and_sensors.sql`) plus a
+`sensor`; the projector kind `video` disappeared on 2026-10-20, migration `V25__contract_v3.sql` cleans its rows,
+`button` became `sensor` with `onActive: play` on 2026-10-21, `V26__motors_and_sensors.sql`, and the relay action
+`pulse(duration)` became `double_pulse(first_press, gap, second_press)` on 2026-10-22, `V27__relay_double_pulse.sql`,
+which also turns the legacy `focoOff` into a `double_pulse` 5 / 0.05 / 0.1) plus a
 per-kind `config` validated by `PortConfigValidator`. A relay takes either `pin` (native GPIO, optional `activeLow`)
 or `expander` + `channel` (0–15) naming a `gpio_expander` port (MCP23017: `chip`, `bus`, `address` 0x20–0x27,
 `activeLow`), mirroring strips and segments: channel unique per expander, address unique per bus, rename cascades,
 delete refused while relays depend on it (`ports.expander_in_use`), and GPIO 2/3 reserved for I2C while an expander
-exists (`ports.i2c_pin_reserved`). Motors are H-bridge outputs: `pinForward` + `pinReverse` or `expander` +
+exists (`ports.i2c_pin_reserved`). Relay actions are `turn_on(time?)`, `turn_off(time?)` (time = clip length) and
+`double_pulse(first_press, gap, second_press)`: closed, open, closed, then open; three required seconds that are not the
+clip length, meant as static values of the piece-type action. Motors are H-bridge outputs: `pinForward` + `pinReverse` or `expander` +
 `channelForward` + `channelReverse` (`ports.motor_outputs_invalid`, `params.reason`), required `maxTimeForward` /
 `maxTimeReverse` (hard cuts), optional `limitForward` / `limitReverse` naming `sensor` ports (`ports.sensor_not_found`;
 deleting one in use is `ports.sensor_in_use`, renaming cascades), `lockOnTimeout`, `switchDelayMs`; actions `forward`,

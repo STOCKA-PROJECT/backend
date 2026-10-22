@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeAll;
@@ -285,6 +286,78 @@ class ActionCatalogValidatorTest {
                         assertThat(ex.getCode()).isEqualTo(ErrorCodes.PIECE_TYPES_ACTION_DURATION_PARAM_MISMATCH);
                         assertThat(ex.getParams()).containsEntry("expected", "-");
                     });
+        }
+    }
+
+    @Nested
+    @DisplayName("relay double pulse")
+    class DoublePulse {
+
+        private List<ActionParameterDto> statics(String first, String gap, String second) {
+            return List.of(fixed("first_press", AttributeType.DECIMAL, first), fixed("gap", AttributeType.DECIMAL, gap),
+                    fixed("second_press", AttributeType.DECIMAL, second));
+        }
+
+        @Test
+        @DisplayName("accepts the three durations as static values, zero and integers included")
+        void should_acceptStaticDurations() {
+            assertThatCode(() -> sut.validate(OutputKind.RELAY, "double_pulse", statics("0.3", "0.2", "0.3"))).doesNotThrowAnyException();
+            assertThatCode(() -> sut.validate(OutputKind.RELAY, "double_pulse", statics("5", "0", "1"))).doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("accepts dynamic durations and integer attributes")
+        void should_acceptDynamicDurations() {
+            assertThatCode(() -> sut.validate(OutputKind.RELAY, "double_pulse", List.of(dynamic("first_press", AttributeType.DECIMAL),
+                    dynamic("gap", AttributeType.INTEGER), fixed("second_press", AttributeType.DECIMAL, "0.3"))))
+                    .doesNotThrowAnyException();
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"first_press", "gap", "second_press"})
+        @DisplayName("requires every duration with piece_types.action_param_missing")
+        void should_requireEach(String missing) {
+            List<ActionParameterDto> params = statics("0.3", "0.2", "0.3").stream().filter(p -> !p.getName().equals(missing)).toList();
+            assertThatThrownBy(() -> sut.validate(OutputKind.RELAY, "double_pulse", params))
+                    .isInstanceOfSatisfying(ApiException.class, ex -> {
+                        assertThat(ex.getCode()).isEqualTo(ErrorCodes.PIECE_TYPES_ACTION_PARAM_MISSING);
+                        assertThat(ex.getParams()).containsEntry("param", missing);
+                    });
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"-0.1", "abc", "0,3"})
+        @DisplayName("rejects negative or non-numeric static values with piece_types.action_param_static_invalid")
+        void should_rejectBadStatic(String value) {
+            assertThatThrownBy(() -> sut.validate(OutputKind.RELAY, "double_pulse", statics("0.3", value, "0.3")))
+                    .isInstanceOfSatisfying(ApiException.class, ex -> {
+                        assertThat(ex.getCode()).isEqualTo(ErrorCodes.PIECE_TYPES_ACTION_PARAM_STATIC_INVALID);
+                        assertThat(ex.getParams()).containsEntry("param", "gap");
+                    });
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"first_press", "gap", "second_press"})
+        @DisplayName("none of them takes the clip length (piece_types.action_duration_param_mismatch)")
+        void should_rejectIsDuration(String name) {
+            List<ActionParameterDto> params = statics("0.3", "0.2", "0.3").stream()
+                    .map(p -> p.getName().equals(name) ? p.setDynamic(true).setStaticValue(null).setIsDuration(true) : p)
+                    .toList();
+            assertThatThrownBy(() -> sut.validate(OutputKind.RELAY, "double_pulse", params))
+                    .isInstanceOfSatisfying(ApiException.class, ex -> {
+                        assertThat(ex.getCode()).isEqualTo(ErrorCodes.PIECE_TYPES_ACTION_DURATION_PARAM_MISMATCH);
+                        assertThat(ex.getParams()).containsEntry("param", name).containsEntry("expected", "-");
+                    });
+        }
+
+        @Test
+        @DisplayName("rejects the old duration parameter and the old pulse action")
+        void should_rejectOldPulse() {
+            List<ActionParameterDto> withDuration = new ArrayList<>(statics("0.3", "0.2", "0.3"));
+            withDuration.add(dynamic("duration", AttributeType.DECIMAL).setIsDuration(true));
+            assertCode(() -> sut.validate(OutputKind.RELAY, "double_pulse", withDuration), ErrorCodes.PIECE_TYPES_ACTION_PARAM_UNKNOWN);
+            assertCode(() -> sut.validate(OutputKind.RELAY, "pulse", List.of(dynamic("duration", AttributeType.DECIMAL).setIsDuration(true))),
+                    ErrorCodes.PIECE_TYPES_ACTION_NOT_IN_CATALOG);
         }
     }
 

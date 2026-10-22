@@ -8,9 +8,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import com.stocka.backend.modules.contract.CatalogParam;
 import com.stocka.backend.modules.contract.CatalogType;
@@ -111,7 +114,7 @@ class ShowValidatorTest {
         void activeLowNative() {
             port("A", "kind", "relay", "pin", 26, "activeLow", true);
             port("B", "kind", "relay", "pin", 26);
-            event(0, "A", "pulse", "duration", 0.5);
+            event(0, "A", "double_pulse", "first_press", 0.3, "gap", 0.2, "second_press", 0.3);
             event(0, "B", "turn_on");
             assertThat(errors()).containsExactly("E_PIN_DUPLICATE");
         }
@@ -150,8 +153,61 @@ class ShowValidatorTest {
             assertThat(warnings()).containsExactly("W_PIN_PULLUP");
             expander("exp1", 32);
             port("Pou", "kind", "relay", "expander", "exp1", "channel", 0);
-            event(1, "Pou", "pulse", "duration", 1);
+            event(1, "Pou", "double_pulse", "first_press", 1, "gap", 0, "second_press", 1);
             assertThat(warnings()).doesNotContain("W_PORT_UNUSED");
+        }
+    }
+
+    @Nested
+    @DisplayName("relay double pulse")
+    class DoublePulse {
+
+        @BeforeEach
+        void relay() {
+            port("Foco", "kind", "relay", "pin", 26);
+        }
+
+        @Test
+        @DisplayName("is valid with its three durations, zero and integers included")
+        void valid() {
+            event(0, "Foco", "double_pulse", "first_press", 0.3, "gap", 0.2, "second_press", 0.3);
+            event(1000, "Foco", "double_pulse", "first_press", 5, "gap", 0, "second_press", 1);
+            assertThat(errors()).isEmpty();
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"first_press", "gap", "second_press"})
+        @DisplayName("requires every duration")
+        void requiresEach(String missing) {
+            Map<String, Object> params = new LinkedHashMap<>(Map.of("first_press", 0.3, "gap", 0.2, "second_press", 0.3));
+            params.remove(missing);
+            timeline.add(new ShowEvent(0, "Foco", "double_pulse", params));
+            List<ShowIssue> issues = validate().stream().filter(ShowIssue::isError).toList();
+            assertThat(codes(issues)).containsExactly("E_PARAM_REQUIRED");
+            assertThat(issues.getFirst().message()).contains("«" + missing + "»");
+        }
+
+        @Test
+        @DisplayName("rejects negative and non-numeric durations")
+        void rejectsBadValues() {
+            event(0, "Foco", "double_pulse", "first_press", -0.1, "gap", 0.2, "second_press", 0.3);
+            event(1, "Foco", "double_pulse", "first_press", 0.3, "gap", "0.2", "second_press", 0.3);
+            event(2, "Foco", "double_pulse", "first_press", 0.3, "gap", 0.2, "second_press", true);
+            assertThat(errors()).containsExactly("E_PARAM_TYPE", "E_PARAM_TYPE", "E_PARAM_TYPE");
+        }
+
+        @Test
+        @DisplayName("has no duration parameter")
+        void noDurationParam() {
+            event(0, "Foco", "double_pulse", "first_press", 0.3, "gap", 0.2, "second_press", 0.3, "duration", 0.5);
+            assertThat(errors()).containsExactly("E_PARAM_UNKNOWN");
+        }
+
+        @Test
+        @DisplayName("the old pulse action no longer exists")
+        void pulseIsGone() {
+            event(0, "Foco", "pulse", "duration", 0.5);
+            assertThat(errors()).containsExactly("E_ACTION_UNKNOWN");
         }
     }
 

@@ -21,8 +21,13 @@
         "turn_off": {
           "params": { "time": { "type": "number", "min": 0, "duration": true } }
         },
-        "pulse": {
-          "params": { "duration": { "type": "number", "min": 0, "required": true, "duration": true, "notes": "Tanca el relé duration segons i l'obre (polsar un botó)." } }
+        "double_pulse": {
+          "notes": "Doble pulsació seguida d'un botó: tanca first_press s, obre gap s, tanca second_press s i deixa el relé obert. Cap paràmetre és la durada del clip: es pensen per fixar-los com a valors estàtics a l'acció del tipus de peça.",
+          "params": {
+            "first_press": { "type": "number", "min": 0, "required": true, "static": true, "notes": "Segons de la primera pulsació (relé tancat)." },
+            "gap": { "type": "number", "min": 0, "required": true, "static": true, "notes": "Segons entre les dues pulsacions (relé obert)." },
+            "second_press": { "type": "number", "min": 0, "required": true, "static": true, "notes": "Segons de la segona pulsació (relé tancat); després queda obert." }
+          }
         }
       }
     },

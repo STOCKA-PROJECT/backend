@@ -190,7 +190,7 @@ class OutputCatalogTest {
             assertThat(expander.get("address").min()).isEqualByComparingTo(BigDecimal.valueOf(32));
             assertThat(expander.get("address").max()).isEqualByComparingTo(BigDecimal.valueOf(39));
             assertThat(catalog.kind(OutputKind.GPIO_EXPANDER).actions()).isEmpty();
-            assertThat(catalog.kind(OutputKind.RELAY).actions().keySet()).containsExactly("turn_on", "turn_off", "pulse");
+            assertThat(catalog.kind(OutputKind.RELAY).actions().keySet()).containsExactly("turn_on", "turn_off", "double_pulse");
             assertThat(catalog.kind(OutputKind.MOVING_HEAD).actions().keySet()).containsExactly("set", "blackout");
         }
     }
@@ -207,6 +207,22 @@ class OutputCatalogTest {
             assertThat(turnOn.params().get("time").duration()).isTrue();
             assertThat(turnOn.params().get("time").type()).isEqualTo(CatalogType.NUMBER);
             assertThat(turnOn.continuous()).isFalse();
+        }
+
+        @Test
+        @DisplayName("a relay double pulse takes three required, non-duration numbers and pulse is gone")
+        void should_describeDoublePulse() {
+            CatalogAction doublePulse = catalog.action(OutputKind.RELAY, "double_pulse").orElseThrow();
+            assertThat(doublePulse.params().keySet()).containsExactly("first_press", "gap", "second_press");
+            assertThat(doublePulse.params().values()).allSatisfy(p -> {
+                assertThat(p.type()).isEqualTo(CatalogType.NUMBER);
+                assertThat(p.required()).isTrue();
+                assertThat(p.duration()).isFalse();
+                assertThat(p.min()).isEqualByComparingTo(BigDecimal.ZERO);
+                assertThat(p.max()).isNull();
+            });
+            assertThat(doublePulse.continuous()).isFalse();
+            assertThat(catalog.action(OutputKind.RELAY, "pulse")).isEmpty();
         }
 
         @Test
@@ -304,7 +320,7 @@ class OutputCatalogTest {
     class DurationParam {
 
         @ParameterizedTest
-        @CsvSource({"RELAY,turn_on,time", "RELAY,turn_off,time", "RELAY,pulse,duration", "LED_SEGMENT,animate,duration",
+        @CsvSource({"RELAY,turn_on,time", "RELAY,turn_off,time", "LED_SEGMENT,animate,duration",
                 "MOTOR,forward,time", "MOTOR,reverse,time", "AUDIO,play,time", "MOVING_HEAD,set,time", "MOVING_HEAD,blackout,time"})
         @DisplayName("names the parameter that receives the clip length")
         void should_nameDurationParam(OutputKind kind, String action, String expected) {
@@ -312,7 +328,7 @@ class OutputCatalogTest {
         }
 
         @ParameterizedTest
-        @CsvSource({"LED_SEGMENT,fill", "LED_SEGMENT,clear", "MOTOR,stop", "AUDIO,stop", "LED_STRIP,setBrightness"})
+        @CsvSource({"LED_SEGMENT,fill", "LED_SEGMENT,clear", "MOTOR,stop", "AUDIO,stop", "LED_STRIP,setBrightness", "RELAY,double_pulse"})
         @DisplayName("is empty for actions without one")
         void should_beEmptyWithoutDuration(OutputKind kind, String action) {
             assertThat(catalog.action(kind, action).orElseThrow().durationParam()).isEmpty();
