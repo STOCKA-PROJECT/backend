@@ -26,7 +26,8 @@ public record SceneDocument(
         @Param("Clips: actions played on a track") List<Clip> clips,
         @Param("Total length in milliseconds") long durationMs,
         @Param("Editor frame rate") Integer fps,
-        @Param("Order of the items along each LED strip port: port id → item ids") Map<String, List<String>> stripOrder
+        @Param("Order of the items along each LED strip port: port id → item ids") Map<String, List<String>> stripOrder,
+        @Param("When the physical button starts the show (exported as mode.schedule); absent = always") Schedule schedule
 ) {
 
     /** Current schema version. */
@@ -55,7 +56,12 @@ public record SceneDocument(
         layers.add(new Layer("layer-1", "Capa 1", 0, true, false, 1));
         return new SceneDocument(SCHEMA_VERSION, board == null ? new Board(1280, 720, null) : board, layers,
                 List.of(), List.of(), List.of(), durationMs <= 0 ? DEFAULT_DURATION_MS : durationMs, 30,
-                Map.of());
+                Map.of(), null);
+    }
+
+    /** @return this document with another schedule ({@code null} removes it) */
+    public SceneDocument withSchedule(Schedule schedule) {
+        return new SceneDocument(schemaVersion, board, layers, items, tracks, clips, durationMs, fps, stripOrder, schedule);
     }
 
     /** @return centimetres for a pixel value */
@@ -66,6 +72,32 @@ public record SceneDocument(
     /** @return pixels for a centimetre value */
     public static double toPx(double cm) {
         return cm * PX_PER_CM;
+    }
+
+    /**
+     * Button schedule: when a short press of an {@code onActive: play} sensor starts the show. Rules in
+     * {@link ScheduleRules}; semantics in {@code rpi4-system/contract/README.md} ({@code mode.schedule}).
+     *
+     * @param rule    {@code allow} (only inside a window) or {@code block} (never inside a window)
+     * @param windows time windows, local time of the Pi
+     */
+    public record Schedule(
+            @Param(value = "allow: the button only starts the show inside a window; block: never inside one", required = true) String rule,
+            @Param(value = "Time windows, 1 to 50", required = true) List<ScheduleWindow> windows) {
+    }
+
+    /**
+     * One window of a {@link Schedule}. When {@code to} is not after {@code from} it crosses midnight and
+     * belongs to the day it starts.
+     *
+     * @param days days of the week ({@code mon} … {@code sun})
+     * @param from start, {@code HH:MM}
+     * @param to   end, {@code HH:MM} or {@code 24:00}
+     */
+    public record ScheduleWindow(
+            @Param(value = "Days: mon, tue, wed, thu, fri, sat, sun", required = true) List<String> days,
+            @Param(value = "Start, HH:MM local time of the Pi", required = true) String from,
+            @Param(value = "End, HH:MM or 24:00; not after from = crosses midnight", required = true) String to) {
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

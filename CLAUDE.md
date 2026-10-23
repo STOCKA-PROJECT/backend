@@ -291,7 +291,11 @@ refused by `/mcp`, MCP tokens by the REST API.
   `tools/show_hash.py`, so the backend, the editor and the RPi agree on `meta.hash` (golden test:
   `belen-2026` → `sha256:6e46887d…`, `ShowPackageBuilderTest`/`ShowControllerIntegrationTest`). `ShowService`
   feeds it from `JpaSceneContext`, the org's ports and the AUDIO attachments of audio pieces (asset name
-  `<attachmentId>-<file>`, unresolvable names are `E_ASSET_MISSING`); `ShowBundleWriter` streams the
+  `<attachmentId>-<file>`, unresolvable names are `E_ASSET_MISSING`). The scene's optional `schedule` (2026-10-23,
+  `SceneDocument.Schedule`: `rule` `allow`/`block` + `windows` `{days, from, to}`, rules in `ScheduleRules`, op
+  `set_schedule`, `E_SCHEDULE` in `SceneValidator`) is exported as `mode.schedule` (inside the hash, omitted when absent;
+  `E_SCHEDULE_INVALID` / `W_SCHEDULE_UNUSED` in `ShowValidator.validateSchedule`): the Pi only lets a short press of an
+  `onActive: play` sensor start the show inside the schedule, once it knows the time; `ShowBundleWriter` streams the
   `stocka-bundle` zip (`StreamingResponseBody`, assets STORED, manifest last). MCP tool: `timeline_show_export`.
 - Config: `stocka.oauth.*` (`OAUTH_*`), `stocka.mcp.*` (`MCP_*`), `spring.ai.mcp.server.*` (protocol `STATELESS`,
   annotation scanner off). Tests enable everything through `src/test/resources/application.properties` and

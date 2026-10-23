@@ -259,6 +259,55 @@ class ShowControllerIntegrationTest {
         }
 
         @Test
+        @DisplayName("set_schedule through scene/ops is exported as mode.schedule inside the hash; null removes it")
+        void schedule() throws Exception {
+            String plainHash = showOk(adminToken).path("meta").path("hash").asText();
+            Map<String, Object> schedule = Map.of("rule", "allow",
+                    "windows", List.of(Map.of("days", List.of("fri", "sat"), "from", "17:00", "to", "21:00")));
+            sceneOps(Map.of("op", "set_schedule", "schedule", schedule)).andExpect(status().isOk());
+
+            JsonNode body = showOk(adminToken);
+            assertThat(body.path("mode").path("on").asText()).isEqualTo("once");
+            assertThat(body.path("mode").path("schedule").path("rule").asText()).isEqualTo("allow");
+            JsonNode window = body.path("mode").path("schedule").path("windows").get(0);
+            assertThat(window.path("days").get(1).asText()).isEqualTo("sat");
+            assertThat(window.path("from").asText()).isEqualTo("17:00");
+            assertThat(window.path("to").asText()).isEqualTo("21:00");
+            assertThat(body.path("meta").path("hash").asText()).isEqualTo(ShowCanonicalJson.showHash(body)).isNotEqualTo(plainHash);
+
+            Map<String, Object> clear = new HashMap<>();
+            clear.put("op", "set_schedule");
+            clear.put("schedule", null);
+            sceneOps(clear).andExpect(status().isOk());
+            JsonNode again = showOk(adminToken);
+            assertThat(again.path("mode").has("schedule")).isFalse();
+            assertThat(again.path("meta").path("hash").asText()).isEqualTo(plainHash);
+        }
+
+        @Test
+        @DisplayName("an invalid schedule is refused by set_schedule with timeline_scenes.op_invalid")
+        void scheduleInvalid() throws Exception {
+            Map<String, Object> schedule = Map.of("rule", "allow",
+                    "windows", List.of(Map.of("days", List.of("mon"), "from", "17:00", "to", "17:00")));
+            sceneOps(Map.of("op", "set_schedule", "schedule", schedule))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("timeline_scenes.op_invalid"))
+                    .andExpect(jsonPath("$.params.op").value("set_schedule"));
+        }
+
+        @Test
+        @DisplayName("a stored scene with an empty schedule window is 422 E_SCHEDULE_INVALID")
+        void storedScheduleInvalid() throws Exception {
+            Map<String, Object> doc = sampleDocument(assetName);
+            doc.put("schedule", Map.of("rule", "block",
+                    "windows", List.of(Map.of("days", List.of("sun"), "from", "13:00", "to", "13:00"))));
+            putScene(adminToken, acme, timelineId, doc, 1).andExpect(status().isOk());
+            mockMvc.perform(get(showPath(acme, timelineId)).header("Authorization", "Bearer " + adminToken))
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.params.issues[0].code").value("E_SCHEDULE_INVALID"));
+        }
+
+        @Test
         @DisplayName("the sample's legacy asset name (no attachment id) is refused: E_ASSET_MISSING, so the exact sample hash is unreachable")
         void legacyAssetName() throws Exception {
             putScene(adminToken, acme, timelineId, sampleDocument("nature.mp3"), 1).andExpect(status().isOk());
@@ -498,6 +547,17 @@ class ShowControllerIntegrationTest {
 
     private String bundlePath(String slug, Integer id) {
         return "/organizations/" + slug + "/timelines/" + id + "/bundle";
+    }
+
+    private ResultActions sceneOps(Map<String, Object> op) throws Exception {
+        String scenePath = "/organizations/" + acme + "/timelines/" + timelineId + "/scene";
+        MvcResult current = mockMvc.perform(get(scenePath).header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk()).andReturn();
+        int version = json.readTree(current.getResponse().getContentAsString(StandardCharsets.UTF_8)).path("version").asInt();
+        return mockMvc.perform(post(scenePath + "/ops")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(om.writeValueAsString(Map.of("ops", List.of(op), "expectedVersion", version))));
     }
 
     private JsonNode showOk(String token) throws Exception {

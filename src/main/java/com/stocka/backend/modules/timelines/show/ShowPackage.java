@@ -5,6 +5,7 @@ import java.util.Map;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.stocka.backend.modules.common.schema.Param;
+import com.stocka.backend.modules.timelines.scene.SceneDocument.Schedule;
 
 /**
  * The {@code stocka-show} v3 package: what the Raspberry Pi player executes. Format and rules are
@@ -56,15 +57,33 @@ public record ShowPackage(
     }
 
     /**
-     * How the show repeats.
+     * How the show repeats and when the button starts it.
      *
-     * @param on     {@code once}, {@code loop} or {@code pulse}
-     * @param cycles number of cycles
+     * @param on       {@code once}, {@code loop} or {@code pulse}
+     * @param cycles   number of cycles
+     * @param schedule button schedule, or {@code null} (omitted from the JSON and so from the hash)
      */
-    public record ShowMode(@Param("once, loop or pulse") String on, @Param("Number of cycles") int cycles) {
+    public record ShowMode(
+            @Param("once, loop or pulse") String on,
+            @Param("Number of cycles") int cycles,
+            @Param("Button schedule: rule allow|block + windows [{days, from, to}]; absent = always")
+            @JsonInclude(JsonInclude.Include.NON_NULL) Schedule schedule) {
 
         /** Play once. */
         public static final ShowMode DEFAULT = new ShowMode("once", 1);
+
+        /**
+         * @param on     {@code once}, {@code loop} or {@code pulse}
+         * @param cycles number of cycles
+         */
+        public ShowMode(String on, int cycles) {
+            this(on, cycles, null);
+        }
+
+        /** @return this mode with another schedule */
+        public ShowMode withSchedule(Schedule schedule) {
+            return new ShowMode(on, cycles, schedule);
+        }
     }
 
     /**

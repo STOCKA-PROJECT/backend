@@ -80,6 +80,7 @@ public final class SceneEditor {
             case SceneOp.SetDuration o -> setDuration(i, o);
             case SceneOp.SetBoard o -> setBoard(i, o);
             case SceneOp.SetStripOrder o -> setStripOrder(i, o);
+            case SceneOp.SetSchedule o -> setSchedule(i, o);
         }
     }
 
@@ -287,7 +288,7 @@ public final class SceneEditor {
             throw new SceneOpException(i, "set_duration", "durationMs must be positive");
         }
         doc = new SceneDocument(doc.schemaVersion(), doc.board(), doc.layers(), doc.items(), doc.tracks(), doc.clips(),
-                op.durationMs(), doc.fps(), doc.stripOrder());
+                op.durationMs(), doc.fps(), doc.stripOrder(), doc.schedule());
         log.add("duration set to " + op.durationMs() + "ms");
     }
 
@@ -296,7 +297,7 @@ public final class SceneEditor {
         double width = op.width() == null ? b.width() : SceneDocument.toPx(positive(i, "set_board", "width", op.width(), 1));
         double height = op.height() == null ? b.height() : SceneDocument.toPx(positive(i, "set_board", "height", op.height(), 1));
         doc = new SceneDocument(doc.schemaVersion(), new Board(width, height, op.background() == null ? b.background() : op.background()),
-                doc.layers(), doc.items(), doc.tracks(), doc.clips(), doc.durationMs(), doc.fps(), doc.stripOrder());
+                doc.layers(), doc.items(), doc.tracks(), doc.clips(), doc.durationMs(), doc.fps(), doc.stripOrder(), doc.schedule());
         log.add("board set to " + SceneDocument.toCm(width) + "x" + SceneDocument.toCm(height) + " cm");
     }
 
@@ -309,6 +310,20 @@ public final class SceneEditor {
         }
         doc.stripOrder().put(String.valueOf(port.id()), items);
         log.add("strip order of port " + port.name() + " set");
+    }
+
+    private void setSchedule(int i, SceneOp.SetSchedule op) {
+        if (op.schedule() == null) {
+            doc = doc.withSchedule(null);
+            log.add("schedule removed: the button always works");
+            return;
+        }
+        List<String> problems = ScheduleRules.problems(op.schedule());
+        if (!problems.isEmpty()) {
+            throw new SceneOpException(i, "set_schedule", String.join("; ", problems));
+        }
+        doc = doc.withSchedule(op.schedule());
+        log.add("schedule set: " + op.schedule().rule() + " with " + op.schedule().windows().size() + " window(s)");
     }
 
     // ---------- resolution helpers ----------

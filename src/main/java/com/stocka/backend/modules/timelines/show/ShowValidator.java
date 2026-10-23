@@ -21,8 +21,11 @@ import com.stocka.backend.modules.contract.OutputCatalog;
 import com.stocka.backend.modules.contract.PinMode;
 import com.stocka.backend.modules.contract.OutputKind;
 import com.stocka.backend.modules.contract.SensorProfile;
+import com.stocka.backend.modules.timelines.scene.ScheduleRules;
+import com.stocka.backend.modules.timelines.scene.SceneDocument.ScheduleWindow;
 import com.stocka.backend.modules.timelines.show.ShowPackage.ShowAssets;
 import com.stocka.backend.modules.timelines.show.ShowPackage.ShowEvent;
+import com.stocka.backend.modules.timelines.show.ShowPackage.ShowMode;
 
 /**
  * Semantic rules of a {@code stocka-show} package, mirroring {@code rpi4-system/contract/validate.py}
@@ -552,6 +555,42 @@ public final class ShowValidator {
      * @param animation animation id, or {@code null}
      * @return the required parameter names
      */
+    /**
+     * Rules of the button schedule ({@code mode.schedule}), as in {@code validate.py}: a window that lasts
+     * nothing is {@code E_SCHEDULE_INVALID} (the device's JSON schema covers the rest of the structure,
+     * reported here with the same code), and a schedule nothing can use is {@code W_SCHEDULE_UNUSED}.
+     *
+     * @param mode     mode of the package
+     * @param hardware hardware entries by name
+     * @return the findings, empty without a schedule
+     */
+    public static List<ShowIssue> validateSchedule(ShowMode mode, Map<String, Map<String, Object>> hardware) {
+        List<ShowIssue> issues = new ArrayList<>();
+        if (mode == null || mode.schedule() == null) {
+            return issues;
+        }
+        List<ScheduleWindow> windows = mode.schedule().windows() == null ? List.of() : mode.schedule().windows();
+        for (int i = 0; i < windows.size(); i++) {
+            ScheduleWindow w = windows.get(i);
+            if (w != null && ScheduleRules.isEmpty(w)) {
+                issues.add(ShowIssue.error("E_SCHEDULE_INVALID", "La franja " + (i + 1) + " de l'horari comença i acaba a les "
+                        + w.from() + ": no dura res.", null, null));
+            }
+        }
+        for (String problem : ScheduleRules.structuralProblems(mode.schedule())) {
+            issues.add(ShowIssue.error("E_SCHEDULE_INVALID", "L'horari no és vàlid: " + problem + ".", null, null));
+        }
+        boolean hasButton = hardware.values().stream()
+                .anyMatch(e -> "sensor".equals(e.get("kind")) && "play".equals(e.get("onActive")));
+        if (!hasButton) {
+            issues.add(ShowIssue.warning("W_SCHEDULE_UNUSED", "L'horari no fa res: cap sensor té onActive play.", null, null));
+        } else if ("loop".equals(mode.on())) {
+            issues.add(ShowIssue.warning("W_SCHEDULE_UNUSED",
+                    "L'horari no fa res en mode loop: el show es repeteix sense polsador.", null, null));
+        }
+        return issues;
+    }
+
     static List<String> requiredParams(CatalogAction action, String animation) {
         List<String> out = new ArrayList<>();
         action.params().forEach((name, p) -> {

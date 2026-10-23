@@ -152,7 +152,7 @@ public final class Belen2026Fixture {
     /** @return a scene document with the given content and the sample's board, layer and length */
     public static SceneDocument document(List<Item> items, List<Track> tracks, List<Clip> clips) {
         return new SceneDocument(1, new Board(1280, 720, null), List.of(new Layer("layer-1", "Capa 1", 0, true, false, 1)),
-                items, tracks, clips, 122000, 30, Map.of());
+                items, tracks, clips, 122000, 30, Map.of(), null);
     }
 
     /** @return the builder input of the sample, without audio files (as the editor's fixture test) */

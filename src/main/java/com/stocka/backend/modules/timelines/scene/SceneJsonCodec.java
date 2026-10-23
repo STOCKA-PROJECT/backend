@@ -61,6 +61,9 @@ public class SceneJsonCodec {
         ObjectNode result = mapper.valueToTree(document);
         if (original instanceof ObjectNode source) {
             copyUnknown(source, result);
+            if (document.schedule() == null) {
+                result.remove("schedule"); // modelled field: null means "no schedule", not "keep the stored one"
+            }
             mergeById(source, result, "layers");
             mergeById(source, result, "items");
             mergeById(source, result, "tracks");

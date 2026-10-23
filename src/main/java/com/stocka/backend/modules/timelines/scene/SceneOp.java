@@ -29,12 +29,13 @@ import com.stocka.backend.modules.common.schema.Param;
         @JsonSubTypes.Type(value = SceneOp.RemoveClip.class, name = "remove_clip"),
         @JsonSubTypes.Type(value = SceneOp.SetDuration.class, name = "set_duration"),
         @JsonSubTypes.Type(value = SceneOp.SetBoard.class, name = "set_board"),
-        @JsonSubTypes.Type(value = SceneOp.SetStripOrder.class, name = "set_strip_order")
+        @JsonSubTypes.Type(value = SceneOp.SetStripOrder.class, name = "set_strip_order"),
+        @JsonSubTypes.Type(value = SceneOp.SetSchedule.class, name = "set_schedule")
 })
 public sealed interface SceneOp permits SceneOp.AddLayer, SceneOp.AddItem, SceneOp.UpdateItem, SceneOp.SetItemPorts,
         SceneOp.RemoveItem, SceneOp.AddTrack, SceneOp.RenameTrack, SceneOp.RemoveTrack, SceneOp.AddClip,
         SceneOp.UpdateClip, SceneOp.MoveClip, SceneOp.RemoveClip, SceneOp.SetDuration, SceneOp.SetBoard,
-        SceneOp.SetStripOrder {
+        SceneOp.SetStripOrder, SceneOp.SetSchedule {
 
     /** Adds a layer on top. */
     record AddLayer(@Param(value = "Layer name", required = true) String name) implements SceneOp {
@@ -133,6 +134,12 @@ public sealed interface SceneOp permits SceneOp.AddLayer, SceneOp.AddItem, Scene
             @Param("Width in cm") Double width,
             @Param("Height in cm") Double height,
             @Param("Background") String background) implements SceneOp {
+    }
+
+    /** Sets when the physical button starts the show; {@code null} removes the schedule (the button always works). */
+    record SetSchedule(
+            @Param("Button schedule: rule allow|block + windows [{days, from, to}]; omit or null to remove it")
+            SceneDocument.Schedule schedule) implements SceneOp {
     }
 
     /** Orders the items along a LED strip port. */

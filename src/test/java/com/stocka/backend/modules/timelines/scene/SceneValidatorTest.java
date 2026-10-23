@@ -67,7 +67,7 @@ class SceneValidatorTest {
 
     private SceneDocument doc(long durationMs) {
         return new SceneDocument(1, new Board(1280, 720, null),
-                List.of(new Layer("layer-1", "Capa 1", 0, true, false, 1)), items, tracks, clips, durationMs, 30, Map.of());
+                List.of(new Layer("layer-1", "Capa 1", 0, true, false, 1)), items, tracks, clips, durationMs, 30, Map.of(), null);
     }
 
     private List<String> codes(long durationMs) {
@@ -94,6 +94,24 @@ class SceneValidatorTest {
         @DisplayName("a clean empty scene has no findings")
         void clean() {
             assertThat(codes(1000)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("an invalid button schedule is E_SCHEDULE, one finding per problem")
+        void invalidSchedule() {
+            SceneDocument withSchedule = doc(1000).withSchedule(new SceneDocument.Schedule("maybe",
+                    List.of(new SceneDocument.ScheduleWindow(List.of("mon"), "17:00", "17:00"))));
+            List<SceneIssue> issues = SceneValidator.validate(withSchedule, ctx, catalog);
+            assertThat(issues).extracting(SceneIssue::code).containsExactly("E_SCHEDULE", "E_SCHEDULE");
+            assertThat(issues).allSatisfy(i -> assertThat(i.message()).startsWith("Button schedule: "));
+        }
+
+        @Test
+        @DisplayName("a valid button schedule adds no findings")
+        void validSchedule() {
+            SceneDocument withSchedule = doc(1000).withSchedule(new SceneDocument.Schedule("allow",
+                    List.of(new SceneDocument.ScheduleWindow(List.of("mon"), "17:00", "21:00"))));
+            assertThat(SceneValidator.validate(withSchedule, ctx, catalog)).isEmpty();
         }
     }
 

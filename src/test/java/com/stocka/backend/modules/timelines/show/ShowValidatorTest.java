@@ -18,8 +18,10 @@ import org.junit.jupiter.params.provider.ValueSource;
 import com.stocka.backend.modules.contract.CatalogParam;
 import com.stocka.backend.modules.contract.CatalogType;
 import com.stocka.backend.modules.contract.OutputCatalog;
+import com.stocka.backend.modules.timelines.scene.SceneDocument;
 import com.stocka.backend.modules.timelines.show.ShowPackage.ShowAssets;
 import com.stocka.backend.modules.timelines.show.ShowPackage.ShowEvent;
+import com.stocka.backend.modules.timelines.show.ShowPackage.ShowMode;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -783,6 +785,72 @@ class ShowValidatorTest {
         void unusedAssets() {
             assets = new ShowAssets(List.of("a.mp3", "b.mp3"));
             assertThat(warnings()).containsExactly("W_ASSET_UNUSED", "W_ASSET_UNUSED");
+        }
+    }
+
+    @Nested
+    @DisplayName("button schedule")
+    class ButtonSchedule {
+
+        private static final SceneDocument.Schedule EVENINGS = new SceneDocument.Schedule("allow",
+                List.of(new SceneDocument.ScheduleWindow(List.of("mon", "fri"), "17:00", "21:00")));
+
+        private List<ShowIssue> check(String on, SceneDocument.Schedule schedule) {
+            return ShowValidator.validateSchedule(new ShowMode(on, 1, schedule), hardware);
+        }
+
+        @BeforeEach
+        void button() {
+            port("Pulsador", "kind", "sensor", "pin", 20, "onActive", "play");
+        }
+
+        @Test
+        @DisplayName("no schedule, no findings")
+        void none() {
+            assertThat(check("once", null)).isEmpty();
+            assertThat(ShowValidator.validateSchedule(null, hardware)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("a valid schedule with a play button has no findings")
+        void valid() {
+            assertThat(check("pulse", EVENINGS)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("a window that lasts nothing is E_SCHEDULE_INVALID with the device's message")
+        void emptyWindow() {
+            List<ShowIssue> issues = check("once", new SceneDocument.Schedule("block",
+                    List.of(new SceneDocument.ScheduleWindow(List.of("sun"), "13:00", "13:00"))));
+            assertThat(codes(issues)).containsExactly("E_SCHEDULE_INVALID");
+            assertThat(issues.get(0).message()).isEqualTo("La franja 1 de l'horari comença i acaba a les 13:00: no dura res.");
+        }
+
+        @Test
+        @DisplayName("a malformed schedule is E_SCHEDULE_INVALID, one per problem")
+        void malformed() {
+            List<ShowIssue> issues = check("once", new SceneDocument.Schedule("maybe",
+                    List.of(new SceneDocument.ScheduleWindow(List.of("lunes"), "7:00", "21:00"))));
+            assertThat(codes(issues)).containsExactly("E_SCHEDULE_INVALID", "E_SCHEDULE_INVALID", "E_SCHEDULE_INVALID");
+            assertThat(issues).allSatisfy(i -> assertThat(i.isError()).isTrue());
+        }
+
+        @Test
+        @DisplayName("without an onActive play sensor the schedule is W_SCHEDULE_UNUSED")
+        void noButton() {
+            hardware.clear();
+            port("Final", "kind", "sensor", "pin", 21, "onActive", "stop_show");
+            List<ShowIssue> issues = check("once", EVENINGS);
+            assertThat(codes(issues)).containsExactly("W_SCHEDULE_UNUSED");
+            assertThat(issues.get(0).message()).isEqualTo("L'horari no fa res: cap sensor té onActive play.");
+        }
+
+        @Test
+        @DisplayName("in loop mode the schedule is W_SCHEDULE_UNUSED")
+        void loop() {
+            List<ShowIssue> issues = check("loop", EVENINGS);
+            assertThat(codes(issues)).containsExactly("W_SCHEDULE_UNUSED");
+            assertThat(issues.get(0).message()).contains("mode loop");
         }
     }
 }

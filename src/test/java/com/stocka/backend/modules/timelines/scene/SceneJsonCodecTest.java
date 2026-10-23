@@ -81,7 +81,7 @@ class SceneJsonCodecTest {
             JsonNode original = codec.mapper().readTree(EDITOR_DOCUMENT);
             SceneDocument doc = codec.parse(original);
             SceneDocument edited = new SceneDocument(doc.schemaVersion(), doc.board(), doc.layers(), doc.items(), doc.tracks(),
-                    doc.clips(), 45_000, doc.fps(), doc.stripOrder());
+                    doc.clips(), 45_000, doc.fps(), doc.stripOrder(), doc.schedule());
             JsonNode out = codec.toJson(edited, original);
             assertThat(out.path("durationMs").asLong()).isEqualTo(45_000);
             assertThat(out.path("editorPrefs").path("zoom").asInt()).isEqualTo(2);
@@ -98,10 +98,33 @@ class SceneJsonCodecTest {
             JsonNode original = codec.mapper().readTree(EDITOR_DOCUMENT);
             SceneDocument doc = codec.parse(original);
             SceneDocument edited = new SceneDocument(doc.schemaVersion(), doc.board(), doc.layers(), doc.items(), doc.tracks(),
-                    List.of(), doc.durationMs(), doc.fps(), Map.of());
+                    List.of(), doc.durationMs(), doc.fps(), Map.of(), doc.schedule());
             JsonNode out = codec.toJson(edited, original);
             assertThat(out.path("clips")).isEmpty();
             assertThat(out.path("items").get(0).has("widthAttr")).isFalse();
+        }
+
+        @Test
+        @DisplayName("the button schedule is read, kept and removed when set to null")
+        void schedule() {
+            JsonNode original = codec.mapper().readTree(EDITOR_DOCUMENT.replace("\"editorPrefs\"",
+                    "\"schedule\":{\"rule\":\"block\",\"windows\":[{\"days\":[\"sun\"],\"from\":\"13:00\",\"to\":\"16:00\"}]},\"editorPrefs\""));
+            SceneDocument doc = codec.parse(original);
+            assertThat(doc.schedule()).isEqualTo(new SceneDocument.Schedule("block",
+                    List.of(new SceneDocument.ScheduleWindow(List.of("sun"), "13:00", "16:00"))));
+            assertThat(codec.toJson(doc, original).path("schedule").path("rule").asText()).isEqualTo("block");
+            JsonNode cleared = codec.toJson(doc.withSchedule(null), original);
+            assertThat(cleared.has("schedule")).isFalse();
+            assertThat(cleared.path("editorPrefs").path("zoom").asInt()).isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("a document without schedule is written without one")
+        void noSchedule() {
+            JsonNode original = codec.mapper().readTree(EDITOR_DOCUMENT);
+            SceneDocument doc = codec.parse(original);
+            assertThat(doc.schedule()).isNull();
+            assertThat(codec.toJson(doc, original).has("schedule")).isFalse();
         }
 
         @Test

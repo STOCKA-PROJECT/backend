@@ -307,6 +307,38 @@ class SceneEditorTest {
         }
 
         @Test
+        @DisplayName("set_schedule stores a valid schedule and keeps it through other edits")
+        void scheduleSet() {
+            SceneDocument.Schedule schedule = new SceneDocument.Schedule("block",
+                    List.of(new SceneDocument.ScheduleWindow(List.of("sat", "sun"), "13:00", "16:00")));
+            Change change = apply(new SceneOp.SetSchedule(schedule));
+            assertThat(doc.schedule()).isEqualTo(schedule);
+            assertThat(change.log()).anySatisfy(line -> assertThat(line).contains("schedule set: block with 1 window"));
+            apply(new SceneOp.SetDuration(90_000L), new SceneOp.SetBoard(100.0, 50.0, null));
+            assertThat(doc.schedule()).isEqualTo(schedule);
+        }
+
+        @Test
+        @DisplayName("set_schedule with null removes the schedule")
+        void scheduleRemoved() {
+            apply(new SceneOp.SetSchedule(new SceneDocument.Schedule("allow",
+                    List.of(new SceneDocument.ScheduleWindow(List.of("mon"), "17:00", "21:00")))));
+            Change change = apply(new SceneOp.SetSchedule(null));
+            assertThat(doc.schedule()).isNull();
+            assertThat(change.log()).anySatisfy(line -> assertThat(line).contains("schedule removed"));
+        }
+
+        @Test
+        @DisplayName("set_schedule rejects an invalid schedule with every problem in the detail")
+        void scheduleInvalid() {
+            SceneOpException e = failure(new SceneOp.SetSchedule(new SceneDocument.Schedule("maybe",
+                    List.of(new SceneDocument.ScheduleWindow(List.of("mon"), "17:00", "17:00")))));
+            assertThat(e.getParams()).containsEntry("op", "set_schedule").containsEntry("index", 0);
+            assertThat(e.getParams().get("detail").toString())
+                    .contains("rule must be allow or block").contains("it lasts nothing");
+        }
+
+        @Test
         @DisplayName("a failing operation in the middle leaves the input document untouched")
         void atomic() {
             SceneDocument before = doc;

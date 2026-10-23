@@ -27,6 +27,7 @@ public record SceneSummary(
         @Param("Items on the board") List<ItemSummary> items,
         @Param("Tracks") List<TrackSummary> tracks,
         @Param("Clips in time order") List<ClipSummary> clips,
+        @Param("Button schedule (absent = the button always works)") SceneDocument.Schedule schedule,
         @Param("Validation findings") List<SceneIssue> issues) {
 
     public record LayerSummary(@Param("Id") String id, @Param("Name") String name, @Param("Order") int z) {
@@ -100,7 +101,8 @@ public record SceneSummary(
         List<LayerSummary> layers = new ArrayList<>();
         doc.layers().forEach(l -> layers.add(new LayerSummary(l.id(), l.name(), l.z())));
         return new SceneSummary(doc.durationMs(), round(SceneDocument.toCm(doc.board().width())),
-                round(SceneDocument.toCm(doc.board().height())), layers, itemSummaries, trackSummaries, clipSummaries, issues);
+                round(SceneDocument.toCm(doc.board().height())), layers, itemSummaries, trackSummaries, clipSummaries,
+                doc.schedule(), issues);
     }
 
     private static double round(double value) {

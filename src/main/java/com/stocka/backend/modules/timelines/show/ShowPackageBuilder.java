@@ -25,6 +25,7 @@ import com.stocka.backend.modules.timelines.show.ShowCoerce.CoerceResult;
 import com.stocka.backend.modules.timelines.show.ShowPackage.ShowAssets;
 import com.stocka.backend.modules.timelines.show.ShowPackage.ShowEvent;
 import com.stocka.backend.modules.timelines.show.ShowPackage.ShowMeta;
+import com.stocka.backend.modules.timelines.show.ShowPackage.ShowMode;
 import com.stocka.backend.modules.timelines.show.StripLayout.StripSlot;
 
 /**
@@ -70,14 +71,15 @@ public class ShowPackageBuilder {
         if (!errors.isEmpty()) {
             return new ShowBuildResult(null, errors, warnings);
         }
-        ShowPackage unhashed = new ShowPackage(ShowPackage.FORMAT, ShowPackage.VERSION, null, input.board(), input.mode(),
+        ShowMode mode = modeOf(input);
+        ShowPackage unhashed = new ShowPackage(ShowPackage.FORMAT, ShowPackage.VERSION, null, input.board(), mode,
                 assembled.hardware(), assembled.timeline(), input.doc().durationMs(), assembled.assets());
         String hash = ShowCanonicalJson.showHash(unhashed);
         String name = input.timelineName() == null || input.timelineName().isBlank() ? "Show" : input.timelineName();
         // Where each file comes from, when known (outside the hash: the show is the same).
         List<ShowAssetRef> refs = input.audioByPiece() == null ? null : assembled.assetRefs();
         ShowMeta meta = new ShowMeta(name, input.timelineId(), input.now().get(), hash, refs);
-        ShowPackage pkg = new ShowPackage(ShowPackage.FORMAT, ShowPackage.VERSION, meta, input.board(), input.mode(),
+        ShowPackage pkg = new ShowPackage(ShowPackage.FORMAT, ShowPackage.VERSION, meta, input.board(), mode,
                 assembled.hardware(), assembled.timeline(), input.doc().durationMs(), assembled.assets());
         return new ShowBuildResult(pkg, errors, warnings);
     }
@@ -276,7 +278,14 @@ public class ShowPackageBuilder {
 
         ShowAssets assets = new ShowAssets(new ArrayList<>(audioAssets));
         issues.addAll(ShowValidator.validate(hardware, timeline, input.board(), doc.durationMs(), assets, catalog));
+        issues.addAll(ShowValidator.validateSchedule(modeOf(input), hardware));
         return new Assembled(hardware, timeline, assets, issues, new ArrayList<>(assetRefs.values()));
+    }
+
+    /** The input's mode with the scene's button schedule, unless the mode already carries one. */
+    static ShowMode modeOf(ShowBuildInput input) {
+        ShowMode mode = input.mode();
+        return mode.schedule() == null && input.doc().schedule() != null ? mode.withSchedule(input.doc().schedule()) : mode;
     }
 
     private static Integer ledLengthOf(ShowBuildInput input, Integer pieceId) {

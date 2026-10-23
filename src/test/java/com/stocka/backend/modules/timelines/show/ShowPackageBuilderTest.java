@@ -138,6 +138,53 @@ class ShowPackageBuilderTest {
         }
 
         @Test
+        @DisplayName("the scene's button schedule goes to mode.schedule and into the hash")
+        void schedule() {
+            SceneDocument.Schedule schedule = new SceneDocument.Schedule("allow",
+                    List.of(new SceneDocument.ScheduleWindow(List.of("fri", "sat"), "17:00", "21:00")));
+            ShowPackage plain = builder.build(Belen2026Fixture.input()).pkg();
+            ShowBuildResult result = builder.build(Belen2026Fixture.input(Belen2026Fixture.document().withSchedule(schedule)));
+            assertThat(result.errors()).isEmpty();
+            assertThat(result.warnings()).isEmpty();
+            assertThat(result.pkg().mode()).isEqualTo(new ShowMode("once", 1, schedule));
+            assertThat(result.pkg().meta().hash()).isNotEqualTo(plain.meta().hash())
+                    // same value in rpi4-system tests/test_show_hash.py and the editor's showPackage.test.ts
+                    .isEqualTo("sha256:e5dba297bdd5ca75d6b85d3f51a6b19b2cb4d0c43a4dd0d6ec7a04da1d809df2");
+            assertThat(ShowCanonicalJson.canonical(ShowCanonicalJson.hashInput(result.pkg())))
+                    .contains("\"mode\":{\"cycles\":1,\"on\":\"once\",\"schedule\":{\"rule\":\"allow\",\"windows\":"
+                            + "[{\"days\":[\"fri\",\"sat\"],\"from\":\"17:00\",\"to\":\"21:00\"}]}}");
+            assertThat(ShowCanonicalJson.canonical(ShowCanonicalJson.hashInput(plain))).doesNotContain("schedule");
+        }
+
+        @Test
+        @DisplayName("a schedule given in the mode wins over the scene's")
+        void scheduleInMode() {
+            SceneDocument.Schedule scene = new SceneDocument.Schedule("allow",
+                    List.of(new SceneDocument.ScheduleWindow(List.of("mon"), "17:00", "21:00")));
+            SceneDocument.Schedule explicit = new SceneDocument.Schedule("block",
+                    List.of(new SceneDocument.ScheduleWindow(List.of("sun"), "13:00", "16:00")));
+            ShowPackage pkg = builder.build(Belen2026Fixture.input(Belen2026Fixture.document().withSchedule(scene))
+                    .withMode(new ShowMode("pulse", 2, explicit))).pkg();
+            assertThat(pkg.mode().schedule()).isEqualTo(explicit);
+        }
+
+        @Test
+        @DisplayName("an invalid schedule blocks the export; a useless one only warns")
+        void scheduleFindings() {
+            SceneDocument.Schedule empty = new SceneDocument.Schedule("allow",
+                    List.of(new SceneDocument.ScheduleWindow(List.of("mon"), "17:00", "17:00")));
+            ShowBuildResult invalid = builder.build(Belen2026Fixture.input(Belen2026Fixture.document().withSchedule(empty)));
+            assertThat(invalid.pkg()).isNull();
+            assertThat(codes(invalid.errors())).containsExactly("E_SCHEDULE_INVALID");
+            SceneDocument.Schedule ok = new SceneDocument.Schedule("allow",
+                    List.of(new SceneDocument.ScheduleWindow(List.of("mon"), "17:00", "21:00")));
+            ShowBuildResult loop = builder.build(Belen2026Fixture.input(Belen2026Fixture.document().withSchedule(ok))
+                    .withMode(new ShowMode("loop", 1)));
+            assertThat(loop.pkg()).isNotNull();
+            assertThat(codes(loop.warnings())).containsExactly("W_SCHEDULE_UNUSED");
+        }
+
+        @Test
         @DisplayName("a blank timeline name becomes Show")
         void blankName() {
             assertThat(builder.build(Belen2026Fixture.input().withTimeline("  ", null)).pkg().meta().name()).isEqualTo("Show");
@@ -229,7 +276,7 @@ class ShowPackageBuilderTest {
             List<Item> items = List.of(Belen2026Fixture.item("i-casa1", 9, 12), Belen2026Fixture.item("i-casa2", 10, 12));
             List<Track> tracks = items.stream().map(i -> new Track("t-" + i.id(), i.id(), i.id())).toList();
             return new SceneDocument(1, new SceneDocument.Board(1280, 720, null),
-                    List.of(new SceneDocument.Layer("layer-1", "Capa 1", 0, true, false, 1)), items, tracks, clips, 122000, 30, stripOrder);
+                    List.of(new SceneDocument.Layer("layer-1", "Capa 1", 0, true, false, 1)), items, tracks, clips, 122000, 30, stripOrder, null);
         }
 
         private Clip k(String id, String item, int action, long t, Map<String, Object> params) {

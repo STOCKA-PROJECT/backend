@@ -91,6 +91,11 @@ public final class SceneValidator {
         if (doc.board() == null || doc.board().width() <= 0 || doc.board().height() <= 0) {
             issues.add(SceneIssue.error("E_BOARD", "The board needs a positive width and height.", null, null));
         }
+        if (doc.schedule() != null) {
+            for (String problem : ScheduleRules.problems(doc.schedule())) {
+                issues.add(SceneIssue.error("E_SCHEDULE", "Button schedule: " + problem + ".", null, null));
+            }
+        }
         Set<String> layerIds = uniqueIds(doc.layers().stream().map(SceneDocument.Layer::id).toList(), "layer", issues);
         Set<String> itemIds = uniqueIds(doc.items().stream().map(Item::id).toList(), "item", issues);
         Set<String> trackIds = uniqueIds(doc.tracks().stream().map(Track::id).toList(), "track", issues);

@@ -58,7 +58,12 @@ Workflow:
    omitted; `ports` by id or name), `update_item`, `set_item_ports`, `remove_item`, `add_track`,
    `rename_track`, `remove_track`, `add_clip` (itemId or trackId; action by name or id; `startMs` or
    `after: clipId`; `durationMs`; `params` by name), `update_clip`, `move_clip`, `remove_clip`,
-   `set_duration`, `set_board`, `set_strip_order`.
+   `set_duration`, `set_board`, `set_strip_order`, `set_schedule` (when the start button works:
+   `{"rule": "allow"|"block", "windows": [{"days": ["mon", …], "from": "17:00", "to": "21:00"}]}`;
+   `allow` = only inside a window, `block` = never inside one; local time of the Pi, `to` may be `24:00` and a
+   `to` not after `from` crosses midnight; `schedule: null` removes it). It travels as `mode.schedule` of the
+   package and only affects a short press of an `onActive: play` sensor; stop, panic and long presses always work,
+   and the Pi ignores it until it knows the time (a phone or the editor connecting gives it).
 4. `timeline_validate` reports errors (must fix) and warnings (mention them).
 5. `timeline_show_export` builds the `stocka-show` package the Raspberry Pi plays (hardware, events,
    assets, `meta.hash`); with blocking errors it fails with `timeline_shows.invalid` and lists them.
