@@ -52,7 +52,8 @@ organizaciones cuyo owner es ADMIN global):
    `maxTimeForward`/`maxTimeReverse`), `create-port-audio`, `create-port-sensor` (pulsador, `onActive: play`),
    `create-port-expander` (MCP23017, infraestructura), `create-port-relay-expander` (relé por `expander` + `channel`),
    `create-port-moving-head` (cabezal DMX: `profile` + `address`), `create-port-sensor-expander` y
-   `create-port-motor-expander` (sensor y motor en canales del expansor) — un ejemplo por kind.
+   `create-port-motor-expander` (sensor y motor en canales del expansor), `create-port-sensor-measured` (sensor que
+   mide un valor: modelo de `profiles.sensor`, umbral y `activeWhen`) — un ejemplo por kind.
 6. `organizations/62-piece-type-actions/create-action` — acción `animate` validada contra el catálogo del kind del tipo.
 7. Rechazos: `create-port-kind-mismatch`, `create-port-segment-out-of-range`, `create-port-pin-conflict`,
    `create-action-not-in-catalog`, `create-action-duration-mismatch`, `update-piece-type-kind` sobre un tipo con acciones incompatibles.
@@ -159,8 +160,10 @@ Campos:
 | `ports.pin_or_expander` / `channel_required` / `channel_without_expander` / `active_low_on_expander` | 400 | relés y sensores llevan pin **o** expander+channel (`params.reason` both/none); `activeLow` en un expansor solo lo admite el sensor |
 | `ports.motor_outputs_invalid` | 400 | motor con pines y expansor a la vez, sin uno de los dos pines o con un solo canal (`params.reason`: pins_and_expander / missing_pin / missing_channel) |
 | `ports.sensor_pull_on_expander` | 400 | el MCP23017 no tiene pull-down: en un expansor `pull` es up o none |
+| `ports.sensor_config_invalid` | 400 | sensor `measured` incoherente (`params.reason`: claves del otro `source`, modelo, cableado del modelo, `pinTrig`/`pinEcho`, `deviceId`, dirección I2C del perfil, `quantity`, `threshold` fuera del rango con `min`/`max`/`unit`, `activeWhen`, `pin_required` en 1-Wire, `pin_not_allowed` en el resto) |
+| `ports.i2c_address_conflict` | 409 | un sensor I2C repite la dirección (la del perfil por defecto) de otro dispositivo I2C del mismo bus (`params.port`) |
 | `ports.sensor_not_found` / `sensor_in_use` | 400 / 409 | `limitForward`/`limitReverse` no nombran un sensor (`params.key`, `sensor`); borrar un sensor que es final de carrera (`params.motors`) |
-| `ports.expander_not_found` / `expander_channel_conflict` / `expander_address_conflict` / `expander_in_use` / `i2c_pin_reserved` | 400 / 409 / 409 / 409 / 400-409 | expansor inexistente, canal (compartido por relés, motores y sensores) o dirección I2C repetidos, borrado con puertos que lo usan, GPIO 2/3 con expansor |
+| `ports.expander_not_found` / `expander_channel_conflict` / `expander_address_conflict` / `expander_in_use` / `i2c_pin_reserved` | 400 / 409 / 409 / 409 / 400-409 | expansor inexistente, canal (compartido por relés, motores y sensores) o dirección I2C repetidos, borrado con puertos que lo usan, GPIO 2/3 con un expansor o un sensor I2C |
 | `ports.dmx_address_range` / `dmx_address_conflict` | 400 / 409 | cabezal fuera del universo DMX o solapado con otro |
 | `ports.strip_pin_unsupported` / `strip_channel_mismatch` | 400 | tira en pin no WS281x o canal incoherente |
 | `ports.segment_strip_not_found` / `segment_out_of_range` / `strip_shrink_breaks_segment` / `strip_in_use` | 400 / 400 / 400 / 409 | segmentos y tiras |

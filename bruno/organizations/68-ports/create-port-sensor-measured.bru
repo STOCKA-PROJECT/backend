@@ -1,0 +1,48 @@
+meta {
+  name: Create Port (measured sensor, distance)
+  type: http
+  seq: 18
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/ports
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "name": "Angel-límit",
+    "kind": "sensor",
+    "config": {
+      "source": "measured",
+      "model": "vl53l0x",
+      "threshold": 20,
+      "activeWhen": "below",
+      "hysteresis": 2,
+      "pollMs": 100
+    }
+  }
+}
+
+docs {
+  Sensor que mide un valor (`source: measured`) con un modelo de `profiles.sensor` del catálogo:
+  `vl53l0x` (distancia láser, I2C 0x29), `hc-sr04` (distancia por ultrasonidos, `pinTrig` + `pinEcho`),
+  `ds18b20` (temperatura, 1-Wire: `pin` del puerto + `deviceId` opcional) y `bme280` (temperatura, humedad o
+  presión por I2C 0x76/0x77; requiere `quantity`). Activo cuando el valor es ≤ `threshold` (`activeWhen: below`)
+  o ≥ (`above`); `hysteresis` es el margen para soltarse. Se usa igual que un sensor digital: final de carrera de
+  un motor (`limitForward`/`limitReverse`) u `onActive`.
+  Errores: 400 `ports.sensor_config_invalid` con `params.reason` (`measured_key`, `digital_key`, `model_required`,
+  `wiring_key`, `trig_echo_pins_required`, `trig_echo_pins_equal`, `device_id_invalid`, `address_not_in_profile`,
+  `quantity_required`, `quantity_not_measured`, `threshold_required`, `threshold_out_of_range`,
+  `active_when_required`, `pin_required`, `pin_not_allowed`); 409 `ports.i2c_address_conflict` si otro
+  dispositivo I2C usa la misma dirección en el bus; los GPIO 2 y 3 quedan reservados.
+}

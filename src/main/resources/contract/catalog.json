@@ -344,7 +344,7 @@
       "controller": "InputController",
       "infrastructure": true,
       "pin": "optional",
-      "notes": "Entrada digital amb nom (IR, final de carrera, seta, polsador). O bé un GPIO (pin) o bé un canal d'un expansor (expander + channel). Actiu a nivell baix amb pull-up per defecte. onActive diu què fa el reproductor amb el show quan s'activa: play arrenca un passi (el polsador, amb la pulsació llarga de rescat: 10 s Wi-Fi pròpia, 30 s tot en segur), stop_show para el passi i panic ho posa tot en segur.",
+      "notes": "Entrada amb nom que està activa o no. source digital (per defecte): entrada digital (IR amb potenciòmetre, final de carrera, seta, polsador), o bé un GPIO (pin) o bé un canal d'un expansor (expander + channel), activa a nivell baix amb pull-up per defecte. source measured: un sensor que mesura un valor (distància, temperatura…) segons el seu model (vegeu profiles.sensor) i que està actiu quan el valor passa del llindar (threshold, activeWhen above/below, amb histèresi). onActive diu què fa el reproductor amb el show quan s'activa: play arrenca un passi (el polsador, amb la pulsació llarga de rescat: 10 s Wi-Fi pròpia, 30 s tot en segur), stop_show para el passi i panic ho posa tot en segur.",
       "legacy": { "addressing": "name", "pinType": "Pulsador", "module": "input" },
       "config": {
         "expander": { "type": "string", "ref": "gpio_expander", "notes": "Expansor del qual és el canal d'entrada; amb expander cal channel i no hi pot haver pin." },
@@ -352,7 +352,19 @@
         "activeLow": { "type": "bool", "default": true, "notes": "Actiu quan l'entrada és a nivell baix (contacte a massa)." },
         "pull": { "type": "enum", "values": ["up", "down", "none"], "default": "up", "notes": "Resistència interna; en un expansor, només up o none." },
         "debounceMs": { "type": "int", "min": 0, "max": 2000, "default": 50 },
-        "onActive": { "type": "enum", "values": ["none", "play", "stop_show", "panic"], "default": "none" }
+        "onActive": { "type": "enum", "values": ["none", "play", "stop_show", "panic"], "default": "none" },
+        "source": { "type": "enum", "values": ["digital", "measured"], "default": "digital", "notes": "digital: entrada activa o no. measured: un model de profiles.sensor que llegeix un valor i s'activa en passar el llindar." },
+        "model": { "type": "enum", "values": ["vl53l0x", "hc-sr04", "ds18b20", "bme280"], "notes": "Perfil del sensor mesurat (profiles.sensor); obligatori amb source measured." },
+        "quantity": { "type": "enum", "values": ["distance", "temperature", "humidity", "pressure"], "notes": "Magnitud que es vigila; obligatòria si el model en mesura més d'una (per defecte, l'única del model)." },
+        "bus": { "type": "int", "min": 0, "max": 1, "default": 1, "notes": "Bus I2C (models amb wiring i2c)." },
+        "address": { "type": "int", "min": 8, "max": 119, "notes": "Adreça I2C (una de profiles.sensor.<model>.addresses; per defecte, la primera), única per bus amb els expansors." },
+        "pinTrig": { "type": "int", "min": 0, "max": 27, "notes": "GPIO del TRIG (models amb wiring trig_echo)." },
+        "pinEcho": { "type": "int", "min": 0, "max": 27, "notes": "GPIO de l'ECHO (models amb wiring trig_echo); a 3,3 V." },
+        "deviceId": { "type": "string", "notes": "Identificador 1-Wire (28-xxxxxxxxxxxx); sense, el primer sensor del bus." },
+        "threshold": { "type": "number", "notes": "Llindar en la unitat de la magnitud (profiles.sensor.<model>.quantities); obligatori amb source measured." },
+        "activeWhen": { "type": "enum", "values": ["above", "below"], "notes": "above: actiu quan el valor arriba al llindar o el supera; below: quan hi arriba o queda per sota. Obligatori amb source measured." },
+        "hysteresis": { "type": "number", "min": 0, "default": 0, "notes": "Marge per desactivar-se: amb below, inactiu quan el valor supera threshold + hysteresis; amb above, quan baixa de threshold − hysteresis." },
+        "pollMs": { "type": "int", "min": 50, "max": 60000, "notes": "Cada quant es llegeix el valor; per defecte, el pollMs del model." }
       },
       "actions": {}
     }
@@ -370,6 +382,42 @@
         "fixed": { "speed": 0, "shutter": 0, "colorTemp": 0, "macros": 0, "programs": 0 },
         "notes": "Manual Varytec §7.4. Al menú de l'aparell: DMX Channel = DMX 15 Ch, Running Mode = DMX, Settings → Dmx Fail = OFF (sense senyal s'apaga)."
       }
+    },
+    "sensor": {
+      "vl53l0x": {
+        "name": "VL53L0X (distància làser ToF, I2C)",
+        "wiring": "i2c",
+        "addresses": [41],
+        "quantities": { "distance": { "unit": "cm", "min": 3, "max": 200 } },
+        "pollMs": 100,
+        "notes": "VIN a 3,3 V, SDA al GPIO 2 i SCL al GPIO 3 (els comparteix amb els expansors). Adreça fixa 0x29: un per bus."
+      },
+      "hc-sr04": {
+        "name": "HC-SR04 (distància per ultrasons)",
+        "wiring": "trig_echo",
+        "quantities": { "distance": { "unit": "cm", "min": 2, "max": 400 } },
+        "pollMs": 100,
+        "notes": "S'alimenta a 5 V i l'ECHO surt a 5 V: cal un divisor de tensió (1 kΩ i 2 kΩ) abans del GPIO."
+      },
+      "ds18b20": {
+        "name": "DS18B20 (temperatura, 1-Wire)",
+        "wiring": "onewire",
+        "quantities": { "temperature": { "unit": "°C", "min": -55, "max": 125 } },
+        "pollMs": 2000,
+        "notes": "Cal dtoverlay=w1-gpio,gpiopin=<pin> a /boot/firmware/config.txt i una resistència de 4,7 kΩ entre DATA i 3,3 V. Cada lectura tarda uns 750 ms."
+      },
+      "bme280": {
+        "name": "BME280 (temperatura, humitat i pressió, I2C)",
+        "wiring": "i2c",
+        "addresses": [118, 119],
+        "quantities": {
+          "temperature": { "unit": "°C", "min": -40, "max": 85 },
+          "humidity": { "unit": "%", "min": 0, "max": 100 },
+          "pressure": { "unit": "hPa", "min": 300, "max": 1100 }
+        },
+        "pollMs": 1000,
+        "notes": "VIN a 3,3 V, SDA al GPIO 2 i SCL al GPIO 3. Adreça 0x76 (SDO a massa) o 0x77 (SDO a 3,3 V)."
+      }
     }
   },
   "excludedMethods": {
@@ -378,7 +426,7 @@
     "MotorController": ["is_process_running", "status", "unlock", "close", "alerts"],
     "AudioController": ["is_playing", "get_active_players", "wait_for_completion"],
     "DmxController": ["stop", "is_process_running", "close", "status", "start", "tick"],
-    "InputController": ["is_active", "snapshot", "on_change", "poll", "start", "close", "status"]
+    "InputController": ["is_active", "snapshot", "on_change", "poll", "sample", "start", "close", "status"]
   },
   "boards": {
     "rpi4b": {

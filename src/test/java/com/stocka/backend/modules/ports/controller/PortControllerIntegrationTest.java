@@ -366,6 +366,35 @@ class PortControllerIntegrationTest {
     }
 
     @Test
+    @DisplayName("a measured sensor names a model, takes its wiring and reserves the I2C bus; a bad config is sensor_config_invalid")
+    void measuredSensor_flow() throws Exception {
+        postPort(adminToken, acmeSlug, Map.of("name", "Angel-límit", "kind", "sensor",
+                        "config", Map.of("source", "measured", "model", "vl53l0x", "threshold", 20, "activeWhen", "below", "hysteresis", 2)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.pin").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.config.model").value("vl53l0x"))
+                .andExpect(jsonPath("$.config.threshold").value(20));
+        postPort(adminToken, acmeSlug, Map.of("name", "Termo", "kind", "sensor", "pin", 4,
+                        "config", Map.of("source", "measured", "model", "ds18b20", "threshold", 40, "activeWhen", "above")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.pin").value(4));
+        postPort(adminToken, acmeSlug, Map.of("name", "Calor", "kind", "sensor",
+                        "config", Map.of("source", "measured", "model", "vl53l0x", "threshold", 500, "activeWhen", "below")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ports.sensor_config_invalid"))
+                .andExpect(jsonPath("$.params.reason").value("threshold_out_of_range"))
+                .andExpect(jsonPath("$.params.unit").value("cm"));
+        postPort(adminToken, acmeSlug, Map.of("name", "Pastor-límit", "kind", "sensor",
+                        "config", Map.of("source", "measured", "model", "vl53l0x", "threshold", 20, "activeWhen", "below")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ports.i2c_address_conflict"))
+                .andExpect(jsonPath("$.params.port").value("Angel-límit"));
+        createPort(adminToken, acmeSlug, "Sembra", 3, acmePieceTypeId)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ports.i2c_pin_reserved"));
+    }
+
+    @Test
     @DisplayName("a moving head fits the DMX universe and does not overlap another; a motor needs maxTimeForward (contract v3)")
     void movingHead_andMotorRules() throws Exception {
         Integer headTypeId = createPieceType(adminToken, acmeSlug, "Cabezal", "moving_head");

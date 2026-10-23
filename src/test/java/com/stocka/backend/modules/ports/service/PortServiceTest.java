@@ -230,6 +230,27 @@ class PortServiceTest {
                 .setConfigJson(configCodec.serialize(expanderSensorDto(name, expander, channel).getConfig()));
     }
 
+    private static Map<String, Object> measuredConfig(String model, Object... extra) {
+        Map<String, Object> cfg = new LinkedHashMap<>();
+        cfg.put("source", "measured");
+        cfg.put("model", model);
+        cfg.put("threshold", "ds18b20".equals(model) ? 40 : 25);
+        cfg.put("activeWhen", "below");
+        for (int i = 0; i < extra.length; i += 2) {
+            cfg.put((String) extra[i], extra[i + 1]);
+        }
+        return cfg;
+    }
+
+    private static CreatePortDto measuredDto(String name, Integer pin, Map<String, Object> config) {
+        return new CreatePortDto().setName(name).setKind("sensor").setPin(pin).setConfig(config);
+    }
+
+    private Port measuredPort(int id, String name, Integer pin, Map<String, Object> config) {
+        return new Port().setId(id).setName(name).setKind(OutputKind.SENSOR).setPin(pin).setOrganization(org)
+                .setConfigJson(configCodec.serialize(config));
+    }
+
     /** Makes the given ports the organization's current ports, by list and by name. */
     private void existingPorts(Port... ports) {
         lenient().when(portRepository.findByOrganizationOrderByPositionAscIdAsc(org)).thenReturn(List.of(ports));
@@ -910,6 +931,102 @@ class PortServiceTest {
             sut.update(ORG_ID, 2, new UpdatePortDto().setName("FinalDalt"));
             assertThat(sut.configOf(motor)).containsEntry("limitForward", "FinalDalt").containsEntry("limitReverse", "FinalDalt");
             assertThat(sut.configOf(other)).doesNotContainKey("limitForward");
+        }
+    }
+
+    @Nested
+    @DisplayName("measured sensors")
+    class MeasuredSensors {
+
+        @Test
+        @DisplayName("persists an I2C model without pin, a 1-Wire model with its pin and an ultrasonic one with its two GPIOs")
+        void should_persistEachWiring() {
+            Port laser = sut.create(ORG_ID, measuredDto("Angel-límit", null, measuredConfig("vl53l0x")));
+            assertThat(laser.getPin()).isNull();
+            assertThat(sut.configOf(laser)).containsEntry("model", "vl53l0x").containsEntry("source", "measured");
+            assertThat(sut.create(ORG_ID, measuredDto("Termo", 4, measuredConfig("ds18b20"))).getPin()).isEqualTo(4);
+            Port sonar = sut.create(ORG_ID, measuredDto("Sonar", null, measuredConfig("hc-sr04", "pinTrig", 5, "pinEcho", 6)));
+            assertThat(sonar.getPin()).isNull();
+            assertThat(sut.configOf(sonar)).containsEntry("pinTrig", 5).containsEntry("pinEcho", 6);
+        }
+
+        @Test
+        @DisplayName("a 1-Wire model needs Port.pin and the other wirings refuse it")
+        void should_checkPortPinAgainstWiring() {
+            assertApi(() -> sut.create(ORG_ID, measuredDto("Termo", null, measuredConfig("ds18b20"))),
+                    HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_SENSOR_CONFIG_INVALID, "reason", "pin_required");
+            assertApi(() -> sut.create(ORG_ID, measuredDto("Angel-límit", 22, measuredConfig("vl53l0x"))),
+                    HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_SENSOR_CONFIG_INVALID, "reason", "pin_not_allowed");
+            assertApi(() -> sut.create(ORG_ID, measuredDto("Termo", 0, measuredConfig("ds18b20"))),
+                    HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_RESERVED);
+        }
+
+        @Test
+        @DisplayName("TRIG/ECHO pins are board GPIOs that collide with every other pin")
+        void should_checkTrigEchoPins() {
+            existingPorts(relayPort(1, "Sembra", 6));
+            assertApi(() -> sut.create(ORG_ID, measuredDto("Sonar", null, measuredConfig("hc-sr04", "pinTrig", 5, "pinEcho", 6))),
+                    HttpStatus.CONFLICT, ErrorCodes.PORTS_PIN_CONFLICT);
+            assertApi(() -> sut.create(ORG_ID, measuredDto("Sonar", null, measuredConfig("hc-sr04", "pinTrig", 0, "pinEcho", 7))),
+                    HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_RESERVED);
+            existingPorts(measuredPort(1, "Sonar", null, measuredConfig("hc-sr04", "pinTrig", 5, "pinEcho", 6)));
+            assertApi(() -> sut.create(ORG_ID, relayDto("Pou", 5)), HttpStatus.CONFLICT, ErrorCodes.PORTS_PIN_CONFLICT);
+        }
+
+        @Test
+        @DisplayName("an I2C sensor reserves GPIO 2 and 3 like an expander, in both directions")
+        void should_reserveI2cPins() {
+            existingPorts(relayPort(1, "Sembra", 3));
+            assertApi(() -> sut.create(ORG_ID, measuredDto("Angel-límit", null, measuredConfig("vl53l0x"))),
+                    HttpStatus.CONFLICT, ErrorCodes.PORTS_I2C_PIN_RESERVED, "port", "Sembra");
+            Port laser = measuredPort(1, "Angel-límit", null, measuredConfig("vl53l0x"));
+            Port relay = relayPort(2, "Sembra", 26);
+            existingPorts(laser, relay);
+            assertApi(() -> sut.create(ORG_ID, relayDto("Pou", 2)), HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_I2C_PIN_RESERVED, "pin", 2);
+            assertApi(() -> sut.update(ORG_ID, 2, new UpdatePortDto().setPin(3)),
+                    HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_I2C_PIN_RESERVED, "pin", 3);
+            existingPorts(measuredPort(1, "Termo", 4, measuredConfig("ds18b20")));
+            assertThat(sut.create(ORG_ID, relayDto("Pou", 2)).getPin()).isEqualTo(2); // 1-Wire is not I2C
+        }
+
+        @Test
+        @DisplayName("each I2C address takes one device per bus, with the model's default address")
+        void should_rejectI2cAddressConflict() {
+            existingPorts(measuredPort(1, "Angel-límit", null, measuredConfig("vl53l0x")));
+            assertApi(() -> sut.create(ORG_ID, measuredDto("Pastor-límit", null, measuredConfig("vl53l0x", "address", 41))),
+                    HttpStatus.CONFLICT, ErrorCodes.PORTS_I2C_ADDRESS_CONFLICT, "port", "Angel-límit");
+            assertThat(sut.create(ORG_ID, measuredDto("Ovella-límit", null, measuredConfig("vl53l0x", "bus", 0))).getName())
+                    .isEqualTo("Ovella-límit");
+            existingPorts(measuredPort(1, "Calor", null, measuredConfig("bme280", "quantity", "temperature")));
+            assertApi(() -> sut.create(ORG_ID, measuredDto("Humitat", null, measuredConfig("bme280", "quantity", "humidity", "threshold", 80))),
+                    HttpStatus.CONFLICT, ErrorCodes.PORTS_I2C_ADDRESS_CONFLICT, "address", 118);
+            assertThat(sut.create(ORG_ID, measuredDto("Humitat2", null,
+                    measuredConfig("bme280", "quantity", "humidity", "threshold", 80, "address", 119))).getName()).isEqualTo("Humitat2");
+            existingPorts(expanderPort(1, "exp1", 32));
+            assertThat(sut.create(ORG_ID, measuredDto("Bou-límit", null, measuredConfig("vl53l0x"))).getName()).isEqualTo("Bou-límit");
+        }
+
+        @Test
+        @DisplayName("updating a GPIO sensor to an I2C model drops its pin; to a 1-Wire model keeps it")
+        void should_switchSourceOnUpdate() {
+            Port sensor = sensorPort(1, "Angel-límit", 22);
+            existingPorts(sensor);
+            sut.update(ORG_ID, 1, new UpdatePortDto().setConfig(measuredConfig("vl53l0x")));
+            assertThat(sensor.getPin()).isNull();
+            assertThat(sut.configOf(sensor)).containsEntry("model", "vl53l0x");
+            Port other = sensorPort(2, "Termo", 4);
+            existingPorts(other);
+            sut.update(ORG_ID, 2, new UpdatePortDto().setConfig(measuredConfig("ds18b20")));
+            assertThat(other.getPin()).isEqualTo(4);
+        }
+
+        @Test
+        @DisplayName("a measured sensor can be the limit switch of a motor")
+        void should_beAMotorLimit() {
+            existingPorts(measuredPort(1, "Angel-límit", null, measuredConfig("vl53l0x")));
+            Map<String, Object> cfg = motorConfig(27, 17);
+            cfg.put("limitForward", "Angel-límit");
+            assertThat(sut.configOf(sut.create(ORG_ID, motorDto("Angel", cfg)))).containsEntry("limitForward", "Angel-límit");
         }
     }
 

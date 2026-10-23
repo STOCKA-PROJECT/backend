@@ -424,6 +424,125 @@ class PortConfigValidatorTest {
     }
 
     @Nested
+    @DisplayName("measured sensor")
+    class MeasuredSensor {
+
+        private Map<String, Object> vl53(Object... extra) {
+            Map<String, Object> m = new LinkedHashMap<>(Map.of("source", "measured", "model", "vl53l0x", "threshold", 25, "activeWhen", "below"));
+            for (int i = 0; i < extra.length; i += 2) {
+                m.put((String) extra[i], extra[i + 1]);
+            }
+            return m;
+        }
+
+        private void assertReason(Map<String, Object> cfg, String reason) {
+            assertThatThrownBy(() -> sut.normalize(OutputKind.SENSOR, cfg))
+                    .isInstanceOfSatisfying(ApiException.class, ex -> {
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                        assertThat(ex.getCode()).isEqualTo(ErrorCodes.PORTS_SENSOR_CONFIG_INVALID);
+                        assertThat(ex.getParams()).containsEntry("reason", reason);
+                    });
+        }
+
+        @Test
+        @DisplayName("accepts every model with its own wiring")
+        void should_acceptEveryModel() {
+            assertThat(sut.normalize(OutputKind.SENSOR, vl53("hysteresis", 2, "pollMs", 200, "bus", 1, "address", 41)))
+                    .containsEntry("model", "vl53l0x").containsEntry("address", 41).containsEntry("hysteresis", 2);
+            assertThat(sut.normalize(OutputKind.SENSOR, vl53("model", "hc-sr04", "pinTrig", 5, "pinEcho", 6))).containsEntry("pinEcho", 6);
+            assertThat(sut.normalize(OutputKind.SENSOR, vl53("model", "ds18b20", "threshold", 40, "activeWhen", "above", "deviceId", "28-0123456789ab")))
+                    .containsEntry("deviceId", "28-0123456789ab");
+            assertThat(sut.normalize(OutputKind.SENSOR, vl53("model", "bme280", "quantity", "humidity", "threshold", 80, "address", 119)))
+                    .containsEntry("quantity", "humidity");
+        }
+
+        @Test
+        @DisplayName("a digital sensor rejects the measured keys")
+        void should_rejectMeasuredKeysOnDigital() {
+            assertReason(new HashMap<>(Map.of("threshold", 3)), "measured_key");
+            assertReason(new HashMap<>(Map.of("source", "digital", "model", "vl53l0x")), "measured_key");
+        }
+
+        @Test
+        @DisplayName("a measured sensor rejects the digital keys")
+        void should_rejectDigitalKeysOnMeasured() {
+            assertReason(vl53("pull", "up"), "digital_key");
+            assertReason(vl53("expander", "exp1", "channel", 2), "digital_key");
+        }
+
+        @Test
+        @DisplayName("needs a model, a threshold and activeWhen")
+        void should_requireModelThresholdActiveWhen() {
+            Map<String, Object> noModel = vl53();
+            noModel.remove("model");
+            assertReason(noModel, "model_required");
+            Map<String, Object> noThreshold = vl53();
+            noThreshold.remove("threshold");
+            assertReason(noThreshold, "threshold_required");
+            Map<String, Object> noActiveWhen = vl53();
+            noActiveWhen.remove("activeWhen");
+            assertReason(noActiveWhen, "active_when_required");
+        }
+
+        @Test
+        @DisplayName("accepts only the wiring keys of the model")
+        void should_rejectForeignWiringKeys() {
+            assertReason(vl53("pinTrig", 5), "wiring_key");
+            assertReason(vl53("model", "hc-sr04", "pinTrig", 5, "pinEcho", 6, "address", 41), "wiring_key");
+            assertReason(vl53("model", "ds18b20", "bus", 1), "wiring_key");
+        }
+
+        @Test
+        @DisplayName("an ultrasonic model needs two different pins")
+        void should_requireTrigAndEcho() {
+            assertReason(vl53("model", "hc-sr04", "pinTrig", 5), "trig_echo_pins_required");
+            assertReason(vl53("model", "hc-sr04", "pinTrig", 5, "pinEcho", 5), "trig_echo_pins_equal");
+        }
+
+        @Test
+        @DisplayName("checks the 1-Wire id and the I2C address against the model")
+        void should_checkDeviceIdAndAddress() {
+            assertReason(vl53("model", "ds18b20", "deviceId", "10-abc"), "device_id_invalid");
+            assertThatThrownBy(() -> sut.normalize(OutputKind.SENSOR, vl53("address", 48)))
+                    .isInstanceOfSatisfying(ApiException.class, ex -> assertThat(ex.getParams())
+                            .containsEntry("reason", "address_not_in_profile").containsEntry("addresses", "0x29"));
+        }
+
+        @Test
+        @DisplayName("resolves the quantity: required on multi-quantity models, measured by the model")
+        void should_resolveQuantity() {
+            assertReason(vl53("model", "bme280"), "quantity_required");
+            assertReason(vl53("quantity", "temperature"), "quantity_not_measured");
+        }
+
+        @Test
+        @DisplayName("keeps the threshold inside the range of the quantity")
+        void should_checkThresholdRange() {
+            assertThatThrownBy(() -> sut.normalize(OutputKind.SENSOR, vl53("threshold", 500)))
+                    .isInstanceOfSatisfying(ApiException.class, ex -> assertThat(ex.getParams())
+                            .containsEntry("reason", "threshold_out_of_range").containsEntry("min", "3")
+                            .containsEntry("max", "200").containsEntry("unit", "cm"));
+            assertThat(sut.normalize(OutputKind.SENSOR, vl53("model", "ds18b20", "threshold", -10.5))).containsEntry("threshold", -10.5);
+        }
+
+        @Test
+        @DisplayName("reports the I2C slot (with the profile's default address), the config pins and whether Port.pin is taken")
+        void should_exposeHelpers() {
+            assertThat(sut.i2cSlot(OutputKind.SENSOR, vl53())).hasValueSatisfying(slot -> assertThat(slot).containsExactly(1, 41));
+            assertThat(sut.i2cSlot(OutputKind.SENSOR, vl53("model", "bme280", "address", 119, "bus", 0)))
+                    .hasValueSatisfying(slot -> assertThat(slot).containsExactly(0, 119));
+            assertThat(sut.i2cSlot(OutputKind.SENSOR, vl53("model", "ds18b20"))).isEmpty();
+            assertThat(sut.i2cSlot(OutputKind.GPIO_EXPANDER, Map.of("address", 32))).hasValueSatisfying(slot -> assertThat(slot).containsExactly(1, 32));
+            assertThat(sut.i2cSlot(OutputKind.SENSOR, Map.of())).isEmpty();
+            assertThat(sut.configPins(OutputKind.SENSOR, vl53("model", "hc-sr04", "pinTrig", 5, "pinEcho", 6))).containsExactly(5, 6);
+            assertThat(sut.takesNoPortPin(OutputKind.SENSOR, vl53())).isTrue();
+            assertThat(sut.takesNoPortPin(OutputKind.SENSOR, vl53("model", "ds18b20"))).isFalse();
+            assertThat(sut.takesNoPortPin(OutputKind.SENSOR, Map.of())).isFalse();
+            assertThat(sut.takesNoPortPin(OutputKind.RELAY, Map.of("expander", "exp1"))).isTrue();
+        }
+    }
+
+    @Nested
     @DisplayName("relay on an expander (contract v3)")
     class RelayExpander {
 

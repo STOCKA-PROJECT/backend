@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import com.stocka.backend.modules.contract.BoardSpec;
 import com.stocka.backend.modules.contract.CatalogAction;
@@ -19,6 +20,7 @@ import com.stocka.backend.modules.contract.FixtureProfile;
 import com.stocka.backend.modules.contract.OutputCatalog;
 import com.stocka.backend.modules.contract.PinMode;
 import com.stocka.backend.modules.contract.OutputKind;
+import com.stocka.backend.modules.contract.SensorProfile;
 import com.stocka.backend.modules.timelines.show.ShowPackage.ShowAssets;
 import com.stocka.backend.modules.timelines.show.ShowPackage.ShowEvent;
 
@@ -39,6 +41,18 @@ public final class ShowValidator {
             "forward", new String[] {"maxTimeForward", "limitForward"},
             "reverse", new String[] {"maxTimeReverse", "limitReverse"});
     private static final int DMX_UNIVERSE = 512;
+    private static final List<String> SENSOR_PIN_KEYS = List.of("pinTrig", "pinEcho");
+    /** Keys only a {@code measured} sensor carries, and keys only a {@code digital} one carries. */
+    private static final List<String> SENSOR_MEASURED_KEYS = List.of("model", "quantity", "bus", "address", "pinTrig", "pinEcho",
+            "deviceId", "threshold", "activeWhen", "hysteresis", "pollMs");
+    private static final List<String> SENSOR_DIGITAL_KEYS = List.of("expander", "channel", "activeLow", "pull");
+    /** Wiring of a sensor profile → connection keys it accepts (the rest of SENSOR_WIRING_KEYS are extra). */
+    private static final Map<String, List<String>> SENSOR_WIRING = Map.of(
+            SensorProfile.WIRING_I2C, List.of("bus", "address"),
+            SensorProfile.WIRING_ONEWIRE, List.of("pin", "deviceId"),
+            SensorProfile.WIRING_TRIG_ECHO, SENSOR_PIN_KEYS);
+    private static final List<String> SENSOR_WIRING_KEYS = List.of("pin", "bus", "address", "deviceId", "pinTrig", "pinEcho");
+    private static final Pattern ONEWIRE_ID = Pattern.compile("^28-[0-9a-f]{12}$");
 
     private ShowValidator() {
     }
@@ -147,6 +161,8 @@ public final class ShowValidator {
             boolean hasPin = ShowNumbers.isNumber(entry.get("pin"));
             if (spec.pin() == PinMode.REQUIRED && !hasPin) {
                 issues.add(ShowIssue.error("E_CONFIG_INVALID", "El port «" + name + "» necessita «pin».", null, name));
+            } else if (spec.pin() == PinMode.OPTIONAL && isMeasured(entry)) {
+                // the wiring is checked by sensorProblems against the model
             } else if (spec.pin() == PinMode.OPTIONAL) {
                 if (entry.containsKey("expander")) {
                     if (hasPin) {
@@ -215,6 +231,11 @@ public final class ShowValidator {
                     issues.add(ShowIssue.error("E_MOTOR_OUTPUTS", "El motor «" + name + "»: " + why + ".", null, name));
                 }
             }
+            if (spec.kind() == OutputKind.SENSOR) {
+                for (String why : sensorProblems(entry, catalog)) {
+                    issues.add(ShowIssue.error("E_SENSOR_CONFIG", "El sensor «" + name + "»: " + why + ".", null, name));
+                }
+            }
         }
         for (Map.Entry<Long, List<String>> used : usedPins.entrySet()) {
             if (used.getValue().size() > 1) {
@@ -223,31 +244,43 @@ public final class ShowValidator {
             }
         }
 
-        // --- expanders: unique addresses, unique channels, GPIO 2/3 reserved --------------------
+        // --- I2C devices (expanders and measured sensors): unique addresses, GPIO 2/3 reserved ------
         Map<String, Map<String, Object>> expanders = new LinkedHashMap<>();
         hardware.forEach((n, e) -> {
             if ("gpio_expander".equals(e.get("kind"))) expanders.put(n, e);
         });
-        if (!expanders.isEmpty()) {
+        List<Object[]> i2cDevices = new ArrayList<>(); // {name, bus, address or null}
+        for (Map.Entry<String, Map<String, Object>> x : expanders.entrySet()) {
+            Object address = x.getValue().get("address");
+            i2cDevices.add(new Object[] {x.getKey(), busOf(x.getValue()), ShowNumbers.isNumber(address) ? ((Number) address).longValue() : null});
+        }
+        for (Map.Entry<String, Map<String, Object>> h : hardware.entrySet()) {
+            Map<String, Object> entry = h.getValue();
+            SensorProfile profile = isMeasured(entry) ? catalog.sensorProfile(entry.get("model") instanceof String m ? m : null).orElse(null) : null;
+            if (profile != null && SensorProfile.WIRING_I2C.equals(profile.wiring())
+                    && (!entry.containsKey("bus") || ShowNumbers.isNumber(entry.get("bus")))) {
+                Integer configured = ShowNumbers.isInteger(entry.get("address")) ? ((Number) entry.get("address")).intValue() : null;
+                i2cDevices.add(new Object[] {h.getKey(), busOf(entry), profile.effectiveAddress(configured).map(Integer::longValue).orElse(null)});
+            }
+        }
+        if (!i2cDevices.isEmpty()) {
             for (Integer pin : I2C_PINS) {
                 for (String label : usedPins.getOrDefault(pin.longValue(), List.of())) {
                     issues.add(ShowIssue.error("E_PIN_RESERVED", "El pin " + pin + " de «" + label
-                            + "» és I2C i queda reservat quan hi ha un expansor.", null, label));
+                            + "» és I2C i queda reservat quan hi ha un expansor o un sensor I2C.", null, label));
                 }
             }
             Map<String, List<String>> addresses = new LinkedHashMap<>();
-            for (Map.Entry<String, Map<String, Object>> x : expanders.entrySet()) {
-                Object address = x.getValue().get("address");
-                if (ShowNumbers.isNumber(address)) {
-                    long bus = ShowNumbers.isNumber(x.getValue().get("bus")) ? ((Number) x.getValue().get("bus")).longValue() : 1;
-                    addresses.computeIfAbsent(bus + ":" + ((Number) address).longValue(), k -> new ArrayList<>()).add(x.getKey());
+            for (Object[] device : i2cDevices) {
+                if (device[2] != null) {
+                    addresses.computeIfAbsent(device[1] + ":" + device[2], k -> new ArrayList<>()).add((String) device[0]);
                 }
             }
             for (Map.Entry<String, List<String>> a : addresses.entrySet()) {
                 if (a.getValue().size() > 1) {
                     String[] parts = a.getKey().split(":");
                     issues.add(ShowIssue.error("E_I2C_ADDRESS_DUPLICATE", "L'adreça I2C 0x" + Long.toHexString(Long.parseLong(parts[1]))
-                            + " del bus " + parts[0] + " la fan servir més d'un expansor: " + String.join(", ", a.getValue()) + "."));
+                            + " del bus " + parts[0] + " la fan servir més d'un dispositiu: " + String.join(", ", a.getValue()) + "."));
                 }
             }
         }
@@ -563,6 +596,97 @@ public final class ShowValidator {
         return problems;
     }
 
+    /** @return whether the entry is a sensor that reads a value ({@code source: measured}) */
+    static boolean isMeasured(Map<String, Object> entry) {
+        return "sensor".equals(entry.get("kind")) && "measured".equals(entry.getOrDefault("source", "digital"));
+    }
+
+    private static long busOf(Map<String, Object> entry) {
+        return ShowNumbers.isNumber(entry.get("bus")) ? ((Number) entry.get("bus")).longValue() : 1;
+    }
+
+    /**
+     * Problems of a sensor according to its {@code source} (and, when measured, its model), in Catalan;
+     * empty when coherent. Port of {@code sensor_problems} in {@code contract/validate.py}.
+     *
+     * @param entry   hardware entry of a sensor
+     * @param catalog output catalog (sensor profiles)
+     * @return the problems
+     */
+    static List<String> sensorProblems(Map<String, Object> entry, OutputCatalog catalog) {
+        List<String> problems = new ArrayList<>();
+        if (!isMeasured(entry)) {
+            List<String> extra = SENSOR_MEASURED_KEYS.stream().filter(entry::containsKey).map(k -> "«" + k + "»").toList();
+            if (!extra.isEmpty()) {
+                problems.add(String.join(", ", extra) + " només té sentit amb source measured");
+            }
+            return problems;
+        }
+        for (String key : SENSOR_DIGITAL_KEYS) {
+            if (entry.containsKey(key)) problems.add("«" + key + "» és d'un sensor digital");
+        }
+        Object model = entry.get("model");
+        SensorProfile profile = catalog.sensorProfile(model instanceof String m ? m : null).orElse(null);
+        if (profile == null) {
+            problems.add("necessita un «model» de profiles.sensor");
+            return problems;
+        }
+        List<String> allowed = SENSOR_WIRING.getOrDefault(profile.wiring(), List.of());
+        for (String key : SENSOR_WIRING_KEYS) {
+            if (entry.containsKey(key) && !allowed.contains(key)) {
+                problems.add("«" + key + "» no correspon al cablejat " + profile.wiring() + " del model " + model);
+            }
+        }
+        switch (profile.wiring()) {
+            case SensorProfile.WIRING_ONEWIRE -> {
+                if (!entry.containsKey("pin")) problems.add("necessita «pin» (la línia DATA del 1-Wire)");
+                if (entry.containsKey("deviceId") && !(entry.get("deviceId") instanceof String id && ONEWIRE_ID.matcher(id).matches())) {
+                    problems.add("«deviceId» ha de ser 28- seguit de 12 dígits hexadecimals");
+                }
+            }
+            case SensorProfile.WIRING_TRIG_ECHO -> {
+                if (!entry.containsKey("pinTrig") || !entry.containsKey("pinEcho")) {
+                    problems.add("necessita «pinTrig» i «pinEcho»");
+                } else if (sameValue(entry.get("pinTrig"), entry.get("pinEcho"))) {
+                    problems.add("«pinTrig» i «pinEcho» han de ser diferents");
+                }
+            }
+            case SensorProfile.WIRING_I2C -> {
+                if (entry.containsKey("address") && !profile.addresses().isEmpty()
+                        && !(ShowNumbers.isInteger(entry.get("address")) && profile.addresses().contains(((Number) entry.get("address")).intValue()))) {
+                    problems.add("el model " + model + " només admet l'adreça I2C "
+                            + String.join(" o ", profile.addresses().stream().map(a -> "0x" + Integer.toHexString(a)).toList()));
+                }
+            }
+            default -> {
+            }
+        }
+        Object requested = entry.get("quantity");
+        String quantity = profile.resolveQuantity(requested instanceof String q ? q : null).orElse(null);
+        String measures = String.join(", ", profile.quantities().keySet());
+        if (quantity == null || (requested != null && !(requested instanceof String))) {
+            quantity = null;
+            problems.add(entry.containsKey("quantity")
+                    ? "el model " + model + " no mesura " + requested + " (mesura " + measures + ")"
+                    : "necessita «quantity»: el model " + model + " mesura " + measures);
+        }
+        Object threshold = entry.get("threshold");
+        if (!ShowNumbers.isNumber(threshold)) {
+            problems.add("necessita «threshold»");
+        } else if (quantity != null) {
+            SensorProfile.Quantity range = profile.quantities().get(quantity);
+            BigDecimal value = new BigDecimal(ShowNumbers.normalize((Number) threshold).toString());
+            if ((range.min() != null && value.compareTo(range.min()) < 0) || (range.max() != null && value.compareTo(range.max()) > 0)) {
+                problems.add("«threshold» ha d'estar entre " + ShowNumbers.toJsString(range.min()) + " i "
+                        + ShowNumbers.toJsString(range.max()) + " " + range.unit());
+            }
+        }
+        if (!"above".equals(entry.get("activeWhen")) && !"below".equals(entry.get("activeWhen"))) {
+            problems.add("necessita «activeWhen» (above o below)");
+        }
+        return problems;
+    }
+
     private static boolean sameValue(Object a, Object b) {
         return ShowNumbers.isNumber(a) && ShowNumbers.isNumber(b) && ((Number) a).doubleValue() == ((Number) b).doubleValue();
     }
@@ -574,6 +698,13 @@ public final class ShowValidator {
         }
         if ("motor".equals(entry.get("kind"))) {
             for (String key : MOTOR_PIN_KEYS) {
+                if (ShowNumbers.isNumber(entry.get(key))) {
+                    out.add(Map.entry(name + "." + key, ((Number) entry.get(key)).longValue()));
+                }
+            }
+        }
+        if ("sensor".equals(entry.get("kind"))) {
+            for (String key : SENSOR_PIN_KEYS) {
                 if (ShowNumbers.isNumber(entry.get(key))) {
                     out.add(Map.entry(name + "." + key, ((Number) entry.get(key)).longValue()));
                 }

@@ -84,6 +84,10 @@ time) and `stop`. `maxTimeForward`/`maxTimeReverse` are hard cuts; a clip longer
 that direction has a limit sensor (`limitForward`/`limitReverse`, naming a `sensor` port), then only a warning.
 Sensors (`sensor`) are infrastructure inputs (pin or expander + channel) with no timeline actions; `onActive`
 says what the player does when one fires: `none` (limit switch), `play` (start button), `stop_show`, `panic`.
+A sensor is `digital` by default; with `source: measured` it reads a value through a `model` of
+`profiles.sensor` (distance in cm with `vl53l0x` or `hc-sr04`, temperature in °C with `ds18b20`, temperature,
+humidity or pressure with `bme280` + `quantity`) and is active when the value is ≤ `threshold` (`activeWhen: below`)
+or ≥ it (`above`), released past `hysteresis`. It is used exactly like a digital one (limit switch or `onActive`).
 
 ## Limits
 

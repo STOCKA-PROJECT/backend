@@ -130,6 +130,8 @@ public final class ErrorCodes {
     public static final String PORTS_SENSOR_PULL_ON_EXPANDER = "ports.sensor_pull_on_expander";
     public static final String PORTS_SENSOR_NOT_FOUND = "ports.sensor_not_found";
     public static final String PORTS_SENSOR_IN_USE = "ports.sensor_in_use";
+    public static final String PORTS_SENSOR_CONFIG_INVALID = "ports.sensor_config_invalid";
+    public static final String PORTS_I2C_ADDRESS_CONFLICT = "ports.i2c_address_conflict";
     public static final String PORTS_EXPANDER_NOT_FOUND = "ports.expander_not_found";
     public static final String PORTS_EXPANDER_CHANNEL_CONFLICT = "ports.expander_channel_conflict";
     public static final String PORTS_EXPANDER_ADDRESS_CONFLICT = "ports.expander_address_conflict";

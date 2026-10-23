@@ -150,7 +150,14 @@ clip length, meant as static values of the piece-type action. Motors are H-bridg
 deleting one in use is `ports.sensor_in_use`, renaming cascades), `lockOnTimeout`, `switchDelayMs`; actions `forward`,
 `reverse` (time = clip length) and `stop`. Sensors (infrastructure) take `pin` or `expander` + `channel` like relays
 (`ports.pin_or_expander`), `activeLow` (default true), `pull` (no `down` on an expander), `debounceMs` and `onActive`
-`none|play|stop_show|panic`; expander channels are shared by relays, motors and sensors. V26 converts old motors
+`none|play|stop_show|panic`; expander channels are shared by relays, motors and sensors. A sensor with
+`source: measured` (2026-10-23, no migration) instead reads a value through a `model` of `profiles.sensor`
+(`SensorProfile`: `wiring` `i2c`/`onewire`/`trig_echo`, `addresses`, `quantities` with unit and range, `pollMs`):
+`vl53l0x`, `hc-sr04` (`pinTrig` + `pinEcho`), `ds18b20` (`Port.pin` + optional `deviceId`), `bme280` (`quantity`);
+`threshold` inside the quantity range, `activeWhen` `above|below`, `hysteresis`, `pollMs`; any inconsistency is
+`ports.sensor_config_invalid` with `params.reason`. I2C sensors share the bus with the expanders: one device per
+`bus:address` (the profile's first address by default, `ports.i2c_address_conflict`) and GPIO 2/3 reserved while any
+I2C device exists. V26 converts old motors
 (`pinR`/`pinL`/`sensorPin`/`downTime`/`maxUpTime` → new keys + a `<motor>-límit` sensor) and renames the type actions
 `start_up`/`start_down` to `forward`/`reverse`. Moving heads (`moving_head`: `profile`
 `varytec-hero-wash-712z`, `address` 1–512) must fit `profiles.moving_head.<id>.channels` inside the 512-channel

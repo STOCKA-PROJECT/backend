@@ -39,6 +39,7 @@ public class OutputCatalog {
     private final Map<OutputKind, CatalogKind> kinds = new EnumMap<>(OutputKind.class);
     private final Map<String, BoardSpec> boards = new LinkedHashMap<>();
     private final Map<String, FixtureProfile> movingHeadProfiles = new LinkedHashMap<>();
+    private final Map<String, SensorProfile> sensorProfiles = new LinkedHashMap<>();
 
     public OutputCatalog() {
         this(new ClassPathResource(RESOURCE));
@@ -62,6 +63,7 @@ public class OutputCatalog {
         parseKinds(raw.path("kinds"));
         parseBoards(raw.path("boards"));
         parseProfiles(raw.path("profiles").path("moving_head"));
+        parseSensorProfiles(raw.path("profiles").path("sensor"));
         for (OutputKind kind : OutputKind.values()) {
             if (!kinds.containsKey(kind)) {
                 throw new IllegalStateException(RESOURCE + " no define el kind " + kind.catalogId());
@@ -132,6 +134,21 @@ public class OutputCatalog {
     /** @return every moving head profile, by id */
     public Map<String, FixtureProfile> movingHeadProfiles() {
         return Collections.unmodifiableMap(movingHeadProfiles);
+    }
+
+    /**
+     * A measured-sensor model.
+     *
+     * @param id model id as the {@code model} config key names it
+     * @return the profile, or empty when the catalog does not describe it
+     */
+    public Optional<SensorProfile> sensorProfile(String id) {
+        return Optional.ofNullable(id == null ? null : sensorProfiles.get(id));
+    }
+
+    /** @return every measured-sensor model, by id */
+    public Map<String, SensorProfile> sensorProfiles() {
+        return Collections.unmodifiableMap(sensorProfiles);
     }
 
     /**
@@ -269,6 +286,30 @@ public class OutputCatalog {
                     p.path("tilt").path("max").asDouble(270),
                     p.path("zoom").path("min").asDouble(0),
                     p.path("zoom").path("max").asDouble(100)));
+        }
+    }
+
+    private void parseSensorProfiles(JsonNode node) {
+        for (Map.Entry<String, JsonNode> entry : node.properties()) {
+            JsonNode p = entry.getValue();
+            List<Integer> addresses = new ArrayList<>();
+            for (JsonNode a : p.path("addresses")) {
+                addresses.add(a.asInt());
+            }
+            Map<String, SensorProfile.Quantity> quantities = new LinkedHashMap<>();
+            for (Map.Entry<String, JsonNode> q : p.path("quantities").properties()) {
+                quantities.put(q.getKey(), new SensorProfile.Quantity(
+                        q.getValue().path("unit").asText(""),
+                        decimalOrNull(q.getValue().path("min")),
+                        decimalOrNull(q.getValue().path("max"))));
+            }
+            sensorProfiles.put(entry.getKey(), new SensorProfile(
+                    entry.getKey(),
+                    p.path("name").asText(entry.getKey()),
+                    p.path("wiring").asText(),
+                    Collections.unmodifiableList(addresses),
+                    Collections.unmodifiableMap(quantities),
+                    p.path("pollMs").asInt(1000)));
         }
     }
 

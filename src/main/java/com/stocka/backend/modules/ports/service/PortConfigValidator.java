@@ -6,7 +6,9 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -17,6 +19,7 @@ import com.stocka.backend.modules.contract.CatalogParam;
 import com.stocka.backend.modules.contract.CatalogType;
 import com.stocka.backend.modules.contract.OutputCatalog;
 import com.stocka.backend.modules.contract.OutputKind;
+import com.stocka.backend.modules.contract.SensorProfile;
 
 /**
  * Validates and normalizes a port's kind-specific config against the output catalog.
@@ -26,7 +29,10 @@ import com.stocka.backend.modules.contract.OutputKind;
  * {@code string} a string), bounds respected; relays and sensors carry {@code channel} only
  * together with {@code expander}; a relay or motor on an expander takes the board's polarity (no
  * {@code activeLow}), a sensor on an expander cannot pull down; a motor takes both native outputs or
- * the expander with both channels, all distinct. {@code pin} inside the config is
+ * the expander with both channels, all distinct. A sensor is {@code digital} (the rules above) or
+ * {@code measured}: then it names a {@code model} of {@code profiles.sensor}, takes only the wiring keys
+ * of that model, a {@code threshold} inside the range of its quantity and an {@code activeWhen}
+ * ({@code ports.sensor_config_invalid} with {@code params.reason}). {@code pin} inside the config is
  * ignored because it lives in {@code Port.pin}; whether a relay needs a pin or an expander is decided
  * by {@link PortService}, which sees both. Cross-port rules (strip existence, segment range, pin
  * collisions, expander channels, DMX addresses) are checked by {@link PortService} too.
@@ -47,6 +53,30 @@ public class PortConfigValidator {
     public static final String CHANNEL_KEY = "channel";
     /** Relay and expander config key: the board switches on at low level. */
     public static final String ACTIVE_LOW_KEY = "activeLow";
+    /** Sensor config key: {@code digital} (default) or {@code measured}. */
+    public static final String SOURCE_KEY = "source";
+    /** Value of {@link #SOURCE_KEY} for sensors that read a value through a model of {@code profiles.sensor}. */
+    public static final String SOURCE_MEASURED = "measured";
+    /** Measured-sensor config key naming its model. */
+    public static final String MODEL_KEY = "model";
+    /** Measured-sensor config key: I2C bus. */
+    public static final String BUS_KEY = "bus";
+    /** Measured-sensor (and expander) config key: I2C address. */
+    public static final String ADDRESS_KEY = "address";
+    /** Measured-sensor config keys holding the two GPIOs of a {@code trig_echo} model. */
+    public static final List<String> SENSOR_PIN_KEYS = List.of("pinTrig", "pinEcho");
+    /** Config keys only a measured sensor may carry. */
+    public static final List<String> SENSOR_MEASURED_KEYS = List.of(MODEL_KEY, "quantity", BUS_KEY, ADDRESS_KEY,
+            "pinTrig", "pinEcho", "deviceId", "threshold", "activeWhen", "hysteresis", "pollMs");
+    /** Config keys only a digital sensor may carry. */
+    public static final List<String> SENSOR_DIGITAL_KEYS = List.of(EXPANDER_KEY, CHANNEL_KEY, ACTIVE_LOW_KEY, PULL_KEY);
+    /** Connection keys of each wiring; a measured sensor may only carry those of its model ({@code pin} lives in the port). */
+    private static final Map<String, List<String>> WIRING_KEYS = Map.of(
+            SensorProfile.WIRING_I2C, List.of(BUS_KEY, ADDRESS_KEY),
+            SensorProfile.WIRING_ONEWIRE, List.of("deviceId"),
+            SensorProfile.WIRING_TRIG_ECHO, SENSOR_PIN_KEYS);
+    private static final List<String> ALL_WIRING_KEYS = List.of(BUS_KEY, ADDRESS_KEY, "deviceId", "pinTrig", "pinEcho");
+    private static final Pattern ONEWIRE_ID = Pattern.compile("^28-[0-9a-f]{12}$");
 
     private final OutputCatalog catalog;
 
@@ -86,6 +116,9 @@ public class PortConfigValidator {
             out.put(field.name(), coerce(field, value));
         }
 
+        if (kind == OutputKind.SENSOR) {
+            validateSensorSource(out);
+        }
         if (kind == OutputKind.RELAY || kind == OutputKind.SENSOR) {
             boolean onExpander = out.containsKey(EXPANDER_KEY);
             if (!onExpander && out.containsKey(CHANNEL_KEY)) {
@@ -109,7 +142,69 @@ public class PortConfigValidator {
     }
 
     /**
-     * Pins declared inside a config (today only the two native motor outputs).
+     * Whether a sensor config reads a value through a model ({@code source: measured}).
+     *
+     * @param kind   output kind
+     * @param config normalized config
+     * @return {@code true} for measured sensors
+     */
+    public static boolean isMeasured(OutputKind kind, Map<String, Object> config) {
+        return kind == OutputKind.SENSOR && config != null && SOURCE_MEASURED.equals(config.get(SOURCE_KEY));
+    }
+
+    /**
+     * Model of a measured sensor.
+     *
+     * @param kind   output kind
+     * @param config normalized config
+     * @return the profile, or empty when the port is not a measured sensor of a known model
+     */
+    public Optional<SensorProfile> sensorProfile(OutputKind kind, Map<String, Object> config) {
+        if (!isMeasured(kind, config)) {
+            return Optional.empty();
+        }
+        return catalog.sensorProfile(config.get(MODEL_KEY) instanceof String s ? s : null);
+    }
+
+    /**
+     * The I2C slot ({@code bus:address}) a port occupies: expanders and measured sensors of an I2C model.
+     *
+     * @param kind   output kind
+     * @param config normalized config
+     * @return {@code [bus, address]}, or empty when the port is not on the I2C bus
+     */
+    public Optional<int[]> i2cSlot(OutputKind kind, Map<String, Object> config) {
+        if (config == null) {
+            return Optional.empty();
+        }
+        int bus = config.get(BUS_KEY) instanceof Number n ? n.intValue() : 1;
+        if (kind == OutputKind.GPIO_EXPANDER) {
+            return config.get(ADDRESS_KEY) instanceof Number a ? Optional.of(new int[] {bus, a.intValue()}) : Optional.empty();
+        }
+        Integer configured = config.get(ADDRESS_KEY) instanceof Number a ? a.intValue() : null;
+        return sensorProfile(kind, config)
+                .flatMap(profile -> profile.effectiveAddress(configured))
+                .map(address -> new int[] {bus, address});
+    }
+
+    /**
+     * Whether a port of {@code kind} with {@code config} carries no pin of its own in {@code Port.pin}:
+     * relays and sensors on an expander, and measured sensors whose model is not wired to one GPIO.
+     *
+     * @param kind   output kind
+     * @param config normalized config
+     * @return {@code true} when {@code Port.pin} must stay empty
+     */
+    public boolean takesNoPortPin(OutputKind kind, Map<String, Object> config) {
+        if (config != null && config.containsKey(EXPANDER_KEY)) {
+            return true;
+        }
+        return sensorProfile(kind, config).map(p -> !SensorProfile.WIRING_ONEWIRE.equals(p.wiring())).orElse(false);
+    }
+
+    /**
+     * Pins declared inside a config: the two native motor outputs and the two GPIOs of a
+     * {@code trig_echo} sensor.
      *
      * @param kind   output kind
      * @param config normalized config
@@ -117,6 +212,13 @@ public class PortConfigValidator {
      */
     public List<Integer> configPins(OutputKind kind, Map<String, Object> config) {
         List<Integer> pins = new ArrayList<>();
+        if (kind == OutputKind.SENSOR && config != null) {
+            for (String key : SENSOR_PIN_KEYS) {
+                if (config.get(key) instanceof Number n) {
+                    pins.add(n.intValue());
+                }
+            }
+        }
         if (kind == OutputKind.MOTOR && config != null) {
             for (String key : MOTOR_PIN_KEYS) {
                 Object v = config.get(key);
@@ -162,6 +264,82 @@ public class PortConfigValidator {
                 throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_MOTOR_PINS_NOT_DISTINCT);
             }
         }
+    }
+
+    /**
+     * A digital sensor carries none of the measured keys; a measured one none of the digital keys, a
+     * known model, only the wiring keys of that model, a threshold inside the range of the watched
+     * quantity and an {@code activeWhen}. Whether a 1-Wire model has its pin is checked by
+     * {@link PortService}, which sees {@code Port.pin}.
+     */
+    private void validateSensorSource(Map<String, Object> out) {
+        if (!SOURCE_MEASURED.equals(out.get(SOURCE_KEY))) {
+            for (String key : SENSOR_MEASURED_KEYS) {
+                if (out.containsKey(key)) {
+                    throw sensorConfig("measured_key", params("key", key));
+                }
+            }
+            return;
+        }
+        for (String key : SENSOR_DIGITAL_KEYS) {
+            if (out.containsKey(key)) {
+                throw sensorConfig("digital_key", params("key", key));
+            }
+        }
+        SensorProfile profile = catalog.sensorProfile(out.get(MODEL_KEY) instanceof String s ? s : null)
+                .orElseThrow(() -> sensorConfig("model_required", new LinkedHashMap<>()));
+        List<String> allowed = WIRING_KEYS.getOrDefault(profile.wiring(), List.of());
+        for (String key : ALL_WIRING_KEYS) {
+            if (out.containsKey(key) && !allowed.contains(key)) {
+                Map<String, Object> p = params("key", key);
+                p.put("wiring", profile.wiring());
+                throw sensorConfig("wiring_key", p);
+            }
+        }
+        if (SensorProfile.WIRING_TRIG_ECHO.equals(profile.wiring())) {
+            if (!out.containsKey("pinTrig") || !out.containsKey("pinEcho")) {
+                throw sensorConfig("trig_echo_pins_required", new LinkedHashMap<>());
+            }
+            if (out.get("pinTrig").equals(out.get("pinEcho"))) {
+                throw sensorConfig("trig_echo_pins_equal", new LinkedHashMap<>());
+            }
+        }
+        if (out.get("deviceId") instanceof String id && !ONEWIRE_ID.matcher(id).matches()) {
+            throw sensorConfig("device_id_invalid", params("deviceId", id));
+        }
+        if (out.get(ADDRESS_KEY) instanceof Number a && !profile.addresses().isEmpty() && !profile.addresses().contains(a.intValue())) {
+            Map<String, Object> p = params("address", a.intValue());
+            p.put("addresses", String.join(", ", profile.addresses().stream().map(x -> String.format("0x%x", x)).toList()));
+            throw sensorConfig("address_not_in_profile", p);
+        }
+        String requested = out.get("quantity") instanceof String q ? q : null;
+        String quantity = profile.resolveQuantity(requested).orElseThrow(() -> {
+            Map<String, Object> p = params("quantities", String.join(", ", profile.quantities().keySet()));
+            if (requested != null) {
+                p.put("quantity", requested);
+            }
+            return sensorConfig(requested == null ? "quantity_required" : "quantity_not_measured", p);
+        });
+        if (!(out.get("threshold") instanceof Number threshold)) {
+            throw sensorConfig("threshold_required", new LinkedHashMap<>());
+        }
+        SensorProfile.Quantity range = profile.quantities().get(quantity);
+        BigDecimal value = new BigDecimal(threshold.toString());
+        if ((range.min() != null && value.compareTo(range.min()) < 0) || (range.max() != null && value.compareTo(range.max()) > 0)) {
+            Map<String, Object> p = params("min", range.min() == null ? "-" : range.min().stripTrailingZeros().toPlainString());
+            p.put("max", range.max() == null ? "-" : range.max().stripTrailingZeros().toPlainString());
+            p.put("unit", range.unit());
+            throw sensorConfig("threshold_out_of_range", p);
+        }
+        if (!out.containsKey("activeWhen")) {
+            throw sensorConfig("active_when_required", new LinkedHashMap<>());
+        }
+    }
+
+    private static ApiException sensorConfig(String reason, Map<String, Object> extra) {
+        Map<String, Object> p = params("reason", reason);
+        p.putAll(extra);
+        return new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_SENSOR_CONFIG_INVALID, p);
     }
 
     private static ApiException motorOutputs(String reason) {

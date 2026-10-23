@@ -22,6 +22,7 @@ import com.stocka.backend.modules.contract.CatalogKind;
 import com.stocka.backend.modules.contract.FixtureProfile;
 import com.stocka.backend.modules.contract.OutputCatalog;
 import com.stocka.backend.modules.contract.OutputKind;
+import com.stocka.backend.modules.contract.SensorProfile;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.service.OrganizationService;
 import com.stocka.backend.modules.piecetypes.dto.ActionParameterDto;
@@ -53,9 +54,11 @@ import com.stocka.backend.modules.ports.repository.PortRepository;
  *       the organization and fit inside its length.</li>
  * </ol>
  * Expanders ({@code gpio_expander}) follow the strip/segment pattern: a relay on an expander names an
- * existing expander of the organization, each channel takes one relay, each I2C address one expander
- * per bus, renaming an expander cascades to its relays and deleting one with relays is refused. While
- * an expander exists, GPIO 2 and 3 (I2C) cannot be used by any port. Moving heads ({@code moving_head})
+ * existing expander of the organization, each channel takes one relay, each I2C address one device
+ * (expander or measured sensor of an I2C model, at its profile's default address when none is given) per
+ * bus, renaming an expander cascades to its relays and deleting one with relays is refused. While an I2C
+ * device exists, GPIO 2 and 3 (I2C) cannot be used by any port. A measured sensor of a 1-Wire model needs
+ * {@code Port.pin}; the other models take no pin ({@code ports.sensor_config_invalid}). Moving heads ({@code moving_head})
  * must fit their profile's channel count inside the 512-channel universe without overlapping each other.
  * Renaming a strip cascades to the segments that reference it; shortening a strip below one of
  * its segments, or deleting a strip with segments, is refused. The legacy typed-parameter list is
@@ -73,7 +76,6 @@ public class PortService {
     private static final String CHANNEL_KEY = "channel";
     private static final String EXPANDER_KEY = PortConfigValidator.EXPANDER_KEY;
     private static final String ADDRESS_KEY = "address";
-    private static final String BUS_KEY = "bus";
     private static final String PROFILE_KEY = "profile";
     private static final int DMX_UNIVERSE = 512;
     private static final List<Integer> I2C_PINS = List.of(2, 3);
@@ -190,6 +192,7 @@ public class PortService {
         ensureUniqueName(org, name, null);
         Map<String, Object> config = configValidator.normalize(kind, dto.getConfig());
         Integer pin = validatePinForKind(spec, dto.getPin(), config);
+        validateSensorPin(kind, pin, config);
         validateStripPin(kind, pin, config);
         ensurePinsFree(org, ownPins(kind, pin, config), null);
         validateSegment(org, kind, config);
@@ -251,8 +254,9 @@ public class PortService {
         Integer newPin = port.getPin();
         if (dto.getPin() != null || dto.getConfig() != null) {
             // A relay moving to an expander drops its pin; one moving back to a GPIO needs the new pin in the same call.
-            Integer requested = dto.getPin() != null ? dto.getPin() : (config.containsKey(EXPANDER_KEY) ? null : port.getPin());
+            Integer requested = dto.getPin() != null ? dto.getPin() : (configValidator.takesNoPortPin(kind, config) ? null : port.getPin());
             newPin = validatePinForKind(spec, requested, config);
+            validateSensorPin(kind, newPin, config);
             validateStripPin(kind, newPin, config);
             ensurePinsFree(org, ownPins(kind, newPin, config), port.getId());
         }
@@ -265,7 +269,7 @@ public class PortService {
             validateMovingHead(org, kind, config, port.getId());
             validateMotorLimits(org, kind, config);
         } else if (dto.getPin() != null) {
-            ensureNotI2cPinWithExpanders(org, kind, newPin, port.getId());
+            ensureNotI2cPinWithI2cDevices(org, newPin, port.getId());
         }
         List<ActionParameterDto> parameters = dto.getParameters() != null ? normalizeParameters(dto.getParameters()) : null;
 
@@ -391,6 +395,13 @@ public class PortService {
                 return null;
             }
             case OPTIONAL -> {
+                if (PortConfigValidator.isMeasured(spec.kind(), config)) {
+                    // the model decides: validateSensorPin
+                    if (pin != null) {
+                        validateGpio(pin);
+                    }
+                    return pin;
+                }
                 boolean onExpander = config != null && config.containsKey(EXPANDER_KEY);
                 if (onExpander && pin != null) {
                     throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_PIN_OR_EXPANDER,
@@ -414,6 +425,24 @@ public class PortService {
                 return pin;
             }
         }
+    }
+
+    /**
+     * A measured sensor of a 1-Wire model needs its data GPIO in {@code Port.pin}; the I2C and
+     * TRIG/ECHO models carry their connection in the config and take no pin.
+     */
+    private void validateSensorPin(OutputKind kind, Integer pin, Map<String, Object> config) {
+        configValidator.sensorProfile(kind, config).ifPresent(profile -> {
+            boolean oneWire = SensorProfile.WIRING_ONEWIRE.equals(profile.wiring());
+            if (oneWire && pin == null) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_SENSOR_CONFIG_INVALID, params("reason", "pin_required"));
+            }
+            if (!oneWire && pin != null) {
+                Map<String, Object> p = params("reason", "pin_not_allowed");
+                p.put("wiring", profile.wiring());
+                throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_SENSOR_CONFIG_INVALID, p);
+            }
+        });
     }
 
     private void validateGpio(int pin) {
@@ -598,22 +627,21 @@ public class PortService {
     private void validateExpanderRules(Organization org, OutputKind kind, Integer pin, Map<String, Object> config, Integer excludeId) {
         List<Port> others = portRepository.findByOrganizationOrderByPositionAscIdAsc(org).stream()
                 .filter(p -> excludeId == null || !excludeId.equals(p.getId())).toList();
-        boolean anyExpander = kind == OutputKind.GPIO_EXPANDER || others.stream().anyMatch(p -> p.getKind() == OutputKind.GPIO_EXPANDER);
-        if (kind == OutputKind.GPIO_EXPANDER) {
-            int bus = ((Number) config.getOrDefault(BUS_KEY, 1)).intValue();
-            int address = ((Number) config.get(ADDRESS_KEY)).intValue();
+        Optional<int[]> slot = configValidator.i2cSlot(kind, config);
+        boolean anyI2c = slot.isPresent() || others.stream().anyMatch(p -> configValidator.i2cSlot(p.getKind(), configOf(p)).isPresent());
+        if (slot.isPresent()) {
+            int bus = slot.get()[0];
+            int address = slot.get()[1];
             for (Port other : others) {
-                if (other.getKind() != OutputKind.GPIO_EXPANDER) {
-                    continue;
-                }
-                Map<String, Object> cfg = configOf(other);
-                int otherBus = ((Number) cfg.getOrDefault(BUS_KEY, 1)).intValue();
-                if (otherBus == bus && cfg.get(ADDRESS_KEY) instanceof Number n && n.intValue() == address) {
+                Optional<int[]> otherSlot = configValidator.i2cSlot(other.getKind(), configOf(other));
+                if (otherSlot.isPresent() && otherSlot.get()[0] == bus && otherSlot.get()[1] == address) {
                     Map<String, Object> p = new LinkedHashMap<>();
                     p.put("address", address);
                     p.put("bus", bus);
                     p.put("port", other.getName());
-                    throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PORTS_EXPANDER_ADDRESS_CONFLICT, p);
+                    boolean bothExpanders = kind == OutputKind.GPIO_EXPANDER && other.getKind() == OutputKind.GPIO_EXPANDER;
+                    throw new ApiException(HttpStatus.CONFLICT,
+                            bothExpanders ? ErrorCodes.PORTS_EXPANDER_ADDRESS_CONFLICT : ErrorCodes.PORTS_I2C_ADDRESS_CONFLICT, p);
                 }
             }
             // The I2C bus takes GPIO 2 and 3 from now on: no existing port may sit there.
@@ -650,7 +678,7 @@ public class PortService {
                 }
             }
         }
-        if (anyExpander) {
+        if (anyI2c) {
             List<Integer> own = new ArrayList<>();
             if (pin != null) {
                 own.add(pin);
@@ -666,13 +694,14 @@ public class PortService {
         }
     }
 
-    private void ensureNotI2cPinWithExpanders(Organization org, OutputKind kind, Integer pin, Integer excludeId) {
+    private void ensureNotI2cPinWithI2cDevices(Organization org, Integer pin, Integer excludeId) {
         if (pin == null || !I2C_PINS.contains(pin)) {
             return;
         }
-        boolean anyExpander = portRepository.findByOrganizationOrderByPositionAscIdAsc(org).stream()
-                .anyMatch(p -> p.getKind() == OutputKind.GPIO_EXPANDER && (excludeId == null || !excludeId.equals(p.getId())));
-        if (anyExpander) {
+        boolean anyI2c = portRepository.findByOrganizationOrderByPositionAscIdAsc(org).stream()
+                .filter(p -> excludeId == null || !excludeId.equals(p.getId()))
+                .anyMatch(p -> configValidator.i2cSlot(p.getKind(), configOf(p)).isPresent());
+        if (anyI2c) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_I2C_PIN_RESERVED, params("pin", pin));
         }
     }

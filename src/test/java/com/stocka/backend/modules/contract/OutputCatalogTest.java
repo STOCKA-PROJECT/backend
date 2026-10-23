@@ -150,6 +150,31 @@ class OutputCatalogTest {
         }
 
         @Test
+        @DisplayName("describes the measured-sensor models (wiring, addresses, quantities) and their helpers")
+        void should_exposeSensorProfiles() {
+            assertThat(catalog.sensorProfiles()).containsOnlyKeys("vl53l0x", "hc-sr04", "ds18b20", "bme280");
+            SensorProfile vl53 = catalog.sensorProfile("vl53l0x").orElseThrow();
+            assertThat(vl53.wiring()).isEqualTo(SensorProfile.WIRING_I2C);
+            assertThat(vl53.addresses()).containsExactly(41);
+            assertThat(vl53.pollMs()).isEqualTo(100);
+            assertThat(vl53.quantities().get("distance").unit()).isEqualTo("cm");
+            assertThat(vl53.quantities().get("distance").max()).isEqualByComparingTo(BigDecimal.valueOf(200));
+            assertThat(vl53.resolveQuantity(null)).contains("distance");
+            assertThat(vl53.resolveQuantity("temperature")).isEmpty();
+            assertThat(vl53.effectiveAddress(null)).contains(41);
+            SensorProfile bme = catalog.sensorProfile("bme280").orElseThrow();
+            assertThat(bme.quantities().keySet()).containsExactly("temperature", "humidity", "pressure");
+            assertThat(bme.resolveQuantity(null)).isEmpty();
+            assertThat(bme.resolveQuantity("pressure")).contains("pressure");
+            assertThat(bme.effectiveAddress(119)).contains(119);
+            assertThat(catalog.sensorProfile("ds18b20").orElseThrow().effectiveAddress(null)).isEmpty();
+            assertThat(catalog.sensorProfile("hc-sr04").orElseThrow().wiring()).isEqualTo(SensorProfile.WIRING_TRIG_ECHO);
+            assertThat(catalog.sensorProfile("bmp180")).isEmpty();
+            assertThat(catalog.sensorProfile(null)).isEmpty();
+            assertThat(catalog.configSchema(OutputKind.SENSOR).get("model").values()).containsExactlyElementsOf(catalog.sensorProfiles().keySet());
+        }
+
+        @Test
         @DisplayName("exposes the config schema with required keys, bounds, refs and defaults")
         void should_exposeConfigSchema() {
             Map<String, CatalogParam> strip = catalog.configSchema(OutputKind.LED_STRIP);

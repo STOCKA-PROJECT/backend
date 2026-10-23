@@ -556,6 +556,94 @@ class ShowValidatorTest {
     }
 
     @Nested
+    @DisplayName("measured sensors")
+    class MeasuredSensors {
+
+        private void measured(String name, Object... kv) {
+            port(name, "kind", "sensor", "source", "measured", "onActive", "panic");
+            hardware.get(name).putAll(Belen2026Fixture.config(kv));
+        }
+
+        private List<String> messages() {
+            return validate().stream().map(ShowIssue::message).toList();
+        }
+
+        @Test
+        @DisplayName("every model with its own wiring is clean")
+        void validModels() {
+            measured("Laser", "model", "vl53l0x", "threshold", 25, "activeWhen", "below", "hysteresis", 2, "pollMs", 200);
+            measured("Sonar", "model", "hc-sr04", "pinTrig", 5, "pinEcho", 6, "threshold", 30, "activeWhen", "below");
+            measured("Termo", "model", "ds18b20", "pin", 4, "deviceId", "28-0123456789ab", "threshold", 40, "activeWhen", "above");
+            measured("Humitat", "model", "bme280", "quantity", "humidity", "address", 119, "threshold", 80, "activeWhen", "above");
+            assertThat(errors()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("each inconsistency is E_SENSOR_CONFIG with the same message as validate.py")
+        void problems() {
+            measured("A", "model", "vl53l0x", "pin", 9, "pull", "up", "address", 48, "threshold", 500, "activeWhen", "below");
+            measured("B", "model", "bme280", "threshold", 10);
+            measured("C", "model", "hc-sr04", "pinTrig", 5, "pinEcho", 5, "threshold", 30, "activeWhen", "below");
+            measured("D", "model", "ds18b20", "deviceId", "10-abc", "threshold", 30, "activeWhen", "above");
+            measured("E", "threshold", 1, "activeWhen", "above");
+            port("F", "kind", "sensor", "pin", 22, "threshold", 3, "onActive", "panic");
+            assertThat(errors()).containsOnly("E_SENSOR_CONFIG", "E_PIN_DUPLICATE"); // C repeats its own pin
+            assertThat(messages()).contains(
+                    "El sensor «A»: «pull» és d'un sensor digital.",
+                    "El sensor «A»: «pin» no correspon al cablejat i2c del model vl53l0x.",
+                    "El sensor «A»: el model vl53l0x només admet l'adreça I2C 0x29.",
+                    "El sensor «A»: «threshold» ha d'estar entre 3 i 200 cm.",
+                    "El sensor «B»: necessita «quantity»: el model bme280 mesura temperature, humidity, pressure.",
+                    "El sensor «B»: necessita «activeWhen» (above o below).",
+                    "El sensor «C»: «pinTrig» i «pinEcho» han de ser diferents.",
+                    "El sensor «D»: necessita «pin» (la línia DATA del 1-Wire).",
+                    "El sensor «D»: «deviceId» ha de ser 28- seguit de 12 dígits hexadecimals.",
+                    "El sensor «E»: necessita un «model» de profiles.sensor.",
+                    "El sensor «F»: «threshold» només té sentit amb source measured.");
+        }
+
+        @Test
+        @DisplayName("a quantity the model does not measure is reported with what it measures")
+        void quantityNotMeasured() {
+            measured("A", "model", "vl53l0x", "quantity", "temperature", "threshold", 25, "activeWhen", "below");
+            assertThat(messages()).containsExactly("El sensor «A»: el model vl53l0x no mesura temperature (mesura distance).");
+        }
+
+        @Test
+        @DisplayName("TRIG/ECHO pins count as pins")
+        void trigEchoPins() {
+            port("Sembra", "kind", "relay", "pin", 6);
+            event(0, "Sembra", "turn_on");
+            measured("Sonar", "model", "hc-sr04", "pinTrig", 5, "pinEcho", 6, "threshold", 30, "activeWhen", "below");
+            assertThat(messages()).contains("El pin 6 està usat per més d'un port: Sembra, Sonar.pinEcho.");
+        }
+
+        @Test
+        @DisplayName("an I2C sensor reserves GPIO 2/3 and shares the address space with the profile default")
+        void i2c() {
+            port("Sembra", "kind", "relay", "pin", 3);
+            event(0, "Sembra", "turn_on");
+            measured("Calor", "model", "bme280", "quantity", "temperature", "threshold", 30, "activeWhen", "above");
+            measured("Pressió", "model", "bme280", "quantity", "pressure", "threshold", 1000, "activeWhen", "below");
+            assertThat(messages()).contains(
+                    "El pin 3 de «Sembra» és I2C i queda reservat quan hi ha un expansor o un sensor I2C.",
+                    "L'adreça I2C 0x76 del bus 1 la fan servir més d'un dispositiu: Calor, Pressió.");
+            hardware.get("Pressió").put("address", 119);
+            hardware.get("Sembra").put("pin", 26);
+            assertThat(errors()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("a measured sensor used as a motor limit is not unused")
+        void motorLimit() {
+            measured("Dalt", "model", "vl53l0x", "threshold", 25, "activeWhen", "below", "onActive", "none");
+            port("Angel", "kind", "motor", "pinForward", 27, "pinReverse", 17, "maxTimeForward", 24, "maxTimeReverse", 18, "limitForward", "Dalt");
+            event(0, "Angel", "stop");
+            assertThat(validate()).isEmpty();
+        }
+    }
+
+    @Nested
     @DisplayName("segments")
     class Segments {
 
