@@ -215,6 +215,7 @@ public class DeviceService {
                 .setLastState(dto.state())
                 .setLastShowHash(dto.showHash())
                 .setLastShowName(dto.showName())
+                .setLastShowTimelineId(dto.showTimelineId())
                 .setLastOverrides(overridesCodec.serialize(dto.overrides()))
                 .setLastAlerts(overridesCodec.serializeAlerts(dto.alerts()))
                 .setLastVersion(dto.version())

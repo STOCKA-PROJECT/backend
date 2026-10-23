@@ -94,7 +94,7 @@ class DeviceServiceTest {
     }
 
     private static HeartbeatDto heartbeat(String deviceId, String state) {
-        return new HeartbeatDto(deviceId, "belen", state, "sha256:abc", "Nadal 2026", List.of("Angel", "Riu"),
+        return new HeartbeatDto(deviceId, "belen", state, "sha256:abc", "Nadal 2026", 42, List.of("Angel", "Riu"),
                 "1.2.3", 3600L, "ap", "belen", "192.168.4.1", null,
                 List.of(new DeviceAlertDto("motor_timeout", "Angel", "L'Àngel no ha arribat a dalt", "2026-12-24T18:00:00Z")));
     }
@@ -498,6 +498,7 @@ class DeviceServiceTest {
             assertThat(out.getLastShowName()).isEqualTo("Nadal 2026");
             assertThat(out.getLastOverrides()).isEqualTo("[\"Angel\",\"Riu\"]");
             assertThat(out.getLastAlerts()).contains("\"code\":\"motor_timeout\"").contains("\"port\":\"Angel\"");
+            assertThat(out.getLastShowTimelineId()).isEqualTo(42);
             assertThat(out.getLastVersion()).isEqualTo("1.2.3");
             assertThat(out.getLastUptimeS()).isEqualTo(3600L);
             assertThat(out.getLastNetMode()).isEqualTo("ap");
@@ -529,7 +530,7 @@ class DeviceServiceTest {
         @DisplayName("should replace the previous report wholesale, clearing fields the new one omits")
         void recordHeartbeat_should_replaceWholesale() {
             sut.recordHeartbeat(token, heartbeat("uuid-1", "PLAYING"), "1.1.1.1");
-            HeartbeatDto minimal = new HeartbeatDto("uuid-1", null, "SAFE", null, null, null, null, null, null, null, null,
+            HeartbeatDto minimal = new HeartbeatDto("uuid-1", null, "SAFE", null, null, null, null, null, null, null, null, null,
                     "relay failed", null);
 
             sut.recordHeartbeat(token, minimal, "1.1.1.1");
@@ -537,6 +538,7 @@ class DeviceServiceTest {
             assertThat(registered.getLastState()).isEqualTo("SAFE");
             assertThat(registered.getLastShowHash()).isNull();
             assertThat(registered.getLastShowName()).isNull();
+            assertThat(registered.getLastShowTimelineId()).isNull();
             assertThat(registered.getLastOverrides()).isEqualTo("[]");
             assertThat(registered.getLastAlerts()).isEqualTo("[]");
             assertThat(registered.getLastVersion()).isNull();
@@ -600,7 +602,7 @@ class DeviceServiceTest {
         @DisplayName("should expose the telemetry, the computed online flag, the overrides list and the token prefix")
         void toResponse_should_mapFields() {
             Device d = device(3, "Belén").setDeviceId("uuid-1").setLastState("PLAYING").setLastShowHash("sha256:x")
-                    .setLastShowName("Nadal").setLastOverrides("[\"Angel\"]")
+                    .setLastShowName("Nadal").setLastShowTimelineId(42).setLastOverrides("[\"Angel\"]")
                     .setLastAlerts("[{\"code\":\"sensor_panic\",\"port\":\"Seta\",\"message\":\"Seta\",\"at\":\"t\"}]").setLastVersion("1.0").setLastIp("1.2.3.4")
                     .setLastError("e").setLastSeenAt(NOW_LOCAL.minusMinutes(1));
 
@@ -615,6 +617,7 @@ class DeviceServiceTest {
             assertThat(dto.lastState()).isEqualTo("PLAYING");
             assertThat(dto.lastShowHash()).isEqualTo("sha256:x");
             assertThat(dto.lastShowName()).isEqualTo("Nadal");
+            assertThat(dto.lastShowTimelineId()).isEqualTo(42);
             assertThat(dto.lastOverrides()).containsExactly("Angel");
             assertThat(dto.lastAlerts()).containsExactly(new DeviceAlertDto("sensor_panic", "Seta", "Seta", "t"));
             assertThat(dto.lastVersion()).isEqualTo("1.0");

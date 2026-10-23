@@ -7,6 +7,7 @@ import com.stocka.backend.modules.devices.entity.DeviceState;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 
@@ -24,6 +25,7 @@ import jakarta.validation.constraints.Size;
  * @param state     player state, one of {@link DeviceState}
  * @param showHash  hash of the active show package ({@code sha256:...}) or {@code null}
  * @param showName  name of the active show package or {@code null}
+ * @param showTimelineId Stocka timeline the active show was exported from ({@code meta.timelineId}) or {@code null}
  * @param overrides port names currently cut by hand on the player
  * @param version   player software version
  * @param uptimeS   seconds since the player booted
@@ -38,6 +40,7 @@ public record HeartbeatDto(
         @NotBlank @Pattern(regexp = DeviceState.PATTERN) String state,
         @Size(max = 80) String showHash,
         @Size(max = 160) String showName,
+        @Positive Integer showTimelineId,
         @Size(max = 200) List<@Size(max = 160) String> overrides,
         @Size(max = 40) String version,
         @PositiveOrZero Long uptimeS,

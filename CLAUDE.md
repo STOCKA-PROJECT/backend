@@ -170,7 +170,7 @@ Devices (`modules/devices/`, `/organizations/{orgSlug}/devices`, same gating as 
 players of an organization. Registering one returns a heartbeat token (`bht_` + 32 random bytes base64url)
 exactly once; the row keeps only its sha256 (`token_hash`, unique) and first 8 chars (`token_prefix`). The Pi,
 when it has Internet, posts `POST /player/heartbeat` (public, rate-limited `player.heartbeat.ip` 120/min) with
-`Authorization: Device <token>` and `{deviceId, state, showHash?, showName?, overrides?, version?, uptimeS?,
+`Authorization: Device <token>` and `{deviceId, state, showHash?, showName?, showTimelineId?, overrides?, version?, uptimeS?,
 netMode?, error?, alerts?}` (alerts: last ≤ 20 `{code, port, message, at}`, stored in `last_alerts` and exposed as
 `lastAlerts`); `DeviceService.recordHeartbeat` binds `device_id` on the first call (a different uuid
 later is accepted and logged at WARN), stores every `last_*` column and `last_ip` from `ClientIpResolver`.
@@ -178,7 +178,8 @@ later is accepted and logged at WARN), stores every `last_*` column and `last_ip
 `heartbeatUrl` in the creation response comes from `stocka.devices.heartbeat-base-url`
 (`DEVICES_HEARTBEAT_BASE_URL`, defaults to `stocka.oauth.issuer`; blank derives it from the request). The
 device token is never an API credential: `JwtAuthenticationFilter` only reads `Bearer` and the REST chain
-rejects it with 401. Table `devices` (`V24__devices.sql`), soft-deleted with the org cascade.
+rejects it with 401. Table `devices` (`V24__devices.sql`; `V28` adds `last_show_timeline_id`, the timeline the active
+show was exported from, exposed as `lastShowTimelineId`), soft-deleted with the org cascade.
 
 Import/export share the piece column schema (fixed columns + one column per
 attribute, named `"<Type> / <DisplayName>"` or `"Org / <DisplayName>"`).

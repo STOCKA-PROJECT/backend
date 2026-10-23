@@ -21,6 +21,7 @@ import com.stocka.backend.modules.devices.entity.Device;
  * @param lastState     player state (BOOT, SAFE, IDLE, PLAYING, TEST, ERROR)
  * @param lastShowHash  hash of the active show package
  * @param lastShowName  name of the active show package
+ * @param lastShowTimelineId Stocka timeline the active show was exported from
  * @param lastOverrides port names cut by hand on the player
  * @param lastAlerts    alerts in the last heartbeat (motor timeouts, sensors that stopped the show)
  * @param lastVersion   player software version
@@ -39,6 +40,7 @@ public record DeviceResponseDto(
         String lastState,
         String lastShowHash,
         String lastShowName,
+        Integer lastShowTimelineId,
         List<String> lastOverrides,
         List<DeviceAlertDto> lastAlerts,
         String lastVersion,
@@ -67,6 +69,7 @@ public record DeviceResponseDto(
                 device.getLastState(),
                 device.getLastShowHash(),
                 device.getLastShowName(),
+                device.getLastShowTimelineId(),
                 overrides,
                 alerts,
                 device.getLastVersion(),

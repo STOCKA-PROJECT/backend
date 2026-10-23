@@ -87,6 +87,9 @@ public class Device {
     @Column(name = "last_show_name", length = 160)
     private String lastShowName;
 
+    @Column(name = "last_show_timeline_id")
+    private Integer lastShowTimelineId;
+
     @Lob
     @Column(name = "last_overrides", columnDefinition = "TEXT")
     private String lastOverrides;
@@ -222,6 +225,16 @@ public class Device {
 
     public Device setLastShowName(String lastShowName) {
         this.lastShowName = lastShowName;
+        return this;
+    }
+
+    /** @return Stocka timeline the active show was exported from, or {@code null} */
+    public Integer getLastShowTimelineId() {
+        return lastShowTimelineId;
+    }
+
+    public Device setLastShowTimelineId(Integer lastShowTimelineId) {
+        this.lastShowTimelineId = lastShowTimelineId;
         return this;
     }
 

@@ -92,6 +92,7 @@ class HeartbeatControllerIntegrationTest {
                     .andExpect(jsonPath("$[0].lastState").value("PLAYING"))
                     .andExpect(jsonPath("$[0].lastShowHash").value("sha256:6e46887d"))
                     .andExpect(jsonPath("$[0].lastShowName").value("Nadal 2026"))
+                    .andExpect(jsonPath("$[0].lastShowTimelineId").value(42))
                     .andExpect(jsonPath("$[0].lastOverrides", hasSize(2)))
                     .andExpect(jsonPath("$[0].lastOverrides", hasItem("Angel")))
                     .andExpect(jsonPath("$[0].lastAlerts", hasSize(1)))
@@ -119,6 +120,7 @@ class HeartbeatControllerIntegrationTest {
                     .andExpect(jsonPath("$[0].lastState").value("IDLE"))
                     .andExpect(jsonPath("$[0].lastShowHash").value(nullValue()))
                     .andExpect(jsonPath("$[0].lastShowName").value(nullValue()))
+                    .andExpect(jsonPath("$[0].lastShowTimelineId").value(nullValue()))
                     .andExpect(jsonPath("$[0].lastOverrides", hasSize(0)))
                     .andExpect(jsonPath("$[0].lastAlerts", hasSize(0)))
                     .andExpect(jsonPath("$[0].lastError").value(nullValue()))
@@ -343,6 +345,8 @@ class HeartbeatControllerIntegrationTest {
                     .andExpect(status().isBadRequest());
             heartbeat("Device " + deviceToken, Map.of("deviceId", "uuid-1", "state", "IDLE", "uptimeS", -1))
                     .andExpect(status().isBadRequest());
+            heartbeat("Device " + deviceToken, Map.of("deviceId", "uuid-1", "state", "IDLE", "showTimelineId", 0))
+                    .andExpect(status().isBadRequest());
         }
 
         @Test
@@ -366,6 +370,7 @@ class HeartbeatControllerIntegrationTest {
         body.put("state", state);
         body.put("showHash", "sha256:6e46887d");
         body.put("showName", "Nadal 2026");
+        body.put("showTimelineId", 42);
         body.put("overrides", List.of("Angel", "Riu"));
         body.put("version", "2.0.1");
         body.put("uptimeS", 86400);
