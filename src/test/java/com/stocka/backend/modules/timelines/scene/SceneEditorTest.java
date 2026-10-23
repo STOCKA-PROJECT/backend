@@ -283,15 +283,27 @@ class SceneEditorTest {
     class Document {
 
         @Test
-        @DisplayName("set_duration and set_board validate their numbers")
-        void durationBoard() {
-            apply(new SceneOp.SetDuration(120_000L), new SceneOp.SetBoard(200.0, null, "#000"));
-            assertThat(doc.durationMs()).isEqualTo(120_000);
+        @DisplayName("set_board validates its numbers")
+        void board() {
+            apply(new SceneOp.SetBoard(200.0, null, "#000"));
             assertThat(doc.board().width()).isEqualTo(2000);
             assertThat(doc.board().height()).isEqualTo(720);
             assertThat(doc.board().background()).isEqualTo("#000");
-            assertThat(failure(new SceneOp.SetDuration(0L)).getParams().get("detail").toString()).contains("positive");
             assertThat(failure(new SceneOp.SetBoard(-1.0, null, null)).getParams().get("detail").toString()).contains("positive");
+        }
+
+        @Test
+        @DisplayName("the show lasts until the end of its last clip, also when it grows, shrinks or loses every clip")
+        void durationFollowsTheLastClip() {
+            assertThat(doc.durationMs()).isEqualTo(SceneDocument.DEFAULT_DURATION_MS);
+            apply(new SceneOp.AddItem(2, null, null, null, null, null, null, null, null));
+            Change added = apply(new SceneOp.AddClip("item-1", null, "clear", 90_000L, null, null, 5000L, null, null));
+            assertThat(doc.durationMs()).isEqualTo(95_000);
+            String clipId = added.createdIds().get(added.createdIds().size() - 1);
+            apply(new SceneOp.MoveClip(clipId, 1000L, null));
+            assertThat(doc.durationMs()).isEqualTo(6000);
+            apply(new SceneOp.RemoveClip(clipId));
+            assertThat(doc.durationMs()).as("without clips the last length stays").isEqualTo(6000);
         }
 
         @Test
@@ -314,7 +326,7 @@ class SceneEditorTest {
             Change change = apply(new SceneOp.SetSchedule(schedule));
             assertThat(doc.schedule()).isEqualTo(schedule);
             assertThat(change.log()).anySatisfy(line -> assertThat(line).contains("schedule set: block with 1 window"));
-            apply(new SceneOp.SetDuration(90_000L), new SceneOp.SetBoard(100.0, 50.0, null));
+            apply(new SceneOp.SetBoard(100.0, 50.0, null));
             assertThat(doc.schedule()).isEqualTo(schedule);
         }
 
@@ -348,7 +360,7 @@ class SceneEditorTest {
                     .isInstanceOf(SceneOpException.class)
                     .satisfies(e -> assertThat(((SceneOpException) e).getParams()).containsEntry("index", 1));
             // The editor mutates the lists of the document it was given: callers must not reuse it on failure.
-            assertThat(failure(new SceneOp.SetDuration(0L)).getParams()).containsEntry("index", 0);
+            assertThat(failure(new SceneOp.SetBoard(0.0, null, null)).getParams()).containsEntry("index", 0);
         }
     }
 }

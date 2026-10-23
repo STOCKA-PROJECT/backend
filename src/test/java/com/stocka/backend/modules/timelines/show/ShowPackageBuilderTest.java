@@ -554,7 +554,7 @@ class ShowPackageBuilderTest {
         }
 
         @Test
-        @DisplayName("fails on a stale port and a clip after the end, warns on unused piece ports")
+        @DisplayName("fails on a stale port and warns on unused piece ports; a late clip makes the show longer")
         void staleAndLate() {
             List<Item> items = items();
             replace(items, i -> i.id().equals("i-sembra"), i -> withPorts(i, 2, 999));
@@ -565,7 +565,8 @@ class ShowPackageBuilderTest {
             Assembled assembled = builder.assemble(Belen2026Fixture.input(doc(items, clips)).withAudioByPiece(null)
                     .withTimeline(null, null));
             Assembled withPorts = builder.assemble(ShowBuildInput.of(doc(items, clips), Belen2026Fixture.context(), ports));
-            assertThat(codes(errors(withPorts))).contains("E_PORT_STALE", "E_T_AFTER_END");
+            assertThat(codes(errors(withPorts))).contains("E_PORT_STALE").doesNotContain("E_T_AFTER_END");
+            assertThat(doc(items, clips).durationMs()).isEqualTo(131_000);
             assertThat(codes(warnings(withPorts))).contains("W_PORT_UNUSED");
             assertThat(codes(errors(assembled))).contains("E_PORT_STALE");
         }

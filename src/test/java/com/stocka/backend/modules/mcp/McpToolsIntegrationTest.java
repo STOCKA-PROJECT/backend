@@ -83,7 +83,7 @@ class McpToolsIntegrationTest {
                 if (t.path("name").asText().equals("timeline_scene_edit")) edit = t;
             }
             assertThat(edit).isNotNull();
-            assertThat(edit.path("inputSchema").path("properties").path("ops").path("items").path("oneOf").size()).isEqualTo(16);
+            assertThat(edit.path("inputSchema").path("properties").path("ops").path("items").path("oneOf").size()).isEqualTo(15);
             assertThat(edit.path("annotations").path("readOnlyHint").asBoolean()).isFalse();
             assertThat(edit.path("inputSchema").path("required").toString()).contains("org");
 
@@ -203,7 +203,7 @@ class McpToolsIntegrationTest {
             JsonNode second = oauth.ok(token, "timeline_scene_edit", "{\"org\":\"acme\",\"timelineId\":" + timelineId
                     + ",\"expectedVersion\":2,\"ops\":[{\"op\":\"add_clip\",\"itemId\":\"" + itemId
                     + "\",\"action\":\"turn_on\",\"startMs\":1000,\"durationMs\":3000},"
-                    + "{\"op\":\"set_duration\",\"durationMs\":10000}]}");
+                    + "{\"op\":\"set_board\",\"width\":100}]}");
             assertThat(second.path("version").asInt()).isEqualTo(3);
             assertThat(second.path("errors").asInt()).isZero();
             JsonNode clip = second.path("scene").path("clips").get(0);
@@ -214,7 +214,7 @@ class McpToolsIntegrationTest {
             assertThat(codes).contains("W_NO_PORT");
 
             JsonNode stale = oauth.error(token, "timeline_scene_edit", "{\"org\":\"acme\",\"timelineId\":" + timelineId
-                    + ",\"expectedVersion\":2,\"ops\":[{\"op\":\"set_duration\",\"durationMs\":5000}]}");
+                    + ",\"expectedVersion\":2,\"ops\":[{\"op\":\"set_board\",\"width\":90}]}");
             assertThat(stale.path("error").asText()).isEqualTo("timeline_scenes.version_conflict");
             assertThat(stale.path("hint").asText()).contains("timeline_scene_get");
             assertThat(stale.path("params").path("currentVersion").asInt()).isEqualTo(3);

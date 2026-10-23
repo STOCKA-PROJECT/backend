@@ -50,7 +50,8 @@ Workflow:
 
 1. `timelines_list` / `timeline_get` (summary) / `timeline_scene_get` (`format: "compact"` by default,
    `"raw"` for the full document).
-2. `timeline_create` (name, durationMs) creates the timeline and an empty scene; note the `version`.
+2. `timeline_create` (name) creates the timeline and an empty scene; note the `version`. The show lasts
+   until the end of its last clip: there is no length to set.
 3. `timeline_scene_edit` applies a list of operations atomically and returns the new `version`, the
    ids it created and validation issues. Always pass `expectedVersion`; on
    `timeline_scenes.version_conflict` re-read with `timeline_scene_get` and retry.
@@ -58,7 +59,7 @@ Workflow:
    omitted; `ports` by id or name), `update_item`, `set_item_ports`, `remove_item`, `add_track`,
    `rename_track`, `remove_track`, `add_clip` (itemId or trackId; action by name or id; `startMs` or
    `after: clipId`; `durationMs`; `params` by name), `update_clip`, `move_clip`, `remove_clip`,
-   `set_duration`, `set_board`, `set_strip_order`, `set_schedule` (when the start button works:
+   `set_board`, `set_strip_order`, `set_schedule` (when the start button works:
    `{"rule": "allow"|"block", "windows": [{"days": ["mon", …], "from": "17:00", "to": "21:00"}]}`;
    `allow` = only inside a window, `block` = never inside one; local time of the Pi, `to` may be `24:00` and a
    `to` not after `from` crosses midnight; `schedule: null` removes it). It travels as `mode.schedule` of the

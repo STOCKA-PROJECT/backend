@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.OptionalLong;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.stocka.backend.modules.common.schema.Param;
@@ -24,7 +26,7 @@ public record SceneDocument(
         @Param("Pieces placed on the board") List<Item> items,
         @Param("Tracks (one or more per item)") List<Track> tracks,
         @Param("Clips: actions played on a track") List<Clip> clips,
-        @Param("Total length in milliseconds") long durationMs,
+        @Param("Total length in milliseconds: the end of the last clip (the stored value only counts while there are no clips)") long durationMs,
         @Param("Editor frame rate") Integer fps,
         @Param("Order of the items along each LED strip port: port id → item ids") Map<String, List<String>> stripOrder,
         @Param("When the physical button starts the show (exported as mode.schedule); absent = always") Schedule schedule
@@ -38,14 +40,20 @@ public record SceneDocument(
     public static final double DEFAULT_ITEM_SIZE_CM = 10;
     /** Default clip length. */
     public static final long DEFAULT_CLIP_MS = 2000;
-    /** Default show length. */
+    /** Length of a show without clips. */
     public static final long DEFAULT_DURATION_MS = 60_000;
 
+    /**
+     * Normalizes the lists and derives {@code durationMs}: since 2026-10-23 a show lasts until the end of
+     * its last clip (the editor no longer lets anyone type a length), so the stored value only counts while
+     * there are no clips.
+     */
     public SceneDocument {
         layers = layers == null ? new ArrayList<>() : new ArrayList<>(layers);
         items = items == null ? new ArrayList<>() : new ArrayList<>(items);
         tracks = tracks == null ? new ArrayList<>() : new ArrayList<>(tracks);
         clips = clips == null ? new ArrayList<>() : new ArrayList<>(clips);
+        durationMs = endOfLastClip(clips).orElse(durationMs);
         stripOrder = stripOrder == null ? new LinkedHashMap<>() : new LinkedHashMap<>(stripOrder);
         if (board == null) board = new Board(1280, 720, null);
     }
@@ -57,6 +65,22 @@ public record SceneDocument(
         return new SceneDocument(SCHEMA_VERSION, board == null ? new Board(1280, 720, null) : board, layers,
                 List.of(), List.of(), List.of(), durationMs <= 0 ? DEFAULT_DURATION_MS : durationMs, 30,
                 Map.of(), null);
+    }
+
+    /**
+     * @param clips clips of a document
+     * @return the end of the last clip, empty without clips
+     */
+    public static OptionalLong endOfLastClip(List<Clip> clips) {
+        return clips.stream().filter(Objects::nonNull).mapToLong(Clip::endMs).max();
+    }
+
+    /**
+     * @return the same document built again, so {@code durationMs} follows clips that were added, moved or
+     *         removed in place (the lists are mutable)
+     */
+    public SceneDocument withDurationFromClips() {
+        return new SceneDocument(schemaVersion, board, layers, items, tracks, clips, durationMs, fps, stripOrder, schedule);
     }
 
     /** @return this document with another schedule ({@code null} removes it) */

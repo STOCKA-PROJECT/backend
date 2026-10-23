@@ -103,7 +103,7 @@ class ToolSchemasTest {
             assertThat(m(props(output).get("org"))).containsEntry("type", List.of("string", "null"));
             Map<String, Object> items = m(ops.get("items"));
             List<Object> variants = l(items.get("oneOf"));
-            assertThat(variants).hasSize(16);
+            assertThat(variants).hasSize(15);
             Map<String, Object> setSchedule = variants.stream().map(ToolSchemasTest::m)
                     .filter(v -> "set_schedule".equals(m(m(v.get("properties")).get("op")).get("const")))
                     .findFirst().orElseThrow();

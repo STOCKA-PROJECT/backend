@@ -49,7 +49,7 @@ public class TimelineTools implements ToolSource {
             @Param("Timeline id") Integer id,
             @Param("Name") String name,
             @Param("Scene version to pass as expectedVersion; null when the scene was never saved") Integer version,
-            @Param("Show length in ms") Long durationMs,
+            @Param("Show length in ms: the end of its last clip") Long durationMs,
             @Param("Items on the board") Integer items,
             @Param("Clips") Integer clips,
             @Param("Created") Date createdAt,
@@ -67,7 +67,7 @@ public class TimelineTools implements ToolSource {
     public record CreateInput(
             @Param(value = "Organization slug", required = true) String org,
             @Param(value = "Name, unique in the organization", required = true) String name,
-            @Param("Show length in ms (default 60000)") Long durationMs,
+            @Param("Length in ms of the empty timeline (default 60000); once it has clips the show lasts until the end of the last one") Long durationMs,
             @Param("Board width in cm (default 128)") Double boardWidthCm,
             @Param("Board height in cm (default 72)") Double boardHeightCm) {
     }
@@ -154,7 +154,7 @@ public class TimelineTools implements ToolSource {
                         .returning(TimelineView.class),
                 ToolDefinition.of("timeline_scene_edit",
                         "Edits the scene with a batch of operations (add_item, add_clip, move_clip, remove_clip, "
-                                + "set_duration …), applied atomically. Sizes in cm, times in ms, references by id or "
+                                + "set_board …), applied atomically. The show lasts until the end of its last clip. Sizes in cm, times in ms, references by id or "
                                 + "unique name. Returns the new version, the ids created (use them in the next batch), "
                                 + "validation findings and the compact scene. On timeline_scenes.version_conflict "
                                 + "re-read the scene and retry. Needs OWNER, MANAGER or USER.",
@@ -283,12 +283,24 @@ public class TimelineTools implements ToolSource {
             version = scene.get().getVersion();
             JsonNode document = scenes.documentOf(scene.get());
             if (document != null) {
-                duration = document.path("durationMs").isNumber() ? document.path("durationMs").longValue() : null;
+                duration = durationOf(document);
                 items = document.path("items").isArray() ? document.path("items").size() : 0;
                 clips = document.path("clips").isArray() ? document.path("clips").size() : 0;
             }
         }
         return new TimelineView(timeline.getId(), timeline.getName(), version, duration, items, clips,
                 timeline.getCreatedAt(), timeline.getUpdatedAt());
+    }
+
+    /** The end of the last clip, as {@link SceneDocument} derives it; the stored value without clips. */
+    private static Long durationOf(JsonNode document) {
+        long end = -1;
+        for (JsonNode clip : document.path("clips")) {
+            end = Math.max(end, clip.path("startMs").asLong(0) + clip.path("durationMs").asLong(0));
+        }
+        if (end >= 0) {
+            return end;
+        }
+        return document.path("durationMs").isNumber() ? document.path("durationMs").longValue() : null;
     }
 }

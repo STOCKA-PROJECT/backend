@@ -284,7 +284,9 @@ refused by `/mcp`, MCP tokens by the REST API.
   (records → properties; `SceneOp` → `oneOf`). Resources (`stocka://guide`, `stocka://catalog`,
   `stocka://schema/scene`, `stocka://org/{slug}/overview`) and prompts live in `resource/` and `prompt/`.
 - Timelines are edited through `SceneOp` batches (`SceneEditor`, `SceneValidator`, `SceneSummary`,
-  `SceneJsonCodec` keeps unknown editor fields) with optimistic `version`; the same engine backs
+  `SceneJsonCodec` keeps unknown editor fields) with optimistic `version`; since 2026-10-23 a show lasts until the
+  end of its last clip (`SceneDocument` derives `durationMs`; the stored value only counts without clips; op
+  `set_duration` removed); the same engine backs
   `POST …/scene/ops` for the editor. Adding a tool = one `ToolDefinition` in the domain's `ToolSource` + a test.
 - Show export (`modules/timelines/show`): `ShowPackageBuilder` is a 1:1 Java port of the editor's
   `utils/showPackage.ts` chain (`ExecutionPlan` ← `exportBundle.ts`, `ShowHardware`, `ShowCoerce`, `StripLayout`,

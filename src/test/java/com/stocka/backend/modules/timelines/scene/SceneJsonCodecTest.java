@@ -83,7 +83,8 @@ class SceneJsonCodecTest {
             SceneDocument edited = new SceneDocument(doc.schemaVersion(), doc.board(), doc.layers(), doc.items(), doc.tracks(),
                     doc.clips(), 45_000, doc.fps(), doc.stripOrder(), doc.schedule());
             JsonNode out = codec.toJson(edited, original);
-            assertThat(out.path("durationMs").asLong()).isEqualTo(45_000);
+            assertThat(out.path("durationMs").asLong()).as("the show lasts until the end of its last clip")
+                    .isEqualTo(SceneDocument.endOfLastClip(doc.clips()).orElseThrow());
             assertThat(out.path("editorPrefs").path("zoom").asInt()).isEqualTo(2);
             assertThat(out.path("board").path("grid").asBoolean()).isTrue();
             assertThat(out.path("layers").get(0).path("color").asText()).isEqualTo("#fff");

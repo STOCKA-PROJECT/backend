@@ -60,7 +60,7 @@ public final class SceneEditor {
             }
             editor.applyOne(i, op);
         }
-        return new Change(editor.doc, List.copyOf(editor.created), List.copyOf(editor.log));
+        return new Change(editor.doc.withDurationFromClips(), List.copyOf(editor.created), List.copyOf(editor.log));
     }
 
     private void applyOne(int i, SceneOp op) {
@@ -77,7 +77,6 @@ public final class SceneEditor {
             case SceneOp.UpdateClip o -> updateClip(i, o);
             case SceneOp.MoveClip o -> moveClip(i, o);
             case SceneOp.RemoveClip o -> removeClip(i, o);
-            case SceneOp.SetDuration o -> setDuration(i, o);
             case SceneOp.SetBoard o -> setBoard(i, o);
             case SceneOp.SetStripOrder o -> setStripOrder(i, o);
             case SceneOp.SetSchedule o -> setSchedule(i, o);
@@ -282,15 +281,6 @@ public final class SceneEditor {
     }
 
     // ---------- document ----------
-
-    private void setDuration(int i, SceneOp.SetDuration op) {
-        if (op.durationMs() == null || op.durationMs() <= 0) {
-            throw new SceneOpException(i, "set_duration", "durationMs must be positive");
-        }
-        doc = new SceneDocument(doc.schemaVersion(), doc.board(), doc.layers(), doc.items(), doc.tracks(), doc.clips(),
-                op.durationMs(), doc.fps(), doc.stripOrder(), doc.schedule());
-        log.add("duration set to " + op.durationMs() + "ms");
-    }
 
     private void setBoard(int i, SceneOp.SetBoard op) {
         Board b = doc.board();

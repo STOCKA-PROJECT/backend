@@ -27,14 +27,13 @@ import com.stocka.backend.modules.common.schema.Param;
         @JsonSubTypes.Type(value = SceneOp.UpdateClip.class, name = "update_clip"),
         @JsonSubTypes.Type(value = SceneOp.MoveClip.class, name = "move_clip"),
         @JsonSubTypes.Type(value = SceneOp.RemoveClip.class, name = "remove_clip"),
-        @JsonSubTypes.Type(value = SceneOp.SetDuration.class, name = "set_duration"),
         @JsonSubTypes.Type(value = SceneOp.SetBoard.class, name = "set_board"),
         @JsonSubTypes.Type(value = SceneOp.SetStripOrder.class, name = "set_strip_order"),
         @JsonSubTypes.Type(value = SceneOp.SetSchedule.class, name = "set_schedule")
 })
 public sealed interface SceneOp permits SceneOp.AddLayer, SceneOp.AddItem, SceneOp.UpdateItem, SceneOp.SetItemPorts,
         SceneOp.RemoveItem, SceneOp.AddTrack, SceneOp.RenameTrack, SceneOp.RemoveTrack, SceneOp.AddClip,
-        SceneOp.UpdateClip, SceneOp.MoveClip, SceneOp.RemoveClip, SceneOp.SetDuration, SceneOp.SetBoard,
+        SceneOp.UpdateClip, SceneOp.MoveClip, SceneOp.RemoveClip, SceneOp.SetBoard,
         SceneOp.SetStripOrder, SceneOp.SetSchedule {
 
     /** Adds a layer on top. */
@@ -123,10 +122,6 @@ public sealed interface SceneOp permits SceneOp.AddLayer, SceneOp.AddItem, Scene
 
     /** Removes a clip. */
     record RemoveClip(@Param(value = "Clip id", required = true) String clipId) implements SceneOp {
-    }
-
-    /** Sets the total length of the show. */
-    record SetDuration(@Param(value = "Length in ms", required = true) Long durationMs) implements SceneOp {
     }
 
     /** Sets the board size. */

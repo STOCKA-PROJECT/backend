@@ -217,14 +217,14 @@ class SceneValidatorTest {
     class Timing {
 
         @Test
-        @DisplayName("clips past the end, overlaps on a track and items without ports warn")
+        @DisplayName("overlaps on a track and items without ports warn; a late clip only makes the show longer")
         void warnings() {
             item("i1", 2);
             clip("a", "i1", 501, 0, 3000, Map.of("color", "[1,2,3]"));
             clip("b", "i1", 501, 1000, 3000, Map.of("color", "[1,2,3]"));
             clip("c", "i1", 501, 9000, 3000, Map.of("color", "[1,2,3]"));
             List<String> codes = codes(10_000);
-            assertThat(codes).contains("W_OVERLAP", "W_CLIP_PAST_END", "W_NO_PORT");
+            assertThat(codes).contains("W_OVERLAP", "W_NO_PORT").doesNotContain("W_CLIP_PAST_END");
             assertThat(codes).doesNotContain("E_PARAM_REQUIRED");
         }
     }

@@ -77,7 +77,7 @@ public final class SceneValidator {
             Item item = items.get(track.itemId());
             PieceRef piece = item == null ? null : pieces.get(item.id());
             if (item == null || piece == null) continue;
-            validateClip(clip, item, piece, context, catalog, doc.durationMs(), issues);
+            validateClip(clip, item, piece, context, catalog, issues);
         }
         validateOverlaps(clipsByTrack, context, issues);
         issues.sort((a, b) -> Boolean.compare(b.isError(), a.isError()));
@@ -140,12 +140,8 @@ public final class SceneValidator {
     }
 
     private static void validateClip(Clip clip, Item item, PieceRef piece, SceneContext context, OutputCatalog catalog,
-                                     long durationMs, List<SceneIssue> issues) {
+                                     List<SceneIssue> issues) {
         String where = " (clip " + clip.id() + " on \"" + piece.name() + "\" at " + clip.startMs() + " ms)";
-        if (clip.endMs() > durationMs) {
-            issues.add(SceneIssue.warning("W_CLIP_PAST_END", "The clip ends after the show's duration" + where + ".",
-                    item.id(), clip.id()));
-        }
         if (clip.pieceTypeActionId() == null) {
             issues.add(SceneIssue.warning("W_CLIP_NO_ACTION", "The clip has no action and will be ignored" + where + ".",
                     item.id(), clip.id()));
