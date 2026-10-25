@@ -84,9 +84,10 @@ public class PieceAttachmentController {
 
     /**
      * Streams the attachment bytes through the backend. The download endpoint redirects to a
-     * presigned R2 URL, which only the origins allowed by the bucket's CORS can fetch; the timeline
-     * editor (another origin) reads audio from here instead. Attachments are immutable, so the
-     * response may be cached privately.
+     * presigned R2 URL, which only the origins allowed by the bucket's CORS can fetch and which
+     * Spanish ISPs block during LaLiga matches; the timeline editor (another origin) and the
+     * frontend read attachments from here instead. Attachments are immutable, so the response may
+     * be cached privately.
      */
     @GetMapping("/{attachmentId}/content")
     @PreAuthorize("@orgSecurity.canReadOrgContent(#orgSlug, principal)")

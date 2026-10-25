@@ -121,7 +121,7 @@ Org membership roles: `OWNER`, `MANAGER`, `USER`, `SPECTATOR` (read-only).
 | POST   | `/pieces/{id}/attachments`                    | OWNER, MANAGER, USER      | Upload IMAGE, DOCUMENT or AUDIO (`durationMs` optional) |
 | GET    | `/pieces/{id}/attachments(?kind=)`            | any member                | List                            |
 | GET    | `/pieces/{id}/attachments/{aid}/download`     | any member                | 302 to presigned URL            |
-| GET    | `/pieces/{id}/attachments/{aid}/content`      | any member                | Streams the bytes through the backend (same-origin for the editor) |
+| GET    | `/pieces/{id}/attachments/{aid}/content`      | any member                | Streams the bytes through the backend (what the frontend and the editor use: browsers never reach R2, which Spanish ISPs block during LaLiga matches) |
 | DELETE | `/pieces/{id}/attachments/{aid}`              | OWNER, MANAGER, USER      | Soft-delete + best-effort R2 rm |
 | GET    | `/pieces/export(?format=csv\|xlsx&filters)`   | any member                | Bulk export (CSV/XLSX), filtered |
 | GET    | `/pieces/import/template(?format=)`           | OWNER, MANAGER, USER      | Empty header-only template       |
