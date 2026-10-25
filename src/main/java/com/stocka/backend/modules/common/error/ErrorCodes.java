@@ -146,6 +146,8 @@ public final class ErrorCodes {
     public static final String DEVICES_NAME_TOO_LONG = "devices.name_too_long";
     public static final String DEVICES_NAME_TAKEN = "devices.name_taken";
     public static final String DEVICES_TOKEN_INVALID = "devices.token_invalid";
+    public static final String DEVICES_LOCAL_URL_INVALID = "devices.local_url_invalid";
+    public static final String DEVICES_PIN_INVALID = "devices.pin_invalid";
 
     // ---- contacts --------------------------------------------------------
     public static final String CONTACTS_NOT_FOUND = "contacts.not_found";

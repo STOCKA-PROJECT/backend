@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
@@ -121,7 +122,7 @@ class DeviceServiceTest {
         @Test
         @DisplayName("should trim the name, default the board and issue a bht_ token whose hash and prefix are stored")
         void create_should_trimNameAndIssueToken() {
-            DeviceWithToken out = sut.create(ORG_ID, "  Belén Martorell  ");
+            DeviceWithToken out = sut.create(ORG_ID, "  Belén Martorell  ", null, null);
 
             Device d = out.device();
             assertThat(d.getName()).isEqualTo("Belén Martorell");
@@ -138,21 +139,21 @@ class DeviceServiceTest {
         @Test
         @DisplayName("should leave createdBy null when nobody is authenticated")
         void create_should_leaveCreatorNullWithoutAuthentication() {
-            assertThat(sut.create(ORG_ID, "Belén").device().getCreatedBy()).isNull();
+            assertThat(sut.create(ORG_ID, "Belén", null, null).device().getCreatedBy()).isNull();
         }
 
         @Test
         @DisplayName("should record the authenticated user as creator")
         void create_should_recordCreator() {
             authenticateAs(new User().setId(7));
-            assertThat(sut.create(ORG_ID, "Belén").device().getCreatedBy()).isEqualTo(7);
+            assertThat(sut.create(ORG_ID, "Belén", null, null).device().getCreatedBy()).isEqualTo(7);
         }
 
         @Test
         @DisplayName("should ignore a principal that is not a User")
         void create_should_ignoreForeignPrincipal() {
             authenticateAs("anonymousUser");
-            assertThat(sut.create(ORG_ID, "Belén").device().getCreatedBy()).isNull();
+            assertThat(sut.create(ORG_ID, "Belén", null, null).device().getCreatedBy()).isNull();
         }
 
         @ParameterizedTest
@@ -160,7 +161,7 @@ class DeviceServiceTest {
         @ValueSource(strings = {"   ", "\t"})
         @DisplayName("should reject a blank name with devices.name_required")
         void create_should_rejectBlankName(String name) {
-            assertApi(() -> sut.create(ORG_ID, name), HttpStatus.BAD_REQUEST, ErrorCodes.DEVICES_NAME_REQUIRED);
+            assertApi(() -> sut.create(ORG_ID, name, null, null), HttpStatus.BAD_REQUEST, ErrorCodes.DEVICES_NAME_REQUIRED);
             verify(deviceRepository, never()).saveAndFlush(any());
         }
 
@@ -168,7 +169,7 @@ class DeviceServiceTest {
         @DisplayName("should reject a name longer than 80 characters after trimming")
         void create_should_rejectLongName() {
             String tooLong = "x".repeat(81);
-            assertThatThrownBy(() -> sut.create(ORG_ID, tooLong))
+            assertThatThrownBy(() -> sut.create(ORG_ID, tooLong, null, null))
                     .isInstanceOfSatisfying(ApiException.class, ex -> {
                         assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
                         assertThat(ex.getCode()).isEqualTo(ErrorCodes.DEVICES_NAME_TOO_LONG);
@@ -180,7 +181,7 @@ class DeviceServiceTest {
         @DisplayName("should accept exactly 80 characters once surrounding spaces are trimmed")
         void create_should_acceptBoundaryLength() {
             String exact = "y".repeat(80);
-            assertThat(sut.create(ORG_ID, "  " + exact + "  ").device().getName()).isEqualTo(exact);
+            assertThat(sut.create(ORG_ID, "  " + exact + "  ", null, null).device().getName()).isEqualTo(exact);
         }
 
         @Test
@@ -188,7 +189,7 @@ class DeviceServiceTest {
         void create_should_rejectDuplicateName() {
             when(deviceRepository.findByOrganizationAndName(org, "Belén")).thenReturn(Optional.of(device(9, "Belén")));
 
-            assertApi(() -> sut.create(ORG_ID, "Belén "), HttpStatus.CONFLICT, ErrorCodes.DEVICES_NAME_TAKEN);
+            assertApi(() -> sut.create(ORG_ID, "Belén ", null, null), HttpStatus.CONFLICT, ErrorCodes.DEVICES_NAME_TAKEN);
             verify(deviceRepository, never()).saveAndFlush(any());
         }
 
@@ -198,7 +199,7 @@ class DeviceServiceTest {
             when(deviceRepository.saveAndFlush(any(Device.class)))
                     .thenThrow(new DataIntegrityViolationException("uk_device_org_name"));
 
-            assertThatThrownBy(() -> sut.create(ORG_ID, "Belén"))
+            assertThatThrownBy(() -> sut.create(ORG_ID, "Belén", null, null))
                     .isInstanceOfSatisfying(ApiException.class, ex -> {
                         assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
                         assertThat(ex.getCode()).isEqualTo(ErrorCodes.DEVICES_NAME_TAKEN);
@@ -209,8 +210,8 @@ class DeviceServiceTest {
         @Test
         @DisplayName("should issue a different token to each device")
         void create_should_issueDistinctTokens() {
-            DeviceWithToken a = sut.create(ORG_ID, "A");
-            DeviceWithToken b = sut.create(ORG_ID, "B");
+            DeviceWithToken a = sut.create(ORG_ID, "A", null, null);
+            DeviceWithToken b = sut.create(ORG_ID, "B", null, null);
             assertThat(a.token()).isNotEqualTo(b.token());
             assertThat(a.device().getTokenHash()).isNotEqualTo(b.device().getTokenHash());
         }
@@ -219,12 +220,12 @@ class DeviceServiceTest {
         @DisplayName("should propagate the organization lookup failure")
         void create_should_propagateUnknownOrganization() {
             when(organizationService.findById(99)).thenThrow(new IllegalStateException("boom"));
-            assertThatThrownBy(() -> sut.create(99, "Belén")).isInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(() -> sut.create(99, "Belén", null, null)).isInstanceOf(IllegalStateException.class);
         }
     }
 
     @Nested
-    @DisplayName("rename")
+    @DisplayName("update (name)")
     class Rename {
 
         @Test
@@ -233,7 +234,7 @@ class DeviceServiceTest {
             Device d = device(3, "Vell");
             when(deviceRepository.findById(3)).thenReturn(Optional.of(d));
 
-            Device out = sut.rename(ORG_ID, 3, "  Nou  ");
+            Device out = sut.update(ORG_ID, 3, "  Nou  ", null, null);
 
             assertThat(out.getName()).isEqualTo("Nou");
             verify(deviceRepository).saveAndFlush(d);
@@ -245,7 +246,7 @@ class DeviceServiceTest {
             Device d = device(3, "Igual");
             when(deviceRepository.findById(3)).thenReturn(Optional.of(d));
 
-            sut.rename(ORG_ID, 3, " Igual ");
+            sut.update(ORG_ID, 3, " Igual ", null, null);
 
             verify(deviceRepository, never()).findByOrganizationAndName(any(), anyString());
         }
@@ -257,7 +258,7 @@ class DeviceServiceTest {
             when(deviceRepository.findById(3)).thenReturn(Optional.of(d));
             when(deviceRepository.findByOrganizationAndName(org, "Belen")).thenReturn(Optional.of(d));
 
-            assertThat(sut.rename(ORG_ID, 3, "Belen").getName()).isEqualTo("Belen");
+            assertThat(sut.update(ORG_ID, 3, "Belen", null, null).getName()).isEqualTo("Belen");
         }
 
         @Test
@@ -267,7 +268,7 @@ class DeviceServiceTest {
             when(deviceRepository.findById(3)).thenReturn(Optional.of(d));
             when(deviceRepository.findByOrganizationAndName(org, "B")).thenReturn(Optional.of(device(4, "B")));
 
-            assertApi(() -> sut.rename(ORG_ID, 3, "B"), HttpStatus.CONFLICT, ErrorCodes.DEVICES_NAME_TAKEN);
+            assertApi(() -> sut.update(ORG_ID, 3, "B", null, null), HttpStatus.CONFLICT, ErrorCodes.DEVICES_NAME_TAKEN);
             assertThat(d.getName()).isEqualTo("A");
         }
 
@@ -275,21 +276,243 @@ class DeviceServiceTest {
         @DisplayName("should reject a blank name")
         void rename_should_rejectBlank() {
             when(deviceRepository.findById(3)).thenReturn(Optional.of(device(3, "A")));
-            assertApi(() -> sut.rename(ORG_ID, 3, " "), HttpStatus.BAD_REQUEST, ErrorCodes.DEVICES_NAME_REQUIRED);
+            assertApi(() -> sut.update(ORG_ID, 3, " ", null, null), HttpStatus.BAD_REQUEST, ErrorCodes.DEVICES_NAME_REQUIRED);
         }
 
         @Test
         @DisplayName("should reject a too long name")
         void rename_should_rejectTooLong() {
             when(deviceRepository.findById(3)).thenReturn(Optional.of(device(3, "A")));
-            assertApi(() -> sut.rename(ORG_ID, 3, "z".repeat(81)), HttpStatus.BAD_REQUEST, ErrorCodes.DEVICES_NAME_TOO_LONG);
+            assertApi(() -> sut.update(ORG_ID, 3, "z".repeat(81), null, null), HttpStatus.BAD_REQUEST, ErrorCodes.DEVICES_NAME_TOO_LONG);
         }
 
         @Test
         @DisplayName("should 404 when the device does not exist")
         void rename_should_404WhenMissing() {
             when(deviceRepository.findById(3)).thenReturn(Optional.empty());
-            assertApi(() -> sut.rename(ORG_ID, 3, "B"), HttpStatus.NOT_FOUND, ErrorCodes.DEVICES_NOT_FOUND);
+            assertApi(() -> sut.update(ORG_ID, 3, "B", null, null), HttpStatus.NOT_FOUND, ErrorCodes.DEVICES_NOT_FOUND);
+        }
+    }
+
+    @Nested
+    @DisplayName("local address and PIN")
+    class LocalConnection {
+
+        @Test
+        @DisplayName("create should store the normalized address and the trimmed PIN")
+        void create_should_storeAddressAndPin() {
+            Device d = sut.create(ORG_ID, "Belén", " belen.local ", " 123456 ").device();
+            assertThat(d.getLocalUrl()).isEqualTo("http://belen.local:8080");
+            assertThat(d.getPin()).isEqualTo("123456");
+        }
+
+        @ParameterizedTest
+        @NullAndEmptySource
+        @ValueSource(strings = {"   "})
+        @DisplayName("create should leave the address and the PIN empty when they are blank")
+        void create_should_leaveBlankConnectionEmpty(String blank) {
+            Device d = sut.create(ORG_ID, "Belén", blank, blank).device();
+            assertThat(d.getLocalUrl()).isNull();
+            assertThat(d.getPin()).isNull();
+        }
+
+        @Test
+        @DisplayName("create should reject an invalid address before saving")
+        void create_should_rejectInvalidAddress() {
+            assertApi(() -> sut.create(ORG_ID, "Belén", "ftp://belen.local", null),
+                    HttpStatus.BAD_REQUEST, ErrorCodes.DEVICES_LOCAL_URL_INVALID);
+            verify(deviceRepository, never()).saveAndFlush(any());
+        }
+
+        @Test
+        @DisplayName("create should reject a PIN that is not 6 digits, giving the length")
+        void create_should_rejectInvalidPin() {
+            assertThatThrownBy(() -> sut.create(ORG_ID, "Belén", null, "12345"))
+                    .isInstanceOfSatisfying(ApiException.class, ex -> {
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                        assertThat(ex.getCode()).isEqualTo(ErrorCodes.DEVICES_PIN_INVALID);
+                        assertThat(ex.getParams()).containsEntry("length", 6);
+                    });
+            verify(deviceRepository, never()).saveAndFlush(any());
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"12345", "1234567", "12a456", "12 456", "١٢٣٤٥٦"})
+        @DisplayName("update should reject PINs other than 6 ASCII digits")
+        void update_should_rejectMalformedPins(String pin) {
+            when(deviceRepository.findById(3)).thenReturn(Optional.of(device(3, "A")));
+            assertApi(() -> sut.update(ORG_ID, 3, null, null, pin), HttpStatus.BAD_REQUEST, ErrorCodes.DEVICES_PIN_INVALID);
+        }
+
+        @Test
+        @DisplayName("update with only an address should keep the name and the PIN")
+        void update_should_changeOnlyTheAddress() {
+            Device d = device(3, "A").setLocalUrl("http://belen.local:8080").setPin("111111");
+            when(deviceRepository.findById(3)).thenReturn(Optional.of(d));
+
+            Device out = sut.update(ORG_ID, 3, null, "10.42.0.1", null);
+
+            assertThat(out.getName()).isEqualTo("A");
+            assertThat(out.getLocalUrl()).isEqualTo("http://10.42.0.1:8080");
+            assertThat(out.getPin()).isEqualTo("111111");
+            verify(deviceRepository, never()).findByOrganizationAndName(any(), anyString());
+        }
+
+        @Test
+        @DisplayName("update with blank address and PIN should remove both")
+        void update_should_clearWithBlanks() {
+            Device d = device(3, "A").setLocalUrl("http://belen.local:8080").setPin("111111");
+            when(deviceRepository.findById(3)).thenReturn(Optional.of(d));
+
+            Device out = sut.update(ORG_ID, 3, null, "", " ");
+
+            assertThat(out.getLocalUrl()).isNull();
+            assertThat(out.getPin()).isNull();
+        }
+
+        @Test
+        @DisplayName("update with every field null should change nothing but still save")
+        void update_should_keepEverythingWithNulls() {
+            Device d = device(3, "A").setLocalUrl("http://belen.local:8080").setPin("111111");
+            when(deviceRepository.findById(3)).thenReturn(Optional.of(d));
+
+            Device out = sut.update(ORG_ID, 3, null, null, null);
+
+            assertThat(out.getName()).isEqualTo("A");
+            assertThat(out.getLocalUrl()).isEqualTo("http://belen.local:8080");
+            assertThat(out.getPin()).isEqualTo("111111");
+            verify(deviceRepository).saveAndFlush(d);
+        }
+
+        @Test
+        @DisplayName("update should not touch the device when the address is invalid")
+        void update_should_notApplyPartially() {
+            Device d = device(3, "A").setLocalUrl("http://belen.local:8080");
+            when(deviceRepository.findById(3)).thenReturn(Optional.of(d));
+
+            assertApi(() -> sut.update(ORG_ID, 3, null, "http://", "123456"), HttpStatus.BAD_REQUEST, ErrorCodes.DEVICES_LOCAL_URL_INVALID);
+            assertThat(d.getLocalUrl()).isEqualTo("http://belen.local:8080");
+            assertThat(d.getPin()).isNull();
+            verify(deviceRepository, never()).saveAndFlush(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("updateConnection")
+    class UpdateConnection {
+
+        @Test
+        @DisplayName("should save the address and the PIN and bind the uuid of an unbound device")
+        void updateConnection_should_saveAndBind() {
+            Device d = device(3, "A");
+            when(deviceRepository.findById(3)).thenReturn(Optional.of(d));
+
+            Device out = sut.updateConnection(ORG_ID, 3, "http://belen.local:8080/", "654321", " uuid-1 ");
+
+            assertThat(out.getLocalUrl()).isEqualTo("http://belen.local:8080");
+            assertThat(out.getPin()).isEqualTo("654321");
+            assertThat(out.getDeviceId()).isEqualTo("uuid-1");
+            verify(deviceRepository).saveAndFlush(d);
+        }
+
+        @Test
+        @DisplayName("should replace a different bound uuid")
+        void updateConnection_should_replaceDifferentUuid() {
+            Device d = device(3, "A").setDeviceId("uuid-old");
+            when(deviceRepository.findById(3)).thenReturn(Optional.of(d));
+
+            assertThat(sut.updateConnection(ORG_ID, 3, null, null, "uuid-new").getDeviceId()).isEqualTo("uuid-new");
+        }
+
+        @ParameterizedTest
+        @NullAndEmptySource
+        @ValueSource(strings = {"  "})
+        @DisplayName("should keep the bound uuid when none or a blank one is given")
+        void updateConnection_should_ignoreBlankUuid(String uuid) {
+            Device d = device(3, "A").setDeviceId("uuid-1");
+            when(deviceRepository.findById(3)).thenReturn(Optional.of(d));
+
+            assertThat(sut.updateConnection(ORG_ID, 3, null, null, uuid).getDeviceId()).isEqualTo("uuid-1");
+        }
+
+        @Test
+        @DisplayName("should cut a uuid longer than the column")
+        void updateConnection_should_truncateLongUuid() {
+            Device d = device(3, "A");
+            when(deviceRepository.findById(3)).thenReturn(Optional.of(d));
+
+            assertThat(sut.updateConnection(ORG_ID, 3, null, null, "u".repeat(40)).getDeviceId()).hasSize(36);
+        }
+
+        @Test
+        @DisplayName("should never change the name")
+        void updateConnection_should_keepName() {
+            Device d = device(3, "A");
+            when(deviceRepository.findById(3)).thenReturn(Optional.of(d));
+
+            assertThat(sut.updateConnection(ORG_ID, 3, "belen.local", null, null).getName()).isEqualTo("A");
+        }
+
+        @Test
+        @DisplayName("should reject an invalid PIN")
+        void updateConnection_should_rejectInvalidPin() {
+            when(deviceRepository.findById(3)).thenReturn(Optional.of(device(3, "A")));
+            assertApi(() -> sut.updateConnection(ORG_ID, 3, null, "pin", null), HttpStatus.BAD_REQUEST, ErrorCodes.DEVICES_PIN_INVALID);
+        }
+
+        @Test
+        @DisplayName("should 404 for a device of another organization")
+        void updateConnection_should_404ForForeignDevice() {
+            when(deviceRepository.findById(3)).thenReturn(Optional.of(device(3, "A").setOrganization(otherOrg)));
+            assertApi(() -> sut.updateConnection(ORG_ID, 3, "belen.local", null, null), HttpStatus.NOT_FOUND, ErrorCodes.DEVICES_NOT_FOUND);
+        }
+    }
+
+    @Nested
+    @DisplayName("normalizeLocalUrl")
+    class NormalizeLocalUrl {
+
+        @ParameterizedTest(name = "{0} -> {1}")
+        @CsvSource({
+                "belen.local,                       http://belen.local:8080",
+                "BELEN.local,                       http://belen.local:8080",
+                "10.42.0.1,                         http://10.42.0.1:8080",
+                "10.42.0.1:9000,                    http://10.42.0.1:9000",
+                "http://belen.local,                http://belen.local:8080",
+                "http://belen.local:8080/,          http://belen.local:8080",
+                "http://belen.local:8080/api?x=1#y, http://belen.local:8080",
+                "HTTP://belen.local:8080,           http://belen.local:8080",
+                "https://belen.example.com,         https://belen.example.com",
+                "https://belen.example.com:8443/,   https://belen.example.com:8443",
+                "http://[::1]:8080,                 http://[::1]:8080",
+                "localhost:18080,                   http://localhost:18080"
+        })
+        @DisplayName("should keep scheme://host[:port], with 8080 for plain http")
+        void normalizeLocalUrl_should_normalize(String raw, String expected) {
+            assertThat(DeviceService.normalizeLocalUrl(raw)).isEqualTo(expected);
+        }
+
+        @ParameterizedTest
+        @NullAndEmptySource
+        @ValueSource(strings = {"  ", "\t"})
+        @DisplayName("should return null for a blank address")
+        void normalizeLocalUrl_should_returnNullForBlank(String raw) {
+            assertThat(DeviceService.normalizeLocalUrl(raw)).isNull();
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"ftp://belen.local", "ws://belen.local", "http://", "http://belen local", "http://user:pw@belen.local",
+                "http://bad_host.local", "javascript:alert(1)"})
+        @DisplayName("should reject anything that is not an http(s) address with a host")
+        void normalizeLocalUrl_should_rejectInvalid(String raw) {
+            assertApi(() -> DeviceService.normalizeLocalUrl(raw), HttpStatus.BAD_REQUEST, ErrorCodes.DEVICES_LOCAL_URL_INVALID);
+        }
+
+        @Test
+        @DisplayName("should reject a result longer than 255 characters")
+        void normalizeLocalUrl_should_rejectTooLong() {
+            String host = ("a".repeat(60) + ".").repeat(4) + "local";
+            assertApi(() -> DeviceService.normalizeLocalUrl(host), HttpStatus.BAD_REQUEST, ErrorCodes.DEVICES_LOCAL_URL_INVALID);
         }
     }
 
@@ -473,7 +696,7 @@ class DeviceServiceTest {
 
         @BeforeEach
         void registerDevice() {
-            DeviceWithToken created = sut.create(ORG_ID, "Belén");
+            DeviceWithToken created = sut.create(ORG_ID, "Belén", null, null);
             registered = created.device().setId(10);
             token = created.token();
             lenient().when(deviceRepository.findByTokenHash(tokenService.hash(token))).thenReturn(Optional.of(registered));
@@ -635,6 +858,30 @@ class DeviceServiceTest {
             assertThat(dto.lastAlerts()).isEmpty();
             assertThat(dto.lastSeenAt()).isNull();
             assertThat(dto.deviceId()).isNull();
+        }
+
+        @Test
+        @DisplayName("should show the address to everyone and the PIN only when revealed")
+        void toResponse_should_revealPinOnlyWhenAllowed() {
+            Device d = device(3, "A").setLocalUrl("http://belen.local:8080").setPin("123456");
+
+            DeviceResponseDto hidden = sut.toResponse(d);
+            DeviceResponseDto shown = sut.toResponse(d, true);
+
+            assertThat(hidden.localUrl()).isEqualTo("http://belen.local:8080");
+            assertThat(hidden.pin()).isNull();
+            assertThat(hidden.hasPin()).isTrue();
+            assertThat(shown.pin()).isEqualTo("123456");
+            assertThat(shown.hasPin()).isTrue();
+        }
+
+        @Test
+        @DisplayName("should say there is no PIN when none is saved")
+        void toResponse_should_reportMissingPin() {
+            DeviceResponseDto dto = sut.toResponse(device(3, "A"), true);
+            assertThat(dto.pin()).isNull();
+            assertThat(dto.hasPin()).isFalse();
+            assertThat(dto.localUrl()).isNull();
         }
 
         @Test

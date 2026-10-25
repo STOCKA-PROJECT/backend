@@ -448,4 +448,61 @@ class OrganizationSecurityTest {
             assertFalse(sut.pieceTypeActionsEnabled(null, userPrincipal));
         }
     }
+
+    @Nested
+    @DisplayName("canControlDevices")
+    class CanControlDevices {
+
+        @Test
+        @DisplayName("should return true for a global ADMIN without looking the org up")
+        void should_returnTrue_for_globalAdmin() {
+            assertTrue(sut.canControlDevices(SLUG, adminPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return true for OWNER, MANAGER and USER of an admin-owned org")
+        void should_returnTrue_for_writers() {
+            for (OrganizationRoleEnum role : new OrganizationRoleEnum[] {
+                    OrganizationRoleEnum.OWNER, OrganizationRoleEnum.MANAGER, OrganizationRoleEnum.USER}) {
+                mockMembership(role);
+                when(memberRepository.existsAdminOwner(org, RoleEnum.ADMIN)).thenReturn(true);
+                assertTrue(sut.canControlDevices(SLUG, userPrincipal), "role " + role);
+            }
+        }
+
+        @Test
+        @DisplayName("should return false for a SPECTATOR")
+        void should_returnFalse_for_spectator() {
+            mockMembership(OrganizationRoleEnum.SPECTATOR);
+            when(memberRepository.existsAdminOwner(org, RoleEnum.ADMIN)).thenReturn(true);
+            assertFalse(sut.canControlDevices(SLUG, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return false when the org owner is not a global admin")
+        void should_returnFalse_when_ownerNotAdmin() {
+            when(organizationRepository.findBySlug(SLUG)).thenReturn(Optional.of(org));
+            when(memberRepository.existsAdminOwner(org, RoleEnum.ADMIN)).thenReturn(false);
+            assertFalse(sut.canControlDevices(SLUG, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return false for a non-member of an admin-owned org")
+        void should_returnFalse_for_nonMember() {
+            when(organizationRepository.findBySlug(SLUG)).thenReturn(Optional.of(org));
+            when(memberRepository.existsAdminOwner(org, RoleEnum.ADMIN)).thenReturn(true);
+            when(memberRepository.findByUserAndOrganization(userPrincipal, org)).thenReturn(Optional.empty());
+            assertFalse(sut.canControlDevices(SLUG, userPrincipal));
+        }
+
+        @Test
+        @DisplayName("should return false for an unknown or blank slug and for a principal that is not a User")
+        void should_returnFalse_for_badInput() {
+            when(organizationRepository.findBySlug("nope")).thenReturn(Optional.empty());
+            assertFalse(sut.canControlDevices("nope", userPrincipal));
+            assertFalse(sut.canControlDevices(" ", userPrincipal));
+            assertFalse(sut.canControlDevices(SLUG, "anonymousUser"));
+            assertFalse(sut.canControlDevices(SLUG, null));
+        }
+    }
 }

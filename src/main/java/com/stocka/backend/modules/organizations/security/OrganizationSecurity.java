@@ -198,6 +198,32 @@ public class OrganizationSecurity {
     }
 
     /**
+     * Whether the caller may drive the belén players of {@code orgSlug} from the editor: see their PIN,
+     * save where they answer on the local network and send them shows. Requires OWNER, MANAGER or USER
+     * on an organization whose owner is a global admin (SPECTATOR is read-only); global admins may
+     * always.
+     *
+     * @param orgSlug   current slug of the organization
+     * @param principal the authenticated principal ({@link User})
+     * @return {@code true} when the caller may use the devices' PIN and local address
+     */
+    public boolean canControlDevices(String orgSlug, Object principal) {
+        if (!(principal instanceof User user)) {
+            return false;
+        }
+        if (isGlobalAdmin(user)) {
+            return true;
+        }
+        Optional<Organization> orgOpt = lookupActionsOrg(orgSlug);
+        if (orgOpt.isEmpty() || !orgOwnerIsGlobalAdmin(orgOpt.get())) {
+            return false;
+        }
+        return memberRepository.findByUserAndOrganization(user, orgOpt.get())
+                .map(m -> m.getRole() != OrganizationRoleEnum.SPECTATOR)
+                .orElse(false);
+    }
+
+    /**
      * Whether the ports feature is enabled for {@code org} as seen by {@code user}. Used to expose a
      * capability flag on the organization response so the frontend can show or hide the feature
      * without probing the endpoint. Mirrors {@link #canReadPorts} for a caller already known to be a

@@ -1,5 +1,5 @@
 meta {
-  name: Update Device (rename)
+  name: Update Device (name, address, PIN)
   type: http
   seq: 3
 }
@@ -20,11 +20,14 @@ auth:bearer {
 
 body:json {
   {
-    "name": "Belén Martorell (local)"
+    "name": "Belén Martorell (local)",
+    "localUrl": "http://10.42.0.1:8080"
   }
 }
 
 docs {
-  OWNER o MANAGER. Mateixes regles que la creació (1–80, retallat, únic → 409 `devices.name_taken`).
+  OWNER o MANAGER. Tots els camps són opcionals: `null`/absent no el toca; `localUrl` o `pin` buits
+  l'esborren. Mateixes regles que la creació (nom 1–80, retallat, únic → 409 `devices.name_taken`;
+  `devices.local_url_invalid`, `devices.pin_invalid`). La resposta inclou el `pin`.
   404 `devices.not_found` si l'id no és de l'organització.
 }

@@ -1,11 +1,15 @@
 package com.stocka.backend.modules.devices.service;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,6 +41,12 @@ import com.stocka.backend.modules.users.entity.User;
  * on the row and a device counts as online while that report is younger than
  * {@code stocka.devices.online-window}. Rotating the token invalidates the previous one immediately.
  *
+ * <p>A device may also carry where the editor reaches it on the local network ({@code localUrl},
+ * normalized like the editor's {@code normalizePiUrl}: {@code scheme://host[:port]}, port
+ * {@value #DEFAULT_PLAYER_PORT} for plain http) and its {@value #PIN_LENGTH}-digit PIN, so every computer
+ * of the organization finds it configured. Managers set them from the dashboard; whoever may send shows
+ * can update them from the editor ({@link #updateConnection}).
+ *
  * <p>On soft-delete the name is mangled with a "::deleted::ID" suffix so the
  * {@code uk_device_org_name} slot is freed, like ports.
  */
@@ -46,10 +56,19 @@ public class DeviceService {
     public static final int MAX_NAME_LENGTH = 80;
     /** Authorization scheme the player uses: {@code Authorization: Device <token>}. */
     public static final String AUTH_SCHEME = "Device";
+    /** Port of the player's local API when the address names none (rpi4-system {@code app/api}). */
+    public static final int DEFAULT_PLAYER_PORT = 8080;
+    /** Length of the player's PIN (rpi4-system {@code app/device.py}). */
+    public static final int PIN_LENGTH = 6;
+    /** Maximum length of the local address, matching the {@code local_url VARCHAR(255)} column. */
+    public static final int MAX_LOCAL_URL_LENGTH = 255;
 
     private static final Logger log = LoggerFactory.getLogger(DeviceService.class);
     private static final String SOFT_DELETE_SUFFIX = "::deleted::";
     private static final int MAX_IP_LENGTH = 45;
+    private static final int MAX_DEVICE_ID_LENGTH = 36;
+    private static final Pattern PIN_PATTERN = Pattern.compile("\\d{" + PIN_LENGTH + "}");
+    private static final Pattern SCHEME_PATTERN = Pattern.compile("^[a-zA-Z][a-zA-Z0-9+.-]*://.*");
 
     private final OrganizationService organizationService;
     private final DeviceRepository deviceRepository;
@@ -115,16 +134,22 @@ public class DeviceService {
      * Registers a new device and issues its first heartbeat token. The creator is the authenticated
      * user, when there is one in the security context.
      *
-     * @param orgId   organization id
-     * @param rawName requested name (trimmed here)
+     * @param orgId       organization id
+     * @param rawName     requested name (trimmed here)
+     * @param rawLocalUrl address on the local network, or {@code null}/blank for none
+     * @param rawPin      the player's PIN, or {@code null}/blank for none
      * @return the persisted device and its raw token
-     * @throws ApiException 400 when the name is blank or too long, 409
-     *                      ({@link ErrorCodes#DEVICES_NAME_TAKEN}) when another device has it
+     * @throws ApiException 400 when the name is blank or too long, the address is not an http(s) URL
+     *                      ({@link ErrorCodes#DEVICES_LOCAL_URL_INVALID}) or the PIN is not
+     *                      {@value #PIN_LENGTH} digits ({@link ErrorCodes#DEVICES_PIN_INVALID}); 409
+     *                      ({@link ErrorCodes#DEVICES_NAME_TAKEN}) when another device has the name
      */
     @Transactional
-    public DeviceWithToken create(Integer orgId, String rawName) {
+    public DeviceWithToken create(Integer orgId, String rawName, String rawLocalUrl, String rawPin) {
         Organization org = organizationService.findById(orgId);
         String name = sanitizeName(rawName);
+        String localUrl = normalizeLocalUrl(rawLocalUrl);
+        String pin = sanitizePin(rawPin);
         ensureUniqueName(org, name, null);
         GeneratedToken token = tokenService.generate();
 
@@ -132,6 +157,8 @@ public class DeviceService {
                 .setOrganization(org)
                 .setName(name)
                 .setBoard(Device.DEFAULT_BOARD)
+                .setLocalUrl(localUrl)
+                .setPin(pin)
                 .setTokenHash(token.hash())
                 .setTokenPrefix(token.prefix())
                 .setCreatedBy(currentUserId());
@@ -139,20 +166,58 @@ public class DeviceService {
     }
 
     /**
-     * Renames a device with the same rules as {@link #create}.
+     * Updates the fields a manager edits from the dashboard. A {@code null} argument leaves its field as
+     * it is; a blank address or PIN removes it. The name follows the rules of {@link #create}.
      *
-     * @param orgId   organization id
-     * @param id      device row id
-     * @param rawName new name (trimmed here)
+     * @param orgId       organization id
+     * @param id          device row id
+     * @param rawName     new name (trimmed here), or {@code null}
+     * @param rawLocalUrl new address, blank to remove it, or {@code null}
+     * @param rawPin      new PIN, blank to remove it, or {@code null}
      * @return the persisted device
+     * @throws ApiException the same codes as {@link #create}, and 404 when the device is not found
      */
     @Transactional
-    public Device rename(Integer orgId, Integer id, String rawName) {
+    public Device update(Integer orgId, Integer id, String rawName, String rawLocalUrl, String rawPin) {
         Device device = findInOrg(orgId, id);
-        String name = sanitizeName(rawName);
-        if (!name.equals(device.getName())) {
-            ensureUniqueName(device.getOrganization(), name, device.getId());
-            device.setName(name);
+        if (rawName != null) {
+            String name = sanitizeName(rawName);
+            if (!name.equals(device.getName())) {
+                ensureUniqueName(device.getOrganization(), name, device.getId());
+                device.setName(name);
+            }
+        }
+        applyConnection(device, rawLocalUrl, rawPin);
+        return saveAndFlush(device);
+    }
+
+    /**
+     * Saves what the timeline editor learnt reaching the player on the local network: the address it
+     * answered at, the PIN it accepted and the uuid it reported. {@code null} leaves a field as it is; a
+     * blank address or PIN removes it; a blank uuid is ignored. A uuid different from the bound one
+     * replaces it (the card may have been re-imaged), logged like in {@link #recordHeartbeat}.
+     *
+     * @param orgId       organization id
+     * @param id          device row id
+     * @param rawLocalUrl address, blank to remove it, or {@code null}
+     * @param rawPin      PIN, blank to remove it, or {@code null}
+     * @param rawDeviceId uuid of the player, or {@code null}
+     * @return the persisted device
+     * @throws ApiException 400 ({@link ErrorCodes#DEVICES_LOCAL_URL_INVALID},
+     *                      {@link ErrorCodes#DEVICES_PIN_INVALID}) and 404 when the device is not found
+     */
+    @Transactional
+    public Device updateConnection(Integer orgId, Integer id, String rawLocalUrl, String rawPin, String rawDeviceId) {
+        Device device = findInOrg(orgId, id);
+        applyConnection(device, rawLocalUrl, rawPin);
+        String deviceId = rawDeviceId == null ? null : truncate(rawDeviceId.trim(), MAX_DEVICE_ID_LENGTH);
+        if (deviceId != null && !deviceId.isEmpty() && !deviceId.equals(device.getDeviceId())) {
+            if (device.getDeviceId() == null) {
+                log.info("device_bound_from_editor id={} deviceId={}", device.getId(), deviceId);
+            } else {
+                log.warn("device_id_changed_from_editor id={} previous={} current={}", device.getId(), device.getDeviceId(), deviceId);
+            }
+            device.setDeviceId(deviceId);
         }
         return saveAndFlush(device);
     }
@@ -243,14 +308,63 @@ public class DeviceService {
     }
 
     /**
-     * Builds the REST view of a device.
+     * Builds the REST view of a device without its PIN.
      *
      * @param device source device
      * @return response DTO with {@code online} and the deserialized overrides
      */
     public DeviceResponseDto toResponse(Device device) {
+        return toResponse(device, false);
+    }
+
+    /**
+     * Builds the REST view of a device.
+     *
+     * @param device    source device
+     * @param revealPin whether the caller may see the PIN (who may send shows)
+     * @return response DTO with {@code online} and the deserialized overrides
+     */
+    public DeviceResponseDto toResponse(Device device, boolean revealPin) {
         return DeviceResponseDto.from(device, isOnline(device), overridesCodec.deserialize(device.getLastOverrides()),
-                overridesCodec.deserializeAlerts(device.getLastAlerts()));
+                overridesCodec.deserializeAlerts(device.getLastAlerts()), revealPin);
+    }
+
+    /**
+     * Normalizes the address of a player on the local network the way the editor does: a missing
+     * scheme means {@code http://}, only {@code scheme://host[:port]} is kept and plain http without a
+     * port gets {@value #DEFAULT_PLAYER_PORT}.
+     *
+     * @param raw address as typed ({@code belen.local}, {@code http://10.42.0.1:8080/}...)
+     * @return the normalized address, or {@code null} when {@code raw} is {@code null} or blank
+     * @throws ApiException 400 ({@link ErrorCodes#DEVICES_LOCAL_URL_INVALID}) when it is not an http(s)
+     *                      address with a host, or the result is longer than {@value #MAX_LOCAL_URL_LENGTH}
+     */
+    public static String normalizeLocalUrl(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        String withScheme = SCHEME_PATTERN.matcher(trimmed).matches() ? trimmed : "http://" + trimmed;
+        URI uri;
+        try {
+            uri = new URI(withScheme);
+        } catch (URISyntaxException ex) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.DEVICES_LOCAL_URL_INVALID, null, ex);
+        }
+        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+        String host = uri.getHost();
+        if ((!scheme.equals("http") && !scheme.equals("https")) || host == null || host.isEmpty() || uri.getUserInfo() != null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.DEVICES_LOCAL_URL_INVALID);
+        }
+        int port = uri.getPort();
+        if (port < 0 && scheme.equals("http")) {
+            port = DEFAULT_PLAYER_PORT;
+        }
+        String normalized = scheme + "://" + host.toLowerCase(Locale.ROOT) + (port < 0 ? "" : ":" + port);
+        if (normalized.length() > MAX_LOCAL_URL_LENGTH) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.DEVICES_LOCAL_URL_INVALID);
+        }
+        return normalized;
     }
 
     /**
@@ -286,6 +400,28 @@ public class DeviceService {
         if (existing.isPresent() && (excludeId == null || !existing.get().getId().equals(excludeId))) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DEVICES_NAME_TAKEN);
         }
+    }
+
+    private static void applyConnection(Device device, String rawLocalUrl, String rawPin) {
+        if (rawLocalUrl != null) {
+            device.setLocalUrl(normalizeLocalUrl(rawLocalUrl));
+        }
+        if (rawPin != null) {
+            device.setPin(sanitizePin(rawPin));
+        }
+    }
+
+    private static String sanitizePin(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        if (!PIN_PATTERN.matcher(trimmed).matches()) {
+            Map<String, Object> p = new LinkedHashMap<>();
+            p.put("length", PIN_LENGTH);
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.DEVICES_PIN_INVALID, p);
+        }
+        return trimmed;
     }
 
     private static String sanitizeName(String raw) {

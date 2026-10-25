@@ -28,7 +28,9 @@ import jakarta.persistence.UniqueConstraint;
  *
  * <p>{@link #deviceId} is the uuid the player generates for itself and is bound by the first
  * heartbeat; a later heartbeat with a different uuid is accepted (the SD card may have been
- * re-imaged) and logged. {@link #lastOverrides} is a JSON array of port names cut by hand on the
+ * re-imaged) and logged; the editor may also bind it when it reaches the player on the local network.
+ * {@link #localUrl} and {@link #pin} are how the editor reaches the player on the local network (it
+ * never has Internet at the belén), shared by every computer of the organization. {@link #lastOverrides} is a JSON array of port names cut by hand on the
  * player. {@link #lastIp} is the public address the heartbeat came from.
  *
  * <p>{@code createdBy} is mapped as a plain column (not a {@code @ManyToOne}) because {@code User}
@@ -67,6 +69,13 @@ public class Device {
 
     @Column(nullable = false, length = 32, columnDefinition = "VARCHAR(32) NOT NULL DEFAULT 'rpi4b'")
     private String board = DEFAULT_BOARD;
+
+    @Column(name = "local_url", length = 255)
+    private String localUrl;
+
+    @JsonIgnore
+    @Column(length = 16)
+    private String pin;
 
     @JsonIgnore
     @Column(name = "token_hash", nullable = false, length = 64, columnDefinition = "CHAR(64)")
@@ -171,6 +180,26 @@ public class Device {
 
     public Device setBoard(String board) {
         this.board = board;
+        return this;
+    }
+
+    /** @return address of the player's local API ({@code http://belen.local:8080}), or {@code null} */
+    public String getLocalUrl() {
+        return localUrl;
+    }
+
+    public Device setLocalUrl(String localUrl) {
+        this.localUrl = localUrl;
+        return this;
+    }
+
+    /** @return PIN the player asks for its commands, or {@code null} when nobody saved it */
+    public String getPin() {
+        return pin;
+    }
+
+    public Device setPin(String pin) {
+        this.pin = pin;
         return this;
     }
 

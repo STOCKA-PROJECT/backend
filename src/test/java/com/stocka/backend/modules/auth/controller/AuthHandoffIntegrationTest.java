@@ -2,6 +2,7 @@ package com.stocka.backend.modules.auth.controller;
 
 import static com.stocka.backend.modules.organizations.IntegrationTestSupport.buildMockMvc;
 import static com.stocka.backend.modules.organizations.IntegrationTestSupport.signupAndLogin;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -66,10 +67,41 @@ class AuthHandoffIntegrationTest {
     }
 
     @Test
+    @DisplayName("without rememberMe the exchanged session is a browser-session cookie")
+    void exchange_withoutRememberMe_issuesSessionCookie() throws Exception {
+        mockMvc.perform(post("/auth/handoff/exchange")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of("ticket", mintTicket()))))
+                .andExpect(status().isOk())
+                .andExpect(cookie().maxAge("stocka_refresh", -1));
+        assertThat(jdbcTemplate.queryForObject("SELECT remember_me FROM refresh_tokens ORDER BY id DESC LIMIT 1", Boolean.class))
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("with rememberMe (the editor on a phone) the exchanged session lasts 30 days")
+    void exchange_withRememberMe_issuesPersistentCookie() throws Exception {
+        mockMvc.perform(post("/auth/handoff/exchange")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of("ticket", mintTicket(), "rememberMe", true))))
+                .andExpect(status().isOk())
+                .andExpect(cookie().maxAge("stocka_refresh", 30 * 24 * 60 * 60));
+        assertThat(jdbcTemplate.queryForObject("SELECT remember_me FROM refresh_tokens ORDER BY id DESC LIMIT 1", Boolean.class))
+                .isTrue();
+    }
+
+    @Test
     @DisplayName("minting a ticket requires authentication")
     void handoff_requiresAuth() throws Exception {
         mockMvc.perform(post("/auth/handoff"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    private String mintTicket() throws Exception {
+        MvcResult minted = mockMvc.perform(post("/auth/handoff").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn();
+        return (String) om.readValue(minted.getResponse().getContentAsString(), Map.class).get("ticket");
     }
 
     @Test

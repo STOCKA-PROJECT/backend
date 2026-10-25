@@ -128,7 +128,8 @@ Org membership roles: `OWNER`, `MANAGER`, `USER`, `SPECTATOR` (read-only).
 | POST   | `/pieces/import(?format=&mode=&dryRun=)`      | OWNER, MANAGER, USER      | Bulk import; dry-run preview then all-or-nothing commit |
 | GET    | `/devices`                                    | any member (admin-owned org) | Registered players with `online` + last heartbeat |
 | POST   | `/devices`                                    | OWNER, MANAGER (admin-owned org) | Register a player; returns the heartbeat token once |
-| PATCH  | `/devices/{id}`                               | OWNER, MANAGER            | Rename (409 `devices.name_taken`) |
+| PATCH  | `/devices/{id}`                               | OWNER, MANAGER            | Name, `localUrl`, `pin` (all optional; empty clears; 409 `devices.name_taken`) |
+| PATCH  | `/devices/{id}/connection`                    | OWNER, MANAGER, USER      | Editor saves `localUrl`, `pin`, `deviceId` after reaching the Pi on the LAN |
 | DELETE | `/devices/{id}`                               | OWNER, MANAGER            | Soft-delete (name renamed `::deleted::<id>`) |
 | POST   | `/devices/{id}/rotate-token`                  | OWNER, MANAGER            | New heartbeat token; the old one dies immediately |
 
@@ -176,7 +177,13 @@ netMode?, error?, alerts?}` (alerts: last ≤ 20 `{code, port, message, at}`, st
 later is accepted and logged at WARN), stores every `last_*` column and `last_ip` from `ClientIpResolver`.
 `online` = `lastSeenAt` within `stocka.devices.online-window` (`DEVICES_ONLINE_WINDOW`, default `PT5M`);
 `heartbeatUrl` in the creation response comes from `stocka.devices.heartbeat-base-url`
-(`DEVICES_HEARTBEAT_BASE_URL`, defaults to `stocka.oauth.issuer`; blank derives it from the request). The
+(`DEVICES_HEARTBEAT_BASE_URL`, defaults to `stocka.oauth.issuer`; blank derives it from the request).
+Since `V30__device_local_connection.sql` (2026-10-25) a device also keeps `local_url` (where the editor reaches
+it on the LAN, normalized like the editor's `normalizePiUrl`: `scheme://host[:port]`, 8080 for plain http,
+`devices.local_url_invalid`) and `pin` (6 digits, `devices.pin_invalid`, stored in clear because the editor sends
+it to the Pi; exposed as `pin` only to `@orgSecurity.canControlDevices` = not SPECTATOR, `hasPin` for everyone):
+the editor's «Dispositius» list is exactly the registered devices, so every computer and phone finds them
+configured. The
 device token is never an API credential: `JwtAuthenticationFilter` only reads `Bearer` and the REST chain
 rejects it with 401. Table `devices` (`V24__devices.sql`; `V28` adds `last_show_timeline_id`, the timeline the active
 show was exported from, exposed as `lastShowTimelineId`), soft-deleted with the org cascade.

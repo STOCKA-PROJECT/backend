@@ -1,0 +1,35 @@
+meta {
+  name: Update Device connection (from the editor)
+  type: http
+  seq: 6
+}
+
+patch {
+  url: {{baseUrl}}/organizations/{{orgId}}/devices/{{stockaDeviceId}}/connection
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "localUrl": "http://belen.local:8080",
+    "pin": "123456",
+    "deviceId": "00000000-0000-4000-8000-000000000000"
+  }
+}
+
+docs {
+  OWNER, MANAGER o USER (no SPECTATOR) d'una organització d'un admin. El que l'editor desa quan arriba a
+  la Pi per la xarxa local: l'adreça on ha respost, el PIN que ha acceptat i el `deviceId` (uuid del seu
+  `device.json`, com el primer batec). `null`/absent no toca el camp; `localUrl` o `pin` buits l'esborren;
+  el nom no es pot canviar per aquí. 400 `devices.local_url_invalid` / `devices.pin_invalid` /
+  `validation.failed` (`deviceId` > 36), 404 `devices.not_found`.
+}

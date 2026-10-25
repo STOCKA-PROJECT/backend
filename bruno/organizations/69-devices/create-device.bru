@@ -20,7 +20,9 @@ auth:bearer {
 
 body:json {
   {
-    "name": "Belén Martorell"
+    "name": "Belén Martorell",
+    "localUrl": "belen.local",
+    "pin": "123456"
   }
 }
 
@@ -38,4 +40,7 @@ docs {
   només se'n guarda el sha256 i els 8 primers caràcters (`tokenPrefix`). Desa `stockaDeviceId`,
   `heartbeatToken` i `heartbeatUrl` per a `rotate-device-token`, `delete-device` i `player/heartbeat`.
   A la Pi: `Authorization: Device <heartbeatToken>` cap a `heartbeatUrl`.
+  `localUrl` i `pin` són opcionals: on respon la Pi a la xarxa local (es normalitza a
+  `scheme://host[:port]`, 8080 per defecte en http; 400 `devices.local_url_invalid`) i el seu PIN
+  de 6 xifres (400 `devices.pin_invalid`). L'editor els fa servir a tots els ordinadors i mòbils.
 }

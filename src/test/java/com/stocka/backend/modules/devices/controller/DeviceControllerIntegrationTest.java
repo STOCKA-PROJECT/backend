@@ -335,6 +335,173 @@ class DeviceControllerIntegrationTest {
     }
 
     @Nested
+    @DisplayName("local address and PIN")
+    class LocalConnection {
+
+        @Test
+        @DisplayName("create stores the normalized address and the PIN and shows both to the manager")
+        void create_withAddressAndPin() throws Exception {
+            createDevice(managerToken, acmeSlug, Map.of("name", "Belén", "localUrl", "belen.local", "pin", "123456"))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.device.localUrl").value("http://belen.local:8080"))
+                    .andExpect(jsonPath("$.device.pin").value("123456"))
+                    .andExpect(jsonPath("$.device.hasPin").value(true));
+            assertThat(jdbcTemplate.queryForObject("SELECT pin FROM devices WHERE name = 'Belén'", String.class)).isEqualTo("123456");
+        }
+
+        @Test
+        @DisplayName("a device without address nor PIN lists them as null and hasPin false")
+        void create_withoutConnection() throws Exception {
+            createDevice(adminToken, acmeSlug, "Belén").andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.device.localUrl").value(nullValue()))
+                    .andExpect(jsonPath("$.device.pin").value(nullValue()))
+                    .andExpect(jsonPath("$.device.hasPin").value(false));
+        }
+
+        @Test
+        @DisplayName("OWNER, MANAGER and USER see the PIN in the list; SPECTATOR only the address and hasPin")
+        void list_revealsPinToWhoMaySendShows() throws Exception {
+            createDevice(adminToken, acmeSlug, Map.of("name", "Belén", "localUrl", "http://10.42.0.1:8080", "pin", "123456"))
+                    .andExpect(status().isCreated());
+
+            for (String token : new String[] {adminToken, managerToken, userToken}) {
+                mockMvc.perform(get(devicesPath(acmeSlug)).header("Authorization", "Bearer " + token))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$[0].localUrl").value("http://10.42.0.1:8080"))
+                        .andExpect(jsonPath("$[0].pin").value("123456"));
+            }
+            mockMvc.perform(get(devicesPath(acmeSlug)).header("Authorization", "Bearer " + spectatorToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].localUrl").value("http://10.42.0.1:8080"))
+                    .andExpect(jsonPath("$[0].pin").value(nullValue()))
+                    .andExpect(jsonPath("$[0].hasPin").value(true));
+        }
+
+        @Test
+        @DisplayName("an invalid address returns 400 devices.local_url_invalid and creates nothing")
+        void create_invalidAddress_returns400() throws Exception {
+            createDevice(adminToken, acmeSlug, Map.of("name", "Belén", "localUrl", "ftp://belen.local"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("devices.local_url_invalid"));
+            assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM devices", Integer.class)).isZero();
+        }
+
+        @Test
+        @DisplayName("a PIN that is not 6 digits returns 400 devices.pin_invalid")
+        void create_invalidPin_returns400() throws Exception {
+            createDevice(adminToken, acmeSlug, Map.of("name", "Belén", "pin", "12ab56"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("devices.pin_invalid"));
+        }
+
+        @Test
+        @DisplayName("an address longer than 255 characters fails validation")
+        void create_tooLongAddress_returns400() throws Exception {
+            createDevice(adminToken, acmeSlug, Map.of("name", "Belén", "localUrl", "x".repeat(256)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("validation.failed"));
+        }
+
+        @Test
+        @DisplayName("PATCH changes only the fields it carries and an empty string removes the address or the PIN")
+        void update_partialAndClear() throws Exception {
+            Integer id = createAndGetId(adminToken, acmeSlug, Map.of("name", "Belén", "localUrl", "belen.local", "pin", "123456"));
+
+            patchDevice(managerToken, acmeSlug, id, Map.of("localUrl", "10.42.0.1"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.name").value("Belén"))
+                    .andExpect(jsonPath("$.localUrl").value("http://10.42.0.1:8080"))
+                    .andExpect(jsonPath("$.pin").value("123456"));
+
+            patchDevice(managerToken, acmeSlug, id, Map.of("pin", ""))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.localUrl").value("http://10.42.0.1:8080"))
+                    .andExpect(jsonPath("$.pin").value(nullValue()))
+                    .andExpect(jsonPath("$.hasPin").value(false));
+
+            patchDevice(managerToken, acmeSlug, id, Map.of("localUrl", ""))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.localUrl").value(nullValue()));
+        }
+
+        @Test
+        @DisplayName("PATCH with an empty body is a no-op 200")
+        void update_emptyBody_isOk() throws Exception {
+            Integer id = createAndGetId(adminToken, acmeSlug, "Belén");
+            patchDevice(adminToken, acmeSlug, id, Map.of())
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.name").value("Belén"));
+        }
+
+        @Test
+        @DisplayName("a USER member cannot PATCH the device itself")
+        void update_byUser_isForbidden() throws Exception {
+            Integer id = createAndGetId(adminToken, acmeSlug, "Belén");
+            patchDevice(userToken, acmeSlug, id, Map.of("localUrl", "belen.local")).andExpect(status().isForbidden());
+        }
+
+        @Test
+        @DisplayName("a USER saves from the editor the address, the PIN and the uuid the player answered with")
+        void connection_byUser_savesAndBinds() throws Exception {
+            Integer id = createAndGetId(adminToken, acmeSlug, "Belén");
+
+            patchConnection(userToken, acmeSlug, id, Map.of("localUrl", "http://belen.local:8080", "pin", "654321", "deviceId", "uuid-1"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.name").value("Belén"))
+                    .andExpect(jsonPath("$.localUrl").value("http://belen.local:8080"))
+                    .andExpect(jsonPath("$.pin").value("654321"))
+                    .andExpect(jsonPath("$.deviceId").value("uuid-1"));
+
+            patchConnection(managerToken, acmeSlug, id, Map.of("localUrl", "10.42.0.1"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.localUrl").value("http://10.42.0.1:8080"))
+                    .andExpect(jsonPath("$.pin").value("654321"))
+                    .andExpect(jsonPath("$.deviceId").value("uuid-1"));
+        }
+
+        @Test
+        @DisplayName("the connection endpoint ignores a name in the body")
+        void connection_ignoresName() throws Exception {
+            Integer id = createAndGetId(adminToken, acmeSlug, "Belén");
+            patchConnection(userToken, acmeSlug, id, Map.of("name", "Un altre", "pin", "111111"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.name").value("Belén"));
+        }
+
+        @Test
+        @DisplayName("SPECTATOR, outsiders and non-admin-owned orgs cannot save the connection")
+        void connection_forbidden() throws Exception {
+            Integer id = createAndGetId(adminToken, acmeSlug, "Belén");
+            patchConnection(spectatorToken, acmeSlug, id, Map.of("pin", "111111")).andExpect(status().isForbidden());
+            patchConnection(outsiderToken, acmeSlug, id, Map.of("pin", "111111")).andExpect(status().isForbidden());
+            patchConnection(outsiderToken, betaSlug, id, Map.of("pin", "111111")).andExpect(status().isForbidden());
+            mockMvc.perform(patch(devicesPath(acmeSlug) + "/" + id + "/connection")
+                            .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        @DisplayName("the connection endpoint validates like the others and 404s for foreign ids")
+        void connection_validationAndNotFound() throws Exception {
+            Integer id = createAndGetId(adminToken, acmeSlug, "Belén");
+            Integer foreign = createAndGetId(adminToken, acmeDosSlug, "Belén");
+
+            patchConnection(userToken, acmeSlug, id, Map.of("pin", "1"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("devices.pin_invalid"));
+            patchConnection(userToken, acmeSlug, id, Map.of("localUrl", "belen local"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("devices.local_url_invalid"));
+            patchConnection(userToken, acmeSlug, id, Map.of("deviceId", "u".repeat(37)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("validation.failed"));
+            patchConnection(adminToken, acmeSlug, foreign, Map.of("pin", "111111"))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.code").value("devices.not_found"));
+        }
+    }
+
+    @Nested
     @DisplayName("delete")
     class Delete {
 
@@ -439,15 +606,37 @@ class DeviceControllerIntegrationTest {
     }
 
     private ResultActions createDevice(String token, String slug, String name) throws Exception {
+        return createDevice(token, slug, Map.of("name", name));
+    }
+
+    private ResultActions createDevice(String token, String slug, Map<String, String> body) throws Exception {
         return mockMvc.perform(post(devicesPath(slug))
                 .header("Authorization", "Bearer " + token)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(om.writeValueAsString(Map.of("name", name))));
+                .content(om.writeValueAsString(body)));
     }
 
     private Integer createAndGetId(String token, String slug, String name) throws Exception {
-        MvcResult r = createDevice(token, slug, name).andExpect(status().isCreated()).andReturn();
+        return createAndGetId(token, slug, Map.of("name", name));
+    }
+
+    private Integer createAndGetId(String token, String slug, Map<String, String> body) throws Exception {
+        MvcResult r = createDevice(token, slug, body).andExpect(status().isCreated()).andReturn();
         return om.readTree(r.getResponse().getContentAsString()).get("device").get("id").asInt();
+    }
+
+    private ResultActions patchDevice(String token, String slug, Integer id, Map<String, String> body) throws Exception {
+        return mockMvc.perform(patch(devicesPath(slug) + "/" + id)
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(om.writeValueAsString(body)));
+    }
+
+    private ResultActions patchConnection(String token, String slug, Integer id, Map<String, String> body) throws Exception {
+        return mockMvc.perform(patch(devicesPath(slug) + "/" + id + "/connection")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(om.writeValueAsString(body)));
     }
 
     private ResultActions renameDevice(String token, String slug, Integer id, String name) throws Exception {

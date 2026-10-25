@@ -412,7 +412,7 @@ public class AuthController {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED,
                         ErrorCodes.AUTH_HANDOFF_TOKEN_INVALID));
-        return issueSession(user, false, request);
+        return issueSession(user, dto.isRememberMe(), request);
     }
 
     @PostMapping("/forgot-password")
