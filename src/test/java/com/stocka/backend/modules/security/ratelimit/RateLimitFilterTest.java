@@ -132,6 +132,30 @@ class RateLimitFilterTest {
         assertThat(getResp.getStatus()).isEqualTo(HttpStatus.OK.value());
     }
 
+    @Test
+    @DisplayName("matches GET /player/logs/cursor and POST /player/logs with the shared player.logs.ip policy (240/min)")
+    void should_match_player_logs() throws Exception {
+        assertThat(RateLimitFilter.PLAYER_LOGS_IP.name()).isEqualTo("player.logs.ip");
+        assertThat(RateLimitFilter.PLAYER_LOGS_IP.capacity()).isEqualTo(240L);
+        for (int i = 0; i < RateLimitFilter.PLAYER_LOGS_IP.capacity(); i++) {
+            MockHttpServletRequest req = new MockHttpServletRequest(i % 2 == 0 ? "GET" : "POST", i % 2 == 0 ? "/player/logs/cursor" : "/player/logs");
+            req.setRemoteAddr("1.2.3.4");
+            MockHttpServletResponse resp = new MockHttpServletResponse();
+            filter.doFilter(req, resp, new MockFilterChain());
+            assertThat(resp.getStatus()).isEqualTo(HttpStatus.OK.value());
+        }
+        MockHttpServletRequest last = new MockHttpServletRequest("POST", "/player/logs");
+        last.setRemoteAddr("1.2.3.4");
+        MockHttpServletResponse limited = new MockHttpServletResponse();
+        filter.doFilter(last, limited, new MockFilterChain());
+        assertThat(limited.getStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
+
+        // The heartbeat keeps its own bucket.
+        MockHttpServletResponse heartbeat = new MockHttpServletResponse();
+        filter.doFilter(heartbeatRequest("1.2.3.4"), heartbeat, new MockFilterChain());
+        assertThat(heartbeat.getStatus()).isEqualTo(HttpStatus.OK.value());
+    }
+
     private static MockHttpServletRequest heartbeatRequest(String ip) {
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/player/heartbeat");
         req.setRemoteAddr(ip);

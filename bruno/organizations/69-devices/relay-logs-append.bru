@@ -1,0 +1,34 @@
+meta {
+  name: Relay Logs Append (app carrying the log)
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/devices/{{playerUuid}}/logs?file=system-2026-10-26.log&from=0
+  body: text
+  auth: bearer
+}
+
+params:query {
+  file: system-2026-10-26.log
+  from: 0
+}
+
+headers {
+  Content-Type: text/plain; charset=utf-8
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:text {
+  2026-10-26 18:30:02 | core | INFO     | arrencada
+}
+
+docs {
+  Com `player/logs-append`, amb la sessió de l'usuari en lloc del token de la Pi. El tros queda marcat com a
+  portat per l'usuari (`source = USER`, `uploaded_by`). Si la Pi ja n'ha pujat una part, només es desa la
+  resta. 404 `devices.not_found` com a `relay-logs-cursor`.
+}

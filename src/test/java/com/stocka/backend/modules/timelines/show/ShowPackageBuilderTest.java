@@ -311,6 +311,16 @@ class ShowPackageBuilderTest {
         }
 
         @Test
+        @DisplayName("lists every piece on the strip and each one on its own segment in meta.pieces")
+        void piecesOnStrip() {
+            SceneDocument doc = stripDoc(List.of(k("k1", "i-casa1", 53, 0, Map.of())), Map.of());
+            Assembled assembled = builder.assemble(input(doc, lengths));
+            assertThat(assembled.pieces()).containsEntry("Tira 1", List.of("Casa simple", "Casa doble"))
+                    .containsEntry("Casa simple", List.of("Casa simple"))
+                    .containsEntry("Casa doble", List.of("Casa doble"));
+        }
+
+        @Test
         @DisplayName("follows the saved strip order")
         void savedOrder() {
             SceneDocument doc = stripDoc(List.of(k("k1", "i-casa1", 53, 0, Map.of())), Map.of("12", List.of("i-casa2", "i-casa1")));
@@ -654,6 +664,59 @@ class ShowPackageBuilderTest {
             replace(clips, c -> c.id().equals("c02"), c -> new Clip(c.id(), c.trackId(), c.pieceTypeActionId(), c.startMs(), c.durationMs(), label, "Fons taronja"));
             Assembled labelled = builder.assemble(Belen2026Fixture.input(doc(items(), clips)));
             assertThat(errors(labelled).get(0).message()).contains("«Fons taronja»");
+        }
+    }
+
+    @Nested
+    @DisplayName("pieces by port (meta.pieces)")
+    class PiecesByPort {
+
+        @Test
+        @DisplayName("the sample names one piece per port, in scene order")
+        void sample() {
+            ShowPackage pkg = builder.build(Belen2026Fixture.input()).pkg();
+            assertThat(pkg.meta().pieces()).containsExactly(
+                    Map.entry("Focos", List.of("Focos")), Map.entry("Sembra", List.of("Sembra")),
+                    Map.entry("LlumsE", List.of("LlumsE")), Map.entry("Fondo1", List.of("Fondo1")),
+                    Map.entry("Fondo2", List.of("Fondo2")), Map.entry("CasaSimple", List.of("CasaSimple")),
+                    Map.entry("CasaDoble", List.of("CasaDoble")), Map.entry("Audio", List.of("Audio")));
+        }
+
+        @Test
+        @DisplayName("a port driving several pieces lists all of them once, and a piece with several ports appears on each")
+        void sharedPorts() {
+            List<Item> items = items();
+            replace(items, i -> i.id().equals("i-sembra"), i -> withPorts(i, 1, 2));
+            items.add(Belen2026Fixture.item("i-focos-bis", 1, 1));
+            Assembled assembled = builder.assemble(Belen2026Fixture.input(doc(items, clips())));
+            assertThat(assembled.pieces().get("Focos")).containsExactly("Focos", "Sembra");
+            assertThat(assembled.pieces().get("Sembra")).containsExactly("Sembra");
+        }
+
+        @Test
+        @DisplayName("skips items without ports and pieces missing from the catalog")
+        void skipsUnboundAndMissing() {
+            List<Item> items = items();
+            replace(items, i -> i.id().equals("i-audio"), i -> withPorts(i));
+            items.add(Belen2026Fixture.item("i-ghost", 999, 2));
+            Assembled assembled = builder.assemble(Belen2026Fixture.input(doc(items, clips())));
+            assertThat(assembled.pieces()).doesNotContainKey("Audio");
+            assertThat(assembled.pieces().get("Sembra")).containsExactly("Sembra");
+        }
+
+        @Test
+        @DisplayName("is omitted when no piece has a port, and never changes the hash")
+        void omittedAndOutsideHash() {
+            ShowPackage pkg = builder.build(Belen2026Fixture.input()).pkg();
+            List<Item> unbound = items().stream().map(i -> withPorts(i)).toList();
+            ShowBuildResult none = builder.build(Belen2026Fixture.input(doc(new ArrayList<>(unbound), List.of())));
+            assertThat(none.pkg().meta().pieces()).isNull();
+            assertThat(ShowCanonicalJson.pretty(none.pkg())).doesNotContain("\"pieces\"");
+            List<Item> extra = items();
+            extra.add(Belen2026Fixture.item("i-sembra-bis", 2, 1));
+            ShowPackage more = builder.build(Belen2026Fixture.input(doc(extra, clips()))).pkg();
+            assertThat(more.meta().pieces()).isNotEqualTo(pkg.meta().pieces());
+            assertThat(more.meta().hash()).isEqualTo(pkg.meta().hash());
         }
     }
 

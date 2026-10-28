@@ -90,7 +90,7 @@ public class SecurityConfiguration {
                         .requestMatchers("/webhooks/resend").permitAll()
                         // Belén players report with "Authorization: Device <token>"; the controller
                         // authenticates the token itself (devices.token_invalid → 401).
-                        .requestMatchers("/player/heartbeat").permitAll()
+                        .requestMatchers("/player/heartbeat", "/player/logs", "/player/logs/cursor").permitAll()
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .anyRequest().authenticated())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

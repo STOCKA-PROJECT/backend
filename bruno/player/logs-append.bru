@@ -1,0 +1,38 @@
+meta {
+  name: Player Logs Append (raw text body)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/player/logs?file=system-2026-10-26.log&from=0
+  body: text
+  auth: none
+}
+
+params:query {
+  file: system-2026-10-26.log
+  from: 0
+}
+
+headers {
+  Content-Type: text/plain; charset=utf-8
+  Authorization: Device {{heartbeatToken}}
+}
+
+body:text {
+  2026-10-26 18:30:02 | core | INFO     | arrencada
+  2026-10-26 18:31:10 | api | INFO     | [Joan] play
+}
+
+docs {
+  Desa els bytes `[from, from + mida del cos)` del fitxer `file`. El cos són els bytes tal com són al fitxer
+  (no JSON), com a molt `stocka.devices.logs.max-chunk-bytes` (2 MiB; 413 `devices.log_too_large`).
+  La Raspberry talla cada tros a l'últim salt de línia.
+
+  Idempotent: el que ja hi era es descarta (`stored` diu quants bytes eren nous; 0 si cap) i respon
+  `{ file, end, stored }`, on `end` és on ha de començar el tros següent. Un `from` més enllà del que hi ha
+  deixaria un forat: 409 `devices.log_offset_mismatch` amb `params.expected` (on continuar). 400
+  `devices.log_file_invalid` si el nom no és un nom pla acabat en `.log` o `from` és negatiu.
+  401 `devices.token_invalid` com al batec.
+}

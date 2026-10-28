@@ -4,12 +4,15 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import com.stocka.backend.modules.devices.entity.Device;
 import com.stocka.backend.modules.organizations.entity.Organization;
+
+import jakarta.persistence.LockModeType;
 
 /**
  * Data access for {@link Device}. All read methods return only active (not soft-deleted) rows
@@ -42,6 +45,26 @@ public interface DeviceRepository extends JpaRepository<Device, Integer> {
      * @return the matching device, if any
      */
     Optional<Device> findByTokenHash(String tokenHash);
+
+    /**
+     * Finds the active devices bound to the uuid a player generates for itself, in any organization.
+     * Normally one; the belén app carrying a player's log uses it to find where the log belongs.
+     *
+     * @param deviceId uuid of the player
+     * @return matching active devices
+     */
+    List<Device> findByDeviceId(String deviceId);
+
+    /**
+     * Loads an active device locking its row until the transaction ends, so two uploads of the same
+     * player's log (the player itself and the app carrying it) are stored one after the other.
+     *
+     * @param id device row id
+     * @return the locked device, if active
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select d from Device d where d.id = ?1")
+    Optional<Device> lockById(Integer id);
 
     /**
      * Bulk soft-delete every still-active device of {@code organization}. Used by the organization

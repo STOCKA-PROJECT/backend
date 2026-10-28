@@ -5,7 +5,33 @@
     "name": "Pessebre 2026 (mostra)",
     "timelineId": null,
     "exportedAt": "2026-10-12T00:00:00.000Z",
-    "hash": "sha256:88db057d40d0926dab27200759f898fddc5161abc9104f84b192984fa9cb4ce5"
+    "hash": "sha256:88db057d40d0926dab27200759f898fddc5161abc9104f84b192984fa9cb4ce5",
+    "pieces": {
+      "Focos": [
+        "Focos"
+      ],
+      "Sembra": [
+        "Sembra"
+      ],
+      "LlumsE": [
+        "LlumsE"
+      ],
+      "Fondo1": [
+        "Fondo1"
+      ],
+      "Fondo2": [
+        "Fondo2"
+      ],
+      "CasaSimple": [
+        "CasaSimple"
+      ],
+      "CasaDoble": [
+        "CasaDoble"
+      ],
+      "Audio": [
+        "Audio"
+      ]
+    }
   },
   "board": "rpi4b",
   "mode": {

@@ -98,6 +98,9 @@ On startup, `RoleSeeder` creates USER/ADMIN roles, then `AdminSeeder` creates a 
 | GET    | `/organizations/{orgSlug}/timelines/{id}/show` | any member | `stocka-show` v3 package built server-side (404 no scene, 422 `timeline_shows.invalid` + issues) |
 | GET    | `/organizations/{orgSlug}/timelines/{id}/bundle` | any member | `.belen.zip` (`show.json` + `assets/` + `manifest.json`) streamed; 404 `timeline_shows.asset_not_found` |
 | POST   | `/player/heartbeat` | Public (`Authorization: Device <token>`, 120/min per IP) | Heartbeat of a registered belén player; 204 / 401 `devices.token_invalid` |
+| GET    | `/player/logs/cursor` | Public (`Authorization: Device <token>`, 240/min per IP with the next row) | How far each log file of the player is stored: `{files: {name: end}, since}` |
+| POST   | `/player/logs?file=&from=` | Public (`Authorization: Device <token>`) | Raw bytes `[from, from+len)` of a log file; idempotent, `{file, end, stored}`; 409 `devices.log_offset_mismatch` (`params.expected`), 413 `devices.log_too_large` |
+| GET/POST | `/devices/{uuid}/logs/cursor`, `/devices/{uuid}/logs?file=&from=` | Authenticated, may control a device with that player uuid | The belén app carrying the log of a player without Internet; 404 `devices.not_found` |
 
 ### Domain endpoints (under `/organizations/{orgId}/...`)
 
@@ -132,6 +135,9 @@ Org membership roles: `OWNER`, `MANAGER`, `USER`, `SPECTATOR` (read-only).
 | PATCH  | `/devices/{id}/connection`                    | OWNER, MANAGER, USER      | Editor saves `localUrl`, `pin`, `deviceId` after reaching the Pi on the LAN |
 | DELETE | `/devices/{id}`                               | OWNER, MANAGER            | Soft-delete (name renamed `::deleted::<id>`) |
 | POST   | `/devices/{id}/rotate-token`                  | OWNER, MANAGER            | New heartbeat token; the old one dies immediately |
+| GET    | `/devices/{id}/logs`                          | any member (admin-owned org) | Log files kept in Stocka: `{file, day, size, lines, firstAt, lastAt, syncedAt}` |
+| GET    | `/devices/{id}/logs/{file}(?tail=&download=)` | any member (admin-owned org) | The file as the player wrote it, or its last lines (≤ 5000); `text/plain` |
+| GET    | `/devices/{id}/logs/archive?from=&to=`        | any member (admin-owned org) | Zip of the files of a period (≤ 62 days) |
 
 Ports (`/organizations/{orgId}/ports`, gated to admin-owned orgs) carry a closed `kind` from the
 output catalog v3 (`relay`, `gpio_expander`, `led_strip`, `led_segment`, `motor`, `audio`, `moving_head`,
@@ -185,7 +191,15 @@ it to the Pi; exposed as `pin` only to `@orgSecurity.canControlDevices` = not SP
 the editor's «Dispositius» list is exactly the registered devices, so every computer and phone finds them
 configured. The
 device token is never an API credential: `JwtAuthenticationFilter` only reads `Bearer` and the REST chain
-rejects it with 401. Table `devices` (`V24__devices.sql`; `V28` adds `last_show_timeline_id`, the timeline the active
+rejects it with 401. Since `V31__device_logs.sql` (2026-10-26) Stocka also keeps the players' **log**: the Pi writes one
+file per day (`system-YYYY-MM-DD.log`) and uploads what is missing by file and byte offset itself when it has Internet
+(`/player/logs`, device token) while the belén app carries it when it has not (`/devices/{uuid}/logs`, user session,
+device found by the uuid the Pi generates among the orgs where the user `canControlDevices`). `DeviceLogService`
+trims what is already stored under a lock on the device row, so the Pi and an app never store a byte twice; pieces
+live gzipped in R2 (`device-logs/<deviceRowId>/<file>/<from>-<to>.log.gz`) and `device_log_chunks` only indexes them
+(day, offsets, lines, first/last time, source `DEVICE`/`USER`). `stocka.devices.logs.*` (`DEVICE_LOGS_*`): retention
+180 days (nightly `purgeExpired`), 2 MiB per upload, 5000 tail lines, 62-day archives. Plan:
+`../timeline-editor/docs/plan/dispositivos-y-registro.md`. Table `devices` (`V24__devices.sql`; `V28` adds `last_show_timeline_id`, the timeline the active
 show was exported from, exposed as `lastShowTimelineId`), soft-deleted with the org cascade.
 
 Import/export share the piece column schema (fixed columns + one column per
@@ -305,7 +319,9 @@ refused by `/mcp`, MCP tokens by the REST API.
   `SceneDocument.Schedule`: `rule` `allow`/`block` + `windows` `{days, from, to}`, rules in `ScheduleRules`, op
   `set_schedule`, `E_SCHEDULE` in `SceneValidator`) is exported as `mode.schedule` (inside the hash, omitted when absent;
   `E_SCHEDULE_INVALID` / `W_SCHEDULE_UNUSED` in `ShowValidator.validateSchedule`): the Pi only lets a short press of an
-  `onActive: play` sensor start the show inside the schedule, once it knows the time; `ShowBundleWriter` streams the
+  `onActive: play` sensor start the show inside the schedule, once it knows the time; `meta.pieces` (2026-10-26, outside
+  the hash, omitted when empty) names the pieces bound to each hardware port (a piece on a strip also names its segment)
+  so the player and the belén app show them next to each port; `ShowBundleWriter` streams the
   `stocka-bundle` zip (`StreamingResponseBody`, assets STORED, manifest last). MCP tool: `timeline_show_export`.
 - Config: `stocka.oauth.*` (`OAUTH_*`), `stocka.mcp.*` (`MCP_*`), `spring.ai.mcp.server.*` (protocol `STATELESS`,
   annotation scanner off). Tests enable everything through `src/test/resources/application.properties` and

@@ -1,0 +1,22 @@
+meta {
+  name: List Device Logs (files kept in Stocka)
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/devices/{{stockaDeviceId}}/logs
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  Qualsevol membre de l'organització (també SPECTATOR). Fitxers del registre desats, el dia més recent primer:
+  `[{ file, day, size, lines, firstAt, lastAt, syncedAt }]` (`size` en bytes, `firstAt`/`lastAt` en l'hora
+  local de la Pi, `syncedAt` quan va arribar l'últim tros). Buit si encara no n'ha arribat cap.
+  404 `devices.not_found`.
+}

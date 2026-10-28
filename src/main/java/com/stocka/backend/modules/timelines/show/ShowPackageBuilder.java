@@ -53,9 +53,10 @@ public class ShowPackageBuilder {
      * @param assets    declared assets
      * @param issues    every finding, duplicates included
      * @param assetRefs origin of the audio assets resolved against {@code audioByPiece}
+     * @param pieces    piece names by hardware port, in scene order (empty when no item has a port)
      */
     public record Assembled(Map<String, Map<String, Object>> hardware, List<ShowEvent> timeline, ShowAssets assets,
-                            List<ShowIssue> issues, List<ShowAssetRef> assetRefs) {
+                            List<ShowIssue> issues, List<ShowAssetRef> assetRefs, Map<String, List<String>> pieces) {
     }
 
     /**
@@ -78,7 +79,8 @@ public class ShowPackageBuilder {
         String name = input.timelineName() == null || input.timelineName().isBlank() ? "Show" : input.timelineName();
         // Where each file comes from, when known (outside the hash: the show is the same).
         List<ShowAssetRef> refs = input.audioByPiece() == null ? null : assembled.assetRefs();
-        ShowMeta meta = new ShowMeta(name, input.timelineId(), input.now().get(), hash, refs);
+        Map<String, List<String>> pieces = assembled.pieces().isEmpty() ? null : assembled.pieces();
+        ShowMeta meta = new ShowMeta(name, input.timelineId(), input.now().get(), hash, refs, pieces);
         ShowPackage pkg = new ShowPackage(ShowPackage.FORMAT, ShowPackage.VERSION, meta, input.board(), mode,
                 assembled.hardware(), assembled.timeline(), input.doc().durationMs(), assembled.assets());
         return new ShowBuildResult(pkg, errors, warnings);
@@ -279,7 +281,31 @@ public class ShowPackageBuilder {
         ShowAssets assets = new ShowAssets(new ArrayList<>(audioAssets));
         issues.addAll(ShowValidator.validate(hardware, timeline, input.board(), doc.durationMs(), assets, catalog));
         issues.addAll(ShowValidator.validateSchedule(modeOf(input), hardware));
-        return new Assembled(hardware, timeline, assets, issues, new ArrayList<>(assetRefs.values()));
+        return new Assembled(hardware, timeline, assets, issues, new ArrayList<>(assetRefs.values()),
+                piecesByPort(plan, segmentOf, hardware));
+    }
+
+    /**
+     * Which pieces each hardware port drives, for the player to show next to the port ({@code meta.pieces}).
+     * Items without a known piece are skipped; a piece on a strip names the strip and its own segment.
+     */
+    static Map<String, List<String>> piecesByPort(ExecutionPlan plan, Map<String, Map<Integer, String>> segmentOf,
+                                                  Map<String, Map<String, Object>> hardware) {
+        Map<String, Set<String>> byPort = new LinkedHashMap<>();
+        for (ExecutionItem item : plan.items()) {
+            if (item.pieceName() == null) continue;
+            List<String> ports = new ArrayList<>();
+            item.ports().forEach(port -> ports.add(port.name()));
+            ports.addAll(segmentOf.getOrDefault(item.itemId(), Map.of()).values());
+            for (String port : ports) {
+                if (hardware.containsKey(port)) {
+                    byPort.computeIfAbsent(port, k -> new LinkedHashSet<>()).add(item.pieceName());
+                }
+            }
+        }
+        Map<String, List<String>> out = new LinkedHashMap<>();
+        byPort.forEach((port, names) -> out.put(port, new ArrayList<>(names)));
+        return out;
     }
 
     /** The input's mode with the scene's button schedule, unless the mode already carries one. */

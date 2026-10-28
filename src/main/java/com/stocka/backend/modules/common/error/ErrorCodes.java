@@ -148,6 +148,11 @@ public final class ErrorCodes {
     public static final String DEVICES_TOKEN_INVALID = "devices.token_invalid";
     public static final String DEVICES_LOCAL_URL_INVALID = "devices.local_url_invalid";
     public static final String DEVICES_PIN_INVALID = "devices.pin_invalid";
+    public static final String DEVICES_LOG_FILE_INVALID = "devices.log_file_invalid";
+    public static final String DEVICES_LOG_OFFSET_MISMATCH = "devices.log_offset_mismatch";
+    public static final String DEVICES_LOG_TOO_LARGE = "devices.log_too_large";
+    public static final String DEVICES_LOG_NOT_FOUND = "devices.log_not_found";
+    public static final String DEVICES_LOG_RANGE_INVALID = "devices.log_range_invalid";
 
     // ---- contacts --------------------------------------------------------
     public static final String CONTACTS_NOT_FOUND = "contacts.not_found";

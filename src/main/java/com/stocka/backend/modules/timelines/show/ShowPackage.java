@@ -46,6 +46,7 @@ public record ShowPackage(
      * @param exportedAt ISO-8601 instant of the export
      * @param hash       {@code sha256:} + hex digest of the canonical JSON of the show description (meta excluded)
      * @param assets     origin of every asset, when known (outside the hash)
+     * @param pieces     names of the pieces bound to each hardware port, or {@code null} when none (outside the hash)
      */
     public record ShowMeta(
             @Param("Show name") String name,
@@ -53,7 +54,9 @@ public record ShowPackage(
             @Param("ISO-8601 instant of the export") String exportedAt,
             @Param("sha256:<hex> of the canonical JSON of board, mode, hardware, timeline, durationMs and assets") String hash,
             @Param("Origin of every asset (attachment), outside the hash")
-            @JsonInclude(JsonInclude.Include.NON_NULL) List<ShowAssetRef> assets) {
+            @JsonInclude(JsonInclude.Include.NON_NULL) List<ShowAssetRef> assets,
+            @Param("Piece names bound to each hardware port (a piece on a strip also names its segment), outside the hash")
+            @JsonInclude(JsonInclude.Include.NON_NULL) Map<String, List<String>> pieces) {
     }
 
     /**

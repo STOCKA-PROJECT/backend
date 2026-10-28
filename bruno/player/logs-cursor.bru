@@ -1,0 +1,25 @@
+meta {
+  name: Player Logs Cursor (Authorization: Device <token>)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/player/logs/cursor
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Device {{heartbeatToken}}
+}
+
+docs {
+  La Raspberry pregunta fins on té Stocka cada fitxer del seu registre abans de pujar-lo. Públic (sense JWT),
+  amb el token de batec; rate limit compartit amb `player/logs-append`: 240/min per IP (`player.logs.ip`).
+
+  Respon `{ files: { "system-2026-10-26.log": 18342, ... }, since: "2026-04-29" }`: `files` és el byte final
+  desat de cada fitxer (un fitxer absent no té res) i `since` el dia més antic que es conserva
+  (`stocka.devices.logs.retention`, 180 dies): els fitxers anteriors no cal pujar-los.
+  401 `devices.token_invalid` com al batec.
+}

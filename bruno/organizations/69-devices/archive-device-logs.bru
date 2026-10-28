@@ -1,0 +1,26 @@
+meta {
+  name: Archive Device Logs (zip of a period)
+  type: http
+  seq: 11
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/devices/{{stockaDeviceId}}/logs/archive?from=2026-10-01&to=2026-10-26
+  body: none
+  auth: bearer
+}
+
+params:query {
+  from: 2026-10-01
+  to: 2026-10-26
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  Zip amb un fitxer per dia del període (dies inclosos), com a adjunt `<dispositiu>-<from>_<to>.zip`.
+  400 `devices.log_range_invalid` si `to` és abans de `from` o el període passa de
+  `stocka.devices.logs.max-archive-days` (62); 404 `devices.log_not_found` si no hi ha res desat.
+}

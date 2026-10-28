@@ -96,6 +96,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
     /** {@code POST /player/heartbeat}: 120/min por IP (varios belenes detrás de la misma NAT). */
     static final RateLimitPolicy PLAYER_HEARTBEAT_IP =
             new RateLimitPolicy("player.heartbeat.ip", 120, 120, Duration.ofMinutes(1));
+    /** {@code GET /player/logs/cursor} y {@code POST /player/logs}: 240/min por IP (un belén que vuelve a tener Internet sube días de registro a trozos). */
+    static final RateLimitPolicy PLAYER_LOGS_IP =
+            new RateLimitPolicy("player.logs.ip", 240, 240, Duration.ofMinutes(1));
 
     private final RateLimitProperties properties;
     private final RateLimitService rateLimitService;
@@ -198,6 +201,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
             new Mapping("POST", "/oauth2/register",            OAUTH_REGISTER_IP),
             new Mapping("POST", "/oauth2/token",               OAUTH_TOKEN_IP),
             new Mapping("POST", "/mcp",                        MCP_IP),
-            new Mapping("POST", "/player/heartbeat",           PLAYER_HEARTBEAT_IP)
+            new Mapping("POST", "/player/heartbeat",           PLAYER_HEARTBEAT_IP),
+            new Mapping("GET",  "/player/logs/cursor",         PLAYER_LOGS_IP),
+            new Mapping("POST", "/player/logs",                PLAYER_LOGS_IP)
     );
 }

@@ -1,0 +1,25 @@
+meta {
+  name: Relay Logs Cursor (app carrying the log)
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{baseUrl}}/devices/{{playerUuid}}/logs/cursor
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  L'app del pessebre porta el registre quan la Raspberry no té Internet: el llegeix a la xarxa local, el guarda
+  al mòbil i, amb Internet, pregunta fins on el té Stocka. `playerUuid` és l'uuid que la Pi es genera
+  (`GET /api/info` → `device.deviceId`), el que lliga el batec o l'editor.
+
+  El dispositiu es busca per aquest uuid entre les organitzacions on l'usuari pot controlar dispositius
+  (OWNER, MANAGER, USER; no SPECTATOR). Respon com `player/logs-cursor`. 404 `devices.not_found` si cap
+  dispositiu seu té l'uuid (la Pi no ha arribat mai a Stocka): l'app es guarda el registre per a més tard.
+}

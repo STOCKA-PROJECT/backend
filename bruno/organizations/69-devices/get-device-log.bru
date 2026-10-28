@@ -1,0 +1,26 @@
+meta {
+  name: Get Device Log File (text, tail, download)
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/devices/{{stockaDeviceId}}/logs/system-2026-10-26.log?tail=200
+  body: none
+  auth: bearer
+}
+
+params:query {
+  tail: 200
+  ~download: true
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  El fitxer tal com l'ha escrit la Pi (`text/plain; charset=UTF-8`), o les seves `tail` últimes línies
+  (com a molt `stocka.devices.logs.max-tail-lines`, 5000). `download=true` l'envia com a adjunt
+  `<dispositiu>-<fitxer>`. 404 `devices.log_not_found`; 400 `devices.log_file_invalid`.
+}

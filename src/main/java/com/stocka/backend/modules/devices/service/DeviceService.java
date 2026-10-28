@@ -368,6 +368,21 @@ public class DeviceService {
     }
 
     /**
+     * The active device presenting {@code Authorization: Device <token>}.
+     *
+     * @param authorizationHeader header value; may be {@code null}
+     * @return the device the token belongs to
+     * @throws ApiException 401 ({@link ErrorCodes#DEVICES_TOKEN_INVALID}) when the header is missing,
+     *                      uses another scheme or the token is unknown or revoked
+     */
+    @Transactional(readOnly = true)
+    public Device authenticate(String authorizationHeader) {
+        return extractDeviceToken(authorizationHeader)
+                .flatMap(this::findByToken)
+                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.DEVICES_TOKEN_INVALID));
+    }
+
+    /**
      * Extracts the raw token from an {@code Authorization} header using the {@value #AUTH_SCHEME}
      * scheme (case-insensitive). Any other scheme, including {@code Bearer}, yields empty so the
      * SPA/MCP tokens are never mistaken for device credentials.
