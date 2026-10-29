@@ -505,4 +505,54 @@ class EmailTemplateRendererTest {
                                                         + rendered.htmlBody());
                 }
         }
+
+        @Nested
+        @DisplayName("activity digest template")
+        class ActivityDigest {
+
+                private java.util.List<ActivityDigestItem> items() {
+                        return java.util.List.of(
+                                        new ActivityDigestItem(
+                                                        com.stocka.backend.modules.notifications.events.ResourceKind.PIECE,
+                                                        com.stocka.backend.modules.notifications.preferences.entity.LifecycleAction.CREATED,
+                                                        "Pastor", "https://x/p/1", "Anna",
+                                                        java.time.LocalDateTime.of(2026, 10, 29, 9, 5)),
+                                        new ActivityDigestItem(
+                                                        com.stocka.backend.modules.notifications.events.ResourceKind.LOCATION,
+                                                        com.stocka.backend.modules.notifications.preferences.entity.LifecycleAction.DELETED,
+                                                        "Caixa 5", "https://x/org", "Anna",
+                                                        java.time.LocalDateTime.of(2026, 10, 29, 10, 0)));
+                }
+
+                private RenderedEmail render(Locale locale) {
+                        return renderer.render(ActivityDigestEmails.TEMPLATE, ActivityDigestEmails.SUBJECT_KEY,
+                                        ActivityDigestEmails.subjectArgs("Betlem", items()), locale,
+                                        ActivityDigestEmails.variables("Betlem", "https://x/org", items(), locale));
+                }
+
+                @Test
+                @DisplayName("should render the subject, sections, links and CTA in ES")
+                void should_renderDigest_inEs() {
+                        RenderedEmail rendered = render(ES);
+                        assertEquals("Resumen de actividad en Betlem: 2 cambios", rendered.subject());
+                        String html = rendered.htmlBody();
+                        assertTrue(html.contains("Actividad en Betlem"));
+                        assertTrue(html.contains("Artículos creados"));
+                        assertTrue(html.contains("Ubicaciones eliminadas"));
+                        assertTrue(html.contains("href=\"https://x/p/1\""));
+                        assertFalse(html.contains("href=\"https://x/org\">Caixa 5"), "deleted rows carry no link");
+                        assertTrue(html.contains("Ver la organización en Stocka"));
+                        assertTrue(html.contains("29 oct 09:05"));
+                }
+
+                @Test
+                @DisplayName("should render in CA and EN")
+                void should_renderDigest_inCaAndEn() {
+                        assertEquals("Resum d'activitat a Betlem: 2 canvis", render(CA).subject());
+                        RenderedEmail en = render(EN);
+                        assertEquals("Activity summary in Betlem: 2 changes", en.subject());
+                        assertTrue(en.htmlBody().contains("Items created"));
+                        assertTrue(en.htmlBody().contains("Open the organization on Stocka"));
+                }
+        }
 }

@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -28,6 +29,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.stocka.backend.modules.notifications.events.ResourceKind;
+import com.stocka.backend.modules.notifications.preferences.entity.LifecycleAction;
 import com.stocka.backend.modules.users.entity.Language;
 
 @ExtendWith(MockitoExtension.class)
@@ -225,5 +228,24 @@ class LocalEmailServiceTest {
     @SuppressWarnings("unchecked")
     private static ArgumentCaptor<Map<String, Object>> templateVarsCaptor() {
         return ArgumentCaptor.forClass(Map.class);
+    }
+
+    @Nested
+    @DisplayName("sendActivityDigestEmail")
+    class SendActivityDigestEmail {
+
+        @Test
+        @DisplayName("renders the digest template and writes an activity-digest file")
+        void should_renderAndWriteDigest() throws Exception {
+            sut.sendActivityDigestEmail("joan@test.com", "Betlem", "https://x/org", List.of(new ActivityDigestItem(ResourceKind.PIECE, LifecycleAction.CREATED,
+                    "Pastor", "https://x/p/1", "Anna", java.time.LocalDateTime.of(2026, 10, 29, 9, 5))), "7/1-1/1", Language.ES);
+
+            verify(renderer).render(eq("activity-digest"), eq("email.activityDigest.subject"), any(),
+                    eq(Locale.of("es")), any());
+            try (Stream<Path> files = Files.list(tempDir)) {
+                assertTrue(files.map(f -> f.getFileName().toString())
+                        .anyMatch(name -> name.startsWith("activity-digest-")));
+            }
+        }
     }
 }

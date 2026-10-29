@@ -2,12 +2,14 @@ package com.stocka.backend.modules.notifications.email;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.Properties;
 
@@ -21,6 +23,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mail.javamail.JavaMailSender;
 
+import com.stocka.backend.modules.notifications.events.ResourceKind;
+import com.stocka.backend.modules.notifications.preferences.entity.LifecycleAction;
 import com.stocka.backend.modules.users.entity.Language;
 
 import jakarta.mail.Session;
@@ -87,6 +91,22 @@ class SmtpEmailServiceTest {
                     "Joan", "Acme", "https://x/y", Language.ES);
 
             verify(mailSender, never()).send(any(MimeMessage.class));
+        }
+    }
+
+    @Nested
+    @DisplayName("sendActivityDigestEmail")
+    class SendActivityDigestEmail {
+
+        @Test
+        @DisplayName("renders the digest template and sends the MIME message")
+        void should_renderAndSendDigest() {
+            sut.sendActivityDigestEmail("joan@test.com", "Betlem", "https://x/org", List.of(new ActivityDigestItem(ResourceKind.PIECE, LifecycleAction.CREATED,
+                    "Pastor", "https://x/p/1", "Anna", java.time.LocalDateTime.of(2026, 10, 29, 9, 5))), "7/1-1/1", Language.EN);
+
+            verify(renderer).render(eq("activity-digest"), eq("email.activityDigest.subject"), any(),
+                    eq(Locale.ENGLISH), any());
+            verify(mailSender).send(any(jakarta.mail.internet.MimeMessage.class));
         }
     }
 }

@@ -245,6 +245,28 @@ Resend variables:
 - `RESEND_MAX_RETRIES` (default `3`) and `RESEND_INITIAL_BACKOFF_MS` (default `500`) tune the
   retry policy applied to HTTP 429 / 5xx / network errors.
 
+### Email notifications (lifecycle events and digests)
+
+`PieceService`, `LocationService`, `PieceTypeService` (and `ContactService` when linking a contact migrates
+its pieces) publish a `ResourceLifecycleEvent` (`PIECE`/`LOCATION`/`PIECE_TYPE` × `CREATED`/`EDITED`/`DELETED`;
+attachments and the bulk import publish nothing). `ResourceLifecycleEventListener` (after commit, async) upserts
+one row per `(org, kind, resourceId)` in `pending_resource_events`; `PendingResourceEventFlusher` (every
+`NOTIF_FLUSH_INTERVAL_MS`, 15 s) hands the rows whose last event is older than `NOTIF_WINDOW_MS` (60 s) to
+`PendingResourceEventDispatcher`, which reduces first/last action (`CREATED`+`DELETED` = nothing) and fans out to
+every member but the actor according to `notification_preferences` (`NotificationPreferenceService.resolveOrDefault`;
+default = pieces `CREATED`, `OWNED_ONLY`, nothing for locations/types). Since `V33__notification_delivery.sql`
+(2026-10-29) each preference carries a `delivery` (`NotificationDelivery`): `INSTANT` sends one
+`resource-lifecycle` email per resource right there; `BATCHED` (default) and `DAILY` park the event per recipient
+in `notification_outbox` (`NotificationOutboxEntry`: snapshots of name, actor and URL). `NotificationDigestFlusher`
+runs a tick (same interval) and a cron (`NOTIF_DIGEST_CRON`, `0 0 20 * * *`, zone `NOTIF_DIGEST_ZONE`,
+`Europe/Madrid`); `NotificationDigestDispatcher.processGroup` sends one `activity-digest` email per
+`(recipient, org)` when due (`BATCHED`: newest event older than `NOTIF_BATCH_WINDOW_MS`, 30 min, on a tick;
+`DAILY`: on the cron; `INSTANT`: leftovers at the next tick), marks the rows `sent_at`, discards the rows of users
+who left or lost their verified email, and the cron purges sent rows older than `NOTIF_RETENTION_DAYS` (30). The
+digest groups the lines by kind and action (`ActivityDigestEmails`, times printed in the digest zone) and its Resend
+idempotency key is `activity-digest/sha256(to|batchKey)` with `batchKey` = `org/firstId-lastId/count`. Endpoints:
+`GET/PUT /users/me/notification-preferences[/{orgId}]` (`delivery` optional in the body, defaults to `BATCHED`).
+
 ### Storage (Cloudflare R2)
 
 Attachments live in Cloudflare R2 via the AWS S3 SDK v2 (`software.amazon.awssdk:s3`). In dev

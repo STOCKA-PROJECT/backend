@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Map;
 
 import org.slf4j.Logger;
@@ -36,6 +37,7 @@ public class ResendEmailService implements EmailService {
     static final String PASSWORD_RESET_KEY_PREFIX = "password-reset/";
     static final String EMAIL_VERIFICATION_KEY_PREFIX = "email-verification/";
     static final String RESOURCE_LIFECYCLE_KEY_PREFIX = "resource-lifecycle/";
+    static final String ACTIVITY_DIGEST_KEY_PREFIX = "activity-digest/";
     private static final int IDEMPOTENCY_HASH_HEX_LENGTH = 32;
 
     private final EmailTemplateRenderer renderer;
@@ -136,6 +138,25 @@ public class ResendEmailService implements EmailService {
                 + (actorName == null ? "" : actorName) + "|"
                 + (orgName == null ? "" : orgName);
         String idempotencyKey = RESOURCE_LIFECYCLE_KEY_PREFIX + sha256Hex(fingerprint, IDEMPOTENCY_HASH_HEX_LENGTH);
+        dispatch(to, email, idempotencyKey);
+    }
+
+    @Override
+    public void sendActivityDigestEmail(
+            String to, String orgName, String orgUrl,
+            List<ActivityDigestItem> items, String batchKey, Language language
+    ) {
+        RenderedEmail email = renderer.render(
+                ActivityDigestEmails.TEMPLATE,
+                ActivityDigestEmails.SUBJECT_KEY,
+                ActivityDigestEmails.subjectArgs(orgName, items),
+                language.toLocale(),
+                ActivityDigestEmails.variables(orgName, orgUrl, items, language.toLocale())
+        );
+        // Idempotency: the caller's batch key already identifies the exact set of events, so a
+        // retried delivery of the same batch collapses while the next batch never collides.
+        String idempotencyKey = ACTIVITY_DIGEST_KEY_PREFIX
+                + sha256Hex(to + "|" + (batchKey == null ? "" : batchKey), IDEMPOTENCY_HASH_HEX_LENGTH);
         dispatch(to, email, idempotencyKey);
     }
 

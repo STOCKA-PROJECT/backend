@@ -33,7 +33,8 @@ import jakarta.persistence.UniqueConstraint;
  * <p>The three action columns are stored as CSV via
  * {@link LifecycleActionSetConverter}. An empty set means "do not notify me"
  * for that resource. Pieces additionally have a {@link PieceScope} so a user
- * can subscribe only to the pieces they own.
+ * can subscribe only to the pieces they own. {@link NotificationDelivery} decides whether
+ * the matching events leave one by one or grouped into a digest.
  *
  * <p>Rows are soft-deleted when the user leaves the organization or deletes
  * their account, mirroring the {@code OrganizationMember} pattern.
@@ -75,6 +76,10 @@ public class NotificationPreference {
     @Convert(converter = LifecycleActionSetConverter.class)
     @Column(name = "piece_types_actions", nullable = false, length = 64)
     private Set<LifecycleAction> pieceTypes = EnumSet.noneOf(LifecycleAction.class);
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "delivery", nullable = false, length = 16)
+    private NotificationDelivery delivery = NotificationDelivery.BATCHED;
 
     @CreationTimestamp
     @Column(updatable = false, name = "created_at")
@@ -121,6 +126,12 @@ public class NotificationPreference {
     public Set<LifecycleAction> getPieceTypes() { return pieceTypes; }
     public NotificationPreference setPieceTypes(Set<LifecycleAction> pieceTypes) {
         this.pieceTypes = normalize(pieceTypes);
+        return this;
+    }
+
+    public NotificationDelivery getDelivery() { return delivery; }
+    public NotificationPreference setDelivery(NotificationDelivery delivery) {
+        this.delivery = delivery == null ? NotificationDelivery.BATCHED : delivery;
         return this;
     }
 

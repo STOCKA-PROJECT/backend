@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.format.DateTimeFormatter;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 import org.slf4j.Logger;
@@ -117,6 +118,22 @@ public class LocalEmailService implements EmailService {
 
         log.info("[LOCAL EMAIL] from={} to={} subject={}", fromAddress, to, email.subject());
         writeToFile("resource-lifecycle", to, email);
+    }
+
+    @Override
+    public void sendActivityDigestEmail(
+            String to, String orgName, String orgUrl,
+            List<ActivityDigestItem> items, String batchKey, Language language
+    ) {
+        RenderedEmail email = renderer.render(
+                ActivityDigestEmails.TEMPLATE,
+                ActivityDigestEmails.SUBJECT_KEY,
+                ActivityDigestEmails.subjectArgs(orgName, items),
+                language.toLocale(),
+                ActivityDigestEmails.variables(orgName, orgUrl, items, language.toLocale())
+        );
+        log.info("[LOCAL EMAIL] from={} to={} subject={} batch={}", fromAddress, to, email.subject(), batchKey);
+        writeToFile(ActivityDigestEmails.TEMPLATE, to, email);
     }
 
     private void writeToFile(String prefix, String to, RenderedEmail email) {

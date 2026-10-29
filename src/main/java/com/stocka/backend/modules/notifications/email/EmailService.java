@@ -1,5 +1,7 @@
 package com.stocka.backend.modules.notifications.email;
 
+import java.util.List;
+
 import com.stocka.backend.modules.notifications.events.ResourceKind;
 import com.stocka.backend.modules.notifications.preferences.entity.LifecycleAction;
 import com.stocka.backend.modules.users.entity.Language;
@@ -32,6 +34,26 @@ public interface EmailService {
             String orgName,
             String actorName,
             String resourceUrl,
+            Language language
+    );
+
+    /**
+     * Send one digest with every lifecycle event a recipient accumulated for an organization.
+     *
+     * @param to       recipient address
+     * @param orgName  organization display name
+     * @param orgUrl   absolute URL of the organization dashboard
+     * @param items    the events, any order; never empty
+     * @param batchKey stable identifier of this batch so a retried delivery collapses
+     * @param language recipient locale; never {@code null}
+     * @since 2026-10-29
+     */
+    void sendActivityDigestEmail(
+            String to,
+            String orgName,
+            String orgUrl,
+            List<ActivityDigestItem> items,
+            String batchKey,
             Language language
     );
 }

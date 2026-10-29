@@ -1,6 +1,7 @@
 package com.stocka.backend.modules.notifications.email;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 
 import org.slf4j.Logger;
@@ -110,6 +111,21 @@ public class SmtpEmailService implements EmailService {
                 )
         );
 
+        sendRendered(to, email);
+    }
+
+    @Override
+    public void sendActivityDigestEmail(
+            String to, String orgName, String orgUrl,
+            List<ActivityDigestItem> items, String batchKey, Language language
+    ) {
+        RenderedEmail email = renderer.render(
+                ActivityDigestEmails.TEMPLATE,
+                ActivityDigestEmails.SUBJECT_KEY,
+                ActivityDigestEmails.subjectArgs(orgName, items),
+                language.toLocale(),
+                ActivityDigestEmails.variables(orgName, orgUrl, items, language.toLocale())
+        );
         sendRendered(to, email);
     }
 

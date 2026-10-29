@@ -18,6 +18,7 @@ import org.springframework.web.server.ResponseStatusException;
 import com.stocka.backend.modules.notifications.preferences.dto.NotificationPreferenceResponseDto;
 import com.stocka.backend.modules.notifications.preferences.dto.UpdateNotificationPreferenceDto;
 import com.stocka.backend.modules.notifications.preferences.entity.LifecycleAction;
+import com.stocka.backend.modules.notifications.preferences.entity.NotificationDelivery;
 import com.stocka.backend.modules.notifications.preferences.entity.NotificationPreference;
 import com.stocka.backend.modules.notifications.preferences.entity.PieceScope;
 import com.stocka.backend.modules.notifications.preferences.repository.NotificationPreferenceRepository;
@@ -98,6 +99,7 @@ public class NotificationPreferenceService {
         pref.setPieceScope(dto.getPieceScope());
         pref.setLocations(safeCopy(dto.getLocations()));
         pref.setPieceTypes(safeCopy(dto.getPieceTypes()));
+        pref.setDelivery(deliveryOrDefault(dto));
         pref.setDeletedAt(null);
 
         NotificationPreference saved;
@@ -111,6 +113,7 @@ public class NotificationPreferenceService {
             winner.setPieceScope(dto.getPieceScope());
             winner.setLocations(safeCopy(dto.getLocations()));
             winner.setPieceTypes(safeCopy(dto.getPieceTypes()));
+            winner.setDelivery(deliveryOrDefault(dto));
             winner.setDeletedAt(null);
             saved = repository.save(winner);
         }
@@ -144,7 +147,13 @@ public class NotificationPreferenceService {
                 .setPieces(EnumSet.of(LifecycleAction.CREATED))
                 .setPieceScope(PieceScope.OWNED_ONLY)
                 .setLocations(EnumSet.noneOf(LifecycleAction.class))
-                .setPieceTypes(EnumSet.noneOf(LifecycleAction.class));
+                .setPieceTypes(EnumSet.noneOf(LifecycleAction.class))
+                .setDelivery(NotificationDelivery.BATCHED);
+    }
+
+    /** {@code delivery} is optional in the request body: older clients never send it. */
+    private static NotificationDelivery deliveryOrDefault(UpdateNotificationPreferenceDto dto) {
+        return dto.getDelivery() == null ? NotificationDelivery.BATCHED : dto.getDelivery();
     }
 
     private Organization resolveActiveMembership(User user, Integer organizationId) {

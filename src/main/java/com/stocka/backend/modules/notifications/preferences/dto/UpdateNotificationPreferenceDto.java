@@ -3,18 +3,22 @@ package com.stocka.backend.modules.notifications.preferences.dto;
 import java.util.Set;
 
 import com.stocka.backend.modules.notifications.preferences.entity.LifecycleAction;
+import com.stocka.backend.modules.notifications.preferences.entity.NotificationDelivery;
 import com.stocka.backend.modules.notifications.preferences.entity.PieceScope;
 
 /**
  * Mutable view of a {@link com.stocka.backend.modules.notifications.preferences.entity.NotificationPreference}
  * used by the {@code PUT} endpoint. Empty sets mean "do not notify me" for that resource —
- * a missing field, however, is rejected as a validation error by the service layer.
+ * a missing field, however, is rejected as a validation error by the service layer, except
+ * {@code delivery}, which defaults to {@link NotificationDelivery#BATCHED} so older clients keep
+ * working.
  */
 public class UpdateNotificationPreferenceDto {
     private Set<LifecycleAction> pieces;
     private PieceScope pieceScope;
     private Set<LifecycleAction> locations;
     private Set<LifecycleAction> pieceTypes;
+    private NotificationDelivery delivery;
 
     public Set<LifecycleAction> getPieces() { return pieces; }
     public UpdateNotificationPreferenceDto setPieces(Set<LifecycleAction> pieces) {
@@ -37,6 +41,12 @@ public class UpdateNotificationPreferenceDto {
     public Set<LifecycleAction> getPieceTypes() { return pieceTypes; }
     public UpdateNotificationPreferenceDto setPieceTypes(Set<LifecycleAction> pieceTypes) {
         this.pieceTypes = pieceTypes;
+        return this;
+    }
+
+    public NotificationDelivery getDelivery() { return delivery; }
+    public UpdateNotificationPreferenceDto setDelivery(NotificationDelivery delivery) {
+        this.delivery = delivery;
         return this;
     }
 }

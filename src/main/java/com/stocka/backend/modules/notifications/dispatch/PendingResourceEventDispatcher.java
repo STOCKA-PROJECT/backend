@@ -1,5 +1,6 @@
 package com.stocka.backend.modules.notifications.dispatch;
 
+import java.time.LocalDateTime;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
@@ -12,11 +13,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.stocka.backend.modules.notifications.dispatch.entity.NotificationOutboxEntry;
 import com.stocka.backend.modules.notifications.dispatch.entity.PendingResourceEvent;
+import com.stocka.backend.modules.notifications.dispatch.repository.NotificationOutboxRepository;
 import com.stocka.backend.modules.notifications.dispatch.repository.PendingResourceEventRepository;
 import com.stocka.backend.modules.notifications.email.EmailService;
 import com.stocka.backend.modules.notifications.events.ResourceKind;
 import com.stocka.backend.modules.notifications.preferences.entity.LifecycleAction;
+import com.stocka.backend.modules.notifications.preferences.entity.NotificationDelivery;
 import com.stocka.backend.modules.notifications.preferences.entity.NotificationPreference;
 import com.stocka.backend.modules.notifications.preferences.entity.PieceScope;
 import com.stocka.backend.modules.notifications.preferences.service.NotificationPreferenceService;
@@ -31,6 +35,10 @@ import com.stocka.backend.modules.users.repository.UserRepository;
  * Per-row processor for the coalescing dispatch queue. Lives in its own bean so the
  * {@code @Transactional(REQUIRES_NEW)} advice goes through the proxy when invoked from the
  * scheduled flusher (Spring AOP does not advise self-invocations).
+ *
+ * <p>For every member that wants the reduced event, the delivery mode of their preference
+ * decides what happens: {@code INSTANT} sends one email right away, any other mode parks the
+ * event in the {@code notification_outbox} for {@link NotificationDigestDispatcher} to group.
  */
 @Service
 public class PendingResourceEventDispatcher {
@@ -39,6 +47,7 @@ public class PendingResourceEventDispatcher {
     private static final Locale FALLBACK_LOCALE = Locale.of("es");
 
     private final PendingResourceEventRepository pendingRepository;
+    private final NotificationOutboxRepository outboxRepository;
     private final OrganizationMemberRepository memberRepository;
     private final UserRepository userRepository;
     private final NotificationPreferenceService preferenceService;
@@ -49,6 +58,7 @@ public class PendingResourceEventDispatcher {
 
     public PendingResourceEventDispatcher(
             PendingResourceEventRepository pendingRepository,
+            NotificationOutboxRepository outboxRepository,
             OrganizationMemberRepository memberRepository,
             UserRepository userRepository,
             NotificationPreferenceService preferenceService,
@@ -58,6 +68,7 @@ public class PendingResourceEventDispatcher {
             @Value("${app.frontend.base-url:http://localhost:3002}") String frontendBaseUrl
     ) {
         this.pendingRepository = pendingRepository;
+        this.outboxRepository = outboxRepository;
         this.memberRepository = memberRepository;
         this.userRepository = userRepository;
         this.preferenceService = preferenceService;
@@ -112,6 +123,20 @@ public class PendingResourceEventDispatcher {
                 if (row.getOwnerUserId() == null || !row.getOwnerUserId().equals(recipient.getId())) {
                     continue;
                 }
+            }
+
+            if (pref.getDelivery() != NotificationDelivery.INSTANT) {
+                outboxRepository.save(new NotificationOutboxEntry()
+                        .setUser(recipient)
+                        .setOrganization(org)
+                        .setResourceKind(row.getResourceKind())
+                        .setResourceId(row.getResourceId())
+                        .setAction(effective)
+                        .setResourceName(resourceName)
+                        .setActorName(actorName)
+                        .setResourceUrl(resourceUrl)
+                        .setEventAt(row.getLastEventAt() == null ? LocalDateTime.now() : row.getLastEventAt()));
+                continue;
             }
 
             try {
@@ -202,7 +227,7 @@ public class PendingResourceEventDispatcher {
         if (orgSlug == null || orgSlug.isBlank()) {
             return frontendBaseUrl + "/dashboard";
         }
-        String base = frontendBaseUrl + "/dashboard/" + orgSlug;
+        String base = organizationUrl(frontendBaseUrl, orgSlug);
         if (effective == LifecycleAction.DELETED) {
             return base;
         }
@@ -213,7 +238,22 @@ public class PendingResourceEventDispatcher {
         };
     }
 
-    private static String stripTrailingSlash(String value) {
+    /**
+     * Absolute URL of an organization's dashboard, shared with the digest so both emails point
+     * to the same place.
+     *
+     * @param frontendBaseUrl frontend origin without trailing slash
+     * @param orgSlug         organization slug, may be blank
+     * @return dashboard URL
+     */
+    static String organizationUrl(String frontendBaseUrl, String orgSlug) {
+        if (orgSlug == null || orgSlug.isBlank()) {
+            return frontendBaseUrl + "/dashboard";
+        }
+        return frontendBaseUrl + "/dashboard/" + orgSlug;
+    }
+
+    static String stripTrailingSlash(String value) {
         if (value == null) return "";
         return value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
     }

@@ -1,0 +1,35 @@
+meta {
+  name: Put /users/me/notification-preferences/{orgId}
+  type: http
+  seq: 8
+}
+
+put {
+  url: {{baseUrl}}/users/me/notification-preferences/{{orgId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "pieces": ["CREATED", "EDITED"],
+    "pieceScope": "ALL",
+    "locations": ["CREATED", "DELETED"],
+    "pieceTypes": [],
+    "delivery": "DAILY"
+  }
+}
+
+docs {
+  All four sets are mandatory (an empty array means "do not notify me"). `delivery` is
+  optional and defaults to BATCHED. Changing it also applies to the events already waiting
+  in the outbox: switching to INSTANT flushes them as one digest at the next tick.
+}

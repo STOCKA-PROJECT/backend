@@ -1,0 +1,23 @@
+meta {
+  name: Get /users/me/notification-preferences
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{baseUrl}}/users/me/notification-preferences
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  One row per organization the caller belongs to. `delivery` is INSTANT (one email per
+  resource), BATCHED (one digest once the organization has been quiet for
+  NOTIF_BATCH_WINDOW_MS, default 30 min) or DAILY (one digest at NOTIF_DIGEST_CRON,
+  default 20:00 Europe/Madrid). Organizations without a saved row return the defaults:
+  pieces CREATED, OWNED_ONLY, nothing for locations/types, BATCHED.
+}

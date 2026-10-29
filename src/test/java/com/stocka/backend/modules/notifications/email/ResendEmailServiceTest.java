@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -20,6 +21,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.stocka.backend.modules.notifications.events.ResourceKind;
+import com.stocka.backend.modules.notifications.preferences.entity.LifecycleAction;
 import com.stocka.backend.modules.users.entity.Language;
 
 @ExtendWith(MockitoExtension.class)
@@ -264,5 +267,55 @@ class ResendEmailServiceTest {
     @SuppressWarnings("unchecked")
     private static ArgumentCaptor<Map<String, Object>> templateVarsCaptor() {
         return ArgumentCaptor.forClass(Map.class);
+    }
+
+    @Nested
+    @DisplayName("sendActivityDigestEmail")
+    class SendActivityDigestEmail {
+
+        @Test
+        @DisplayName("renders the digest template with the org, the count and the grouped sections")
+        void should_renderDigestTemplate() {
+            ArgumentCaptor<Object[]> argsCaptor = ArgumentCaptor.forClass(Object[].class);
+            ArgumentCaptor<Map<String, Object>> varsCaptor = templateVarsCaptor();
+
+            sut.sendActivityDigestEmail("joan@test.com", "Betlem", "https://x/org", List.of(new ActivityDigestItem(ResourceKind.PIECE, LifecycleAction.CREATED,
+                    "Pastor", "https://x/p/1", "Anna", java.time.LocalDateTime.of(2026, 10, 29, 9, 5))), "7/1-1/1", Language.CA);
+
+            verify(renderer).render(eq("activity-digest"), eq("email.activityDigest.subject"),
+                    argsCaptor.capture(), eq(Locale.of("ca")), varsCaptor.capture());
+            assertThat(argsCaptor.getValue()).containsExactly("Betlem", 1);
+            assertThat(varsCaptor.getValue()).containsEntry("orgName", "Betlem")
+                    .containsEntry("orgUrl", "https://x/org")
+                    .containsEntry("total", 1)
+                    .containsKey("sections");
+        }
+
+        @Test
+        @DisplayName("derives the idempotency key from the recipient and the batch key only")
+        void should_deriveIdempotencyKey_fromBatch() {
+            ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
+
+            sut.sendActivityDigestEmail("joan@test.com", "Betlem", "https://x/org", List.of(new ActivityDigestItem(ResourceKind.PIECE, LifecycleAction.CREATED,
+                    "Pastor", "https://x/p/1", "Anna", java.time.LocalDateTime.of(2026, 10, 29, 9, 5))), "7/1-1/1", Language.ES);
+            sut.sendActivityDigestEmail("joan@test.com", "Betlem", "https://x/org", List.of(new ActivityDigestItem(ResourceKind.PIECE, LifecycleAction.CREATED,
+                    "Pastor", "https://x/p/1", "Anna", java.time.LocalDateTime.of(2026, 10, 29, 9, 5))), "7/1-1/1", Language.ES);
+            sut.sendActivityDigestEmail("joan@test.com", "Betlem", "https://x/org", List.of(new ActivityDigestItem(ResourceKind.PIECE, LifecycleAction.CREATED,
+                    "Pastor", "https://x/p/1", "Anna", java.time.LocalDateTime.of(2026, 10, 29, 9, 5))), "7/2-2/1", Language.ES);
+
+            verify(sender, org.mockito.Mockito.times(3)).send(anyString(), eq("joan@test.com"), anyString(), anyString(), keyCaptor.capture());
+            List<String> keys = keyCaptor.getAllValues();
+            assertThat(keys.get(0)).startsWith("activity-digest/").isEqualTo(keys.get(1)).isNotEqualTo(keys.get(2));
+        }
+
+        @Test
+        @DisplayName("a null batch key still yields a key")
+        void should_tolerateNullBatchKey() {
+            sut.sendActivityDigestEmail("joan@test.com", "Betlem", "https://x/org", List.of(new ActivityDigestItem(ResourceKind.PIECE, LifecycleAction.CREATED,
+                    "Pastor", "https://x/p/1", "Anna", java.time.LocalDateTime.of(2026, 10, 29, 9, 5))), null, Language.ES);
+
+            verify(sender).send(anyString(), eq("joan@test.com"), anyString(), anyString(),
+                    org.mockito.ArgumentMatchers.startsWith("activity-digest/"));
+        }
     }
 }

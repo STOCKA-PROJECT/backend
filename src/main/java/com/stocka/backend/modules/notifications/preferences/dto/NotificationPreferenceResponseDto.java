@@ -4,6 +4,7 @@ import java.util.EnumSet;
 import java.util.Set;
 
 import com.stocka.backend.modules.notifications.preferences.entity.LifecycleAction;
+import com.stocka.backend.modules.notifications.preferences.entity.NotificationDelivery;
 import com.stocka.backend.modules.notifications.preferences.entity.NotificationPreference;
 import com.stocka.backend.modules.notifications.preferences.entity.PieceScope;
 import com.stocka.backend.modules.organizations.entity.Organization;
@@ -15,7 +16,8 @@ public record NotificationPreferenceResponseDto(
         Set<LifecycleAction> pieces,
         PieceScope pieceScope,
         Set<LifecycleAction> locations,
-        Set<LifecycleAction> pieceTypes
+        Set<LifecycleAction> pieceTypes,
+        NotificationDelivery delivery
 ) {
     public static NotificationPreferenceResponseDto from(Organization org, NotificationPreference pref) {
         return new NotificationPreferenceResponseDto(
@@ -25,7 +27,8 @@ public record NotificationPreferenceResponseDto(
                 pref.getPieces() == null ? EnumSet.noneOf(LifecycleAction.class) : EnumSet.copyOf(pref.getPieces()),
                 pref.getPieceScope(),
                 pref.getLocations() == null ? EnumSet.noneOf(LifecycleAction.class) : EnumSet.copyOf(pref.getLocations()),
-                pref.getPieceTypes() == null ? EnumSet.noneOf(LifecycleAction.class) : EnumSet.copyOf(pref.getPieceTypes())
+                pref.getPieceTypes() == null ? EnumSet.noneOf(LifecycleAction.class) : EnumSet.copyOf(pref.getPieceTypes()),
+                pref.getDelivery() == null ? NotificationDelivery.BATCHED : pref.getDelivery()
         );
     }
 }
