@@ -2,6 +2,8 @@ package com.stocka.backend.modules.security.audit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
+import static org.hamcrest.Matchers.everyItem;
+import static org.hamcrest.Matchers.is;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -13,6 +15,7 @@ import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -88,18 +91,86 @@ class SecurityAuditIntegrationTest {
                 .untilAsserted(() -> assertThat(countByEventType("LOGIN_FAILED")).isEqualTo(1));
     }
 
-    @Test
-    @DisplayName("GET /users/me/security/activity returns the user's own audit trail")
-    void should_returnPaginatedActivity() throws Exception {
-        String token = IntegrationTestSupport.login(mockMvc, objectMapper, ADMIN_EMAIL, ADMIN_PASSWORD);
-        await().atMost(Duration.ofSeconds(3))
-                .untilAsserted(() -> assertThat(countByEventType("LOGIN_SUCCESS")).isGreaterThanOrEqualTo(1));
+    @Nested
+    @DisplayName("GET /users/me/security/activity")
+    class ActivityEndpoint {
 
-        mockMvc.perform(get("/users/me/security/activity")
-                        .header("Authorization", "Bearer " + token))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content").isArray())
-                .andExpect(jsonPath("$.content[0].eventType").value("LOGIN_SUCCESS"))
-                .andExpect(jsonPath("$.content[0].success").value(true));
+        @Test
+        @DisplayName("returns the user's logins with IP and User-Agent")
+        void should_returnOwnLogins_withIpAndUserAgent() throws Exception {
+            String token = IntegrationTestSupport.login(mockMvc, objectMapper, ADMIN_EMAIL, ADMIN_PASSWORD);
+            awaitCount("LOGIN_SUCCESS", 1);
+
+            mockMvc.perform(get("/users/me/security/activity")
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.totalElements").value(1))
+                    .andExpect(jsonPath("$.content[0].eventType").value("LOGIN_SUCCESS"))
+                    .andExpect(jsonPath("$.content[0].success").value(true))
+                    .andExpect(jsonPath("$.content[0].ipAddress").value("127.0.0.1"));
+        }
+
+        @Test
+        @DisplayName("leaves out every event that is not a successful login")
+        void should_excludeOtherEventTypes() throws Exception {
+            mockMvc.perform(post("/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of(
+                                    "email", ADMIN_EMAIL,
+                                    "password", "wrongpassword"))))
+                    .andExpect(status().isUnauthorized());
+            String token = IntegrationTestSupport.login(mockMvc, objectMapper, ADMIN_EMAIL, ADMIN_PASSWORD);
+            awaitCount("LOGIN_FAILED", 1);
+            awaitCount("LOGIN_SUCCESS", 1);
+
+            mockMvc.perform(get("/users/me/security/activity")
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.totalElements").value(1))
+                    .andExpect(jsonPath("$.content[*].eventType", everyItem(is("LOGIN_SUCCESS"))));
+        }
+
+        @Test
+        @DisplayName("does not include the logins of other users")
+        void should_excludeOtherUsersLogins() throws Exception {
+            IntegrationTestSupport.signupAndLogin(
+                    mockMvc, objectMapper, jdbcTemplate, "other@example.com", "otheruser");
+            String token = IntegrationTestSupport.login(mockMvc, objectMapper, ADMIN_EMAIL, ADMIN_PASSWORD);
+            awaitCount("LOGIN_SUCCESS", 2);
+
+            mockMvc.perform(get("/users/me/security/activity")
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.totalElements").value(1));
+        }
+
+        @Test
+        @DisplayName("paginates over the logins only")
+        void should_paginateOverLoginsOnly() throws Exception {
+            mockMvc.perform(post("/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of(
+                                    "email", ADMIN_EMAIL,
+                                    "password", "wrongpassword"))))
+                    .andExpect(status().isUnauthorized());
+            IntegrationTestSupport.login(mockMvc, objectMapper, ADMIN_EMAIL, ADMIN_PASSWORD);
+            IntegrationTestSupport.login(mockMvc, objectMapper, ADMIN_EMAIL, ADMIN_PASSWORD);
+            String token = IntegrationTestSupport.login(mockMvc, objectMapper, ADMIN_EMAIL, ADMIN_PASSWORD);
+            awaitCount("LOGIN_FAILED", 1);
+            awaitCount("LOGIN_SUCCESS", 3);
+
+            mockMvc.perform(get("/users/me/security/activity")
+                            .param("size", "2")
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.totalElements").value(3))
+                    .andExpect(jsonPath("$.totalPages").value(2))
+                    .andExpect(jsonPath("$.content.length()").value(2));
+        }
+    }
+
+    private void awaitCount(String eventType, int expected) {
+        await().atMost(Duration.ofSeconds(3))
+                .untilAsserted(() -> assertThat(countByEventType(eventType)).isEqualTo(expected));
     }
 }

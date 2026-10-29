@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.stocka.backend.modules.security.audit.SecurityEventType;
 import com.stocka.backend.modules.security.entity.SecurityAuditEntry;
 import com.stocka.backend.modules.security.repository.SecurityAuditEntryRepository;
 import com.stocka.backend.modules.users.dto.ChangePasswordDto;
@@ -88,11 +89,13 @@ public class UserController {
     }
 
     /**
-     * Returns the current user's security audit trail, newest first.
+     * Returns the current user's logins ({@code LOGIN_SUCCESS}, with IP and
+     * User-Agent), newest first. The other audit events are still recorded
+     * but not shown to the user.
      *
      * @param page zero-based page index
      * @param size page size (clamped to {@value #SECURITY_ACTIVITY_MAX_PAGE_SIZE})
-     * @return paginated audit entries
+     * @return paginated login entries
      */
     @GetMapping("/me/security/activity")
     @PreAuthorize("isAuthenticated()")
@@ -104,7 +107,7 @@ public class UserController {
         int effectiveSize = Math.min(Math.max(size, 1), SECURITY_ACTIVITY_MAX_PAGE_SIZE);
         Pageable pageable = PageRequest.of(Math.max(page, 0), effectiveSize);
         Page<SecurityAuditEntry> entries = securityAuditRepository
-                .findByUserOrderByCreatedAtDesc(currentUser, pageable);
+                .findByUserAndEventTypeOrderByCreatedAtDesc(currentUser, SecurityEventType.LOGIN_SUCCESS, pageable);
         return ResponseEntity.ok(entries.map(SecurityActivityResponseDto::from));
     }
 }

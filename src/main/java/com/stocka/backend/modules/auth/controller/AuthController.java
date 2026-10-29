@@ -45,19 +45,16 @@ import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.security.audit.SecurityAuditService;
 import com.stocka.backend.modules.security.audit.SecurityEventType;
-import com.stocka.backend.modules.security.ratelimit.ClientIpResolver;
 import com.stocka.backend.modules.security.service.JwtService;
 import com.stocka.backend.modules.users.dto.UserResponseDto;
 import com.stocka.backend.modules.users.entity.User;
 import com.stocka.backend.modules.users.repository.UserRepository;
-import com.stocka.backend.modules.users.service.UserDeviceService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.List;
-import java.util.Map;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -71,8 +68,6 @@ public class AuthController {
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
     private final RefreshTokenCookieFactory refreshCookieFactory;
-    private final UserDeviceService userDeviceService;
-    private final ClientIpResolver clientIpResolver;
     private final TwoFactorService twoFactorService;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -89,8 +84,6 @@ public class AuthController {
             JwtService jwtService,
             RefreshTokenService refreshTokenService,
             RefreshTokenCookieFactory refreshCookieFactory,
-            UserDeviceService userDeviceService,
-            ClientIpResolver clientIpResolver,
             TwoFactorService twoFactorService,
             UserRepository userRepository,
             PasswordEncoder passwordEncoder,
@@ -106,8 +99,6 @@ public class AuthController {
         this.jwtService = jwtService;
         this.refreshTokenService = refreshTokenService;
         this.refreshCookieFactory = refreshCookieFactory;
-        this.userDeviceService = userDeviceService;
-        this.clientIpResolver = clientIpResolver;
         this.twoFactorService = twoFactorService;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
@@ -200,14 +191,7 @@ public class AuthController {
     private ResponseEntity<LoginResponseDto> issueSession(
             User user, boolean rememberMe, HttpServletRequest request) {
         IssuedRefreshToken refresh = refreshTokenService.issueForLogin(user, rememberMe);
-        userDeviceService.registerForLogin(
-                user,
-                refresh.entity().getFamilyId(),
-                request.getHeader(HttpHeaders.USER_AGENT),
-                clientIpResolver.resolve(request));
-        String jwtToken = jwtService.generateToken(
-                Map.of(JwtService.CLAIM_FAMILY_ID, refresh.entity().getFamilyId()),
-                user);
+        String jwtToken = jwtService.generateToken(user);
         securityAuditService.recordSuccess(SecurityEventType.LOGIN_SUCCESS, user);
 
         LoginResponseDto body = new LoginResponseDto()
@@ -358,14 +342,9 @@ public class AuthController {
                         HttpStatus.UNAUTHORIZED, "missing_refresh_cookie"));
         IssuedRefreshToken rotated = refreshTokenService.rotate(
                 rawToken, request.getHeader(HttpHeaders.USER_AGENT));
-        userDeviceService.touchOnRefresh(
-                rotated.entity().getFamilyId(),
-                clientIpResolver.resolve(request));
 
         User user = rotated.entity().getUser();
-        String accessToken = jwtService.generateToken(
-                Map.of(JwtService.CLAIM_FAMILY_ID, rotated.entity().getFamilyId()),
-                user);
+        String accessToken = jwtService.generateToken(user);
         LoginResponseDto body = new LoginResponseDto()
                 .setAccessToken(accessToken)
                 .setExpiresIn(jwtService.getExpirationTime())

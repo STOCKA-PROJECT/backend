@@ -37,10 +37,6 @@ public enum SecurityEventType {
     OAUTH_UNLINKED,
     /** A refresh token was presented twice — the whole family was wiped. */
     REFRESH_REUSE_DETECTED,
-    /** Future use (F6): first login from a previously-unseen device. */
-    NEW_DEVICE_LOGIN,
-    /** Future use (F6): the user revoked a session from the panel. */
-    SESSION_REVOKED,
     /** An OAuth client (MCP connector) was granted access on the consent page. */
     OAUTH_APP_AUTHORIZED,
     /** The user revoked an OAuth client from "connected apps". */

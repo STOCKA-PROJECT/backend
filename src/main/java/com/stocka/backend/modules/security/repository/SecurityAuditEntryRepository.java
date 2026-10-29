@@ -11,6 +11,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.stocka.backend.modules.security.audit.SecurityEventType;
 import com.stocka.backend.modules.security.entity.SecurityAuditEntry;
 import com.stocka.backend.modules.users.entity.User;
 
@@ -18,15 +19,17 @@ import com.stocka.backend.modules.users.entity.User;
 public interface SecurityAuditEntryRepository extends JpaRepository<SecurityAuditEntry, Long> {
 
     /**
-     * Returns the user's own audit trail, newest first. Always paginated —
-     * an account that's been around for a year can easily have hundreds of
-     * rows (logins + token rotations + password changes etc).
+     * Returns the user's audit entries of one type, newest first. Always
+     * paginated — an account that's been around for a year can easily have
+     * hundreds of logins.
      *
      * @param user account to query
+     * @param eventType the only type returned
      * @param pageable page request
      * @return paginated audit entries
      */
-    Page<SecurityAuditEntry> findByUserOrderByCreatedAtDesc(User user, Pageable pageable);
+    Page<SecurityAuditEntry> findByUserAndEventTypeOrderByCreatedAtDesc(
+            User user, SecurityEventType eventType, Pageable pageable);
 
     /**
      * Drop entries older than the cutoff. Called nightly by the cleanup job.
