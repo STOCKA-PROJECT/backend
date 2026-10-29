@@ -33,6 +33,7 @@ import com.stocka.backend.modules.organizations.IntegrationTestSupport;
 @SpringBootTest
 @DisplayName("/auth/oauth/google (integration)")
 @TestPropertySource(properties = {
+        "oauth.google.enabled=true",
         "oauth.google.client-id=test-client-id",
         "oauth.google.client-secret=test-client-secret",
         "oauth.google.redirect-uri=http://localhost:3002/auth/oauth/callback"

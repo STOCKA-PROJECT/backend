@@ -42,7 +42,8 @@ public class GoogleOAuthService {
     /**
      * Builds the Google authorize URL and the matching state cookie.
      *
-     * @throws ApiException with {@code OAUTH_NOT_CONFIGURED} when credentials
+     * @throws ApiException with {@code OAUTH_DISABLED} (404) when the flow is off, or
+     *                      {@code OAUTH_NOT_CONFIGURED} (503) when credentials
      *                      aren't provisioned on this environment
      */
     public AuthorizationResult buildAuthorization() {
@@ -97,6 +98,9 @@ public class GoogleOAuthService {
     }
 
     private void ensureConfigured() {
+        if (!properties.isEnabled()) {
+            throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.OAUTH_DISABLED);
+        }
         if (!properties.isConfigured()) {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, ErrorCodes.OAUTH_NOT_CONFIGURED);
         }

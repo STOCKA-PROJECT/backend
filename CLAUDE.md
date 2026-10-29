@@ -59,6 +59,11 @@ Each module follows **Controller → Service → Repository** layering with cons
 - Public endpoints: `/auth/**`, `/health`. Everything else requires authentication.
 - Role-based access via `@PreAuthorize` annotations (e.g. `hasRole('ADMIN')`)
 - User entity implements `UserDetails`; email is used as the Spring Security username
+- Sign-in with Google (`/auth/oauth/google/*`) is off unless `oauth.google.enabled` (`GOOGLE_OAUTH_ENABLED`) is
+  `true`: disabled it answers 404 `auth.oauth_disabled`, and enabling it under a `prod` profile fails on startup
+  (`GoogleOAuthProperties`). The frontend mirrors it with `NUXT_PUBLIC_OAUTH_GOOGLE_ENABLED` (button hidden, BFF 404).
+  Production signs in with email + password + 2FA only; the frontend carries the requested destination in `?next=`
+  (`app/utils/nextPath.ts`) through login, signup, verification and expired sessions.
 
 ### Database
 
@@ -76,7 +81,7 @@ On startup, `RoleSeeder` creates USER/ADMIN roles, then `AdminSeeder` creates a 
 | Method | Path           | Access        | Description              |
 |--------|----------------|---------------|--------------------------|
 | GET    | `/health`      | Public        | Health check             |
-| POST   | `/auth/signup` | Public        | Register user            |
+| POST   | `/auth/signup` | Public        | Register user; optional `next` (same-origin path) travels in the verification link as `/verificar-email?token=&next=` |
 | POST   | `/auth/login`  | Public        | Login, returns JWT       |
 | GET    | `/users/me`    | Authenticated | Current user profile     |
 | GET    | `/users`       | ADMIN         | List all users           |

@@ -17,6 +17,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -157,6 +160,29 @@ class EmailVerificationServiceTest {
                     "url must point to frontend verify path: " + url);
             assertTrue(url.length() > "http://localhost:3002/verificar-email?token=".length(),
                     "url must include a non-empty token");
+        }
+
+        @Test
+        @DisplayName("should append the encoded next path when it is a safe relative path")
+        void should_appendNext_when_relativePath() {
+            sut.sendVerificationEmail(existingUser, "/invitations/abc?x=1");
+
+            ArgumentCaptor<String> urlCaptor = ArgumentCaptor.forClass(String.class);
+            verify(emailService).sendEmailVerification(anyString(), anyString(), urlCaptor.capture(), any());
+            assertTrue(urlCaptor.getValue().endsWith("&next=%2Finvitations%2Fabc%3Fx%3D1"),
+                    "url must carry the encoded next: " + urlCaptor.getValue());
+        }
+
+        @ParameterizedTest(name = "next={0}")
+        @NullSource
+        @ValueSource(strings = {"", "//evil.example", "/\\evil.example", "https://evil.example/x", "relative"})
+        @DisplayName("should drop a next that is not a same-origin path")
+        void should_dropNext_when_notRelativePath(String next) {
+            sut.sendVerificationEmail(existingUser, next);
+
+            ArgumentCaptor<String> urlCaptor = ArgumentCaptor.forClass(String.class);
+            verify(emailService).sendEmailVerification(anyString(), anyString(), urlCaptor.capture(), any());
+            assertTrue(!urlCaptor.getValue().contains("next="), "url must not carry next: " + urlCaptor.getValue());
         }
 
         @Test

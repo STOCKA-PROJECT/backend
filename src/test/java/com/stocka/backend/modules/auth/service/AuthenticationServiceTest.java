@@ -97,7 +97,7 @@ class AuthenticationServiceTest {
 
             assertSame(expected, result);
             verify(userRepository).save(any(User.class));
-            verify(emailVerificationService).sendVerificationEmail(expected);
+            verify(emailVerificationService).sendVerificationEmail(expected, null);
         }
 
         @Test
@@ -223,7 +223,24 @@ class AuthenticationServiceTest {
             sut.signup(validDto);
 
             ordered.verify(userRepository).save(any(User.class));
-            ordered.verify(emailVerificationService).sendVerificationEmail(saved);
+            ordered.verify(emailVerificationService).sendVerificationEmail(saved, null);
+        }
+
+        @Test
+        @DisplayName("should forward the requested next path to the verification email")
+        void should_forwardNextPath_to_verificationEmail() {
+            when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
+            when(userService.checkUsernameAvailability(validDto.getUsername()))
+                    .thenReturn(AvailabilityResponse.ok());
+            when(roleRepository.findByName(RoleEnum.USER)).thenReturn(Optional.of(userRole));
+            when(passwordEncoder.encode(any())).thenReturn("hashed");
+            User saved = new User();
+            when(userRepository.save(any(User.class))).thenReturn(saved);
+            validDto.setNext("/invitations/abc");
+
+            sut.signup(validDto);
+
+            verify(emailVerificationService).sendVerificationEmail(saved, "/invitations/abc");
         }
 
         @Test

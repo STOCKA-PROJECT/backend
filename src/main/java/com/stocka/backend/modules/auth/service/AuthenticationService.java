@@ -107,7 +107,7 @@ public class AuthenticationService {
                 .setLanguage(language);
 
         User saved = userRepository.save(user);
-        emailVerificationService.sendVerificationEmail(saved);
+        emailVerificationService.sendVerificationEmail(saved, input.getNext());
         return saved;
     }
 

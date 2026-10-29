@@ -1,5 +1,6 @@
 package com.stocka.backend.modules.auth.service;
 
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -71,6 +72,18 @@ public class EmailVerificationService {
      * @param user the user that just signed up (or asked for a resend); must be persisted
      */
     public void sendVerificationEmail(User user) {
+        sendVerificationEmail(user, null);
+    }
+
+    /**
+     * Same as {@link #sendVerificationEmail(User)} but the link also carries the relative path
+     * the frontend should open after the verification (for example the invitation the user
+     * was accepting when they signed up). Anything that is not a safe relative path is dropped.
+     *
+     * @param user the user that just signed up; must be persisted
+     * @param next relative frontend path ({@code /…}), or {@code null}
+     */
+    public void sendVerificationEmail(User user, String next) {
         tokenRepository.deleteAllByUser(user);
 
         String rawToken = generateRawToken();
@@ -83,7 +96,7 @@ public class EmailVerificationService {
                 .setCreatedAt(now);
         tokenRepository.save(token);
 
-        String verifyUrl = buildVerifyUrl(rawToken);
+        String verifyUrl = buildVerifyUrl(rawToken, next);
         emailService.sendEmailVerification(user.getEmail(), user.getName(), verifyUrl, user.getLanguage());
     }
 
@@ -166,9 +179,18 @@ public class EmailVerificationService {
         }
     }
 
-    private String buildVerifyUrl(String rawToken) {
+    private String buildVerifyUrl(String rawToken, String next) {
         String base = frontendBaseUrl.endsWith("/") ? frontendBaseUrl.substring(0, frontendBaseUrl.length() - 1)
                 : frontendBaseUrl;
-        return base + "/verificar-email?token=" + rawToken;
+        String url = base + "/verificar-email?token=" + rawToken;
+        if (isSafeRelativePath(next)) {
+            url += "&next=" + URLEncoder.encode(next, StandardCharsets.UTF_8);
+        }
+        return url;
+    }
+
+    /** A same-origin path: starts with one slash, so it can never point to another host. */
+    private static boolean isSafeRelativePath(String path) {
+        return path != null && path.startsWith("/") && !path.startsWith("//") && !path.startsWith("/\\");
     }
 }

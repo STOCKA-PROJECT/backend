@@ -27,6 +27,9 @@ public class RegisterUserDto {
 
     private String language;
 
+    /** Optional relative path the frontend should open once the email is verified. */
+    private String next;
+
     public String getUsername() {
         return username;
     }
@@ -87,6 +90,15 @@ public class RegisterUserDto {
 
     public RegisterUserDto setLanguage(String language) {
         this.language = language;
+        return this;
+    }
+
+    public String getNext() {
+        return next;
+    }
+
+    public RegisterUserDto setNext(String next) {
+        this.next = next;
         return this;
     }
 }
