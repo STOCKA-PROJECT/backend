@@ -1,0 +1,27 @@
+meta {
+  name: Get Attachment Thumbnail (JPEG reduït, cache d'un any)
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{orgId}}/pieces/{{pieceId}}/attachments/{{attachmentId}}/thumbnail
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  Serveix la miniatura JPEG d'una imatge (costat llarg `stocka.pieces.attachment.thumbnail-max-side`,
+  512 px per defecte) amb `Cache-Control: private, max-age=31536000, immutable` i `ETag`
+  (`"att-<id>-thumb"`): amb `If-None-Match` respon 304 sense tocar R2. És el que pinten la llista
+  d'articles del frontend i el catàleg i el tauler de l'editor.
+
+  Si l'adjunt no té miniatura (DOCUMENT, AUDIO, imatges pujades abans de V32 i encara no
+  regenerades, imatges que el servidor no sap descodificar) serveix l'original amb `ETag`
+  `"att-<id>-orig"` i una cache curta (5 min), perquè el client reculli la miniatura quan el
+  backfill l'hagi generada.
+}

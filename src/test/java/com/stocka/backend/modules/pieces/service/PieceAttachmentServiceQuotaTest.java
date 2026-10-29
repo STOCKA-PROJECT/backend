@@ -40,6 +40,7 @@ class PieceAttachmentServiceQuotaTest {
     @Mock PieceHistoryService historyService;
     @Mock R2Service r2Service;
     @Mock R2Properties r2Properties;
+    @Mock AttachmentThumbnailService thumbnails;
 
     private PieceAttachmentService sut;
     private Piece piece;
@@ -52,7 +53,7 @@ class PieceAttachmentServiceQuotaTest {
         quotas = new OrganizationQuotaProperties();
         sut = new PieceAttachmentService(
                 attachmentRepository, pieceRepository, pieceService,
-                historyService, r2Service, r2Properties, limits, quotas);
+                historyService, r2Service, r2Properties, limits, quotas, thumbnails);
         piece = new Piece().setId(42).setOrganization(new Organization().setId(7));
     }
 

@@ -57,6 +57,7 @@ class PieceAttachmentServiceAudioTest {
     @Mock PieceHistoryService historyService;
     @Mock R2Service r2Service;
     @Mock R2Properties r2Properties;
+    @Mock AttachmentThumbnailService thumbnails;
 
     private PieceAttachmentProperties limits;
     private PieceAttachmentService sut;
@@ -67,7 +68,7 @@ class PieceAttachmentServiceAudioTest {
         limits = new PieceAttachmentProperties();
         sut = new PieceAttachmentService(
                 attachmentRepository, pieceRepository, pieceService,
-                historyService, r2Service, r2Properties, limits, new OrganizationQuotaProperties());
+                historyService, r2Service, r2Properties, limits, new OrganizationQuotaProperties(), thumbnails);
         piece = new Piece().setId(42).setOrganization(new Organization().setId(7));
     }
 

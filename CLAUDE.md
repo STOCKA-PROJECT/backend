@@ -86,6 +86,7 @@ On startup, `RoleSeeder` creates USER/ADMIN roles, then `AdminSeeder` creates a 
 | GET    | `/organizations/{orgSlug}/search/status` | any member | Semantic index status (XEYE) |
 | POST   | `/organizations/{orgSlug}/search/reindex` | OWNER, MANAGER | Rebuild the organization's semantic index |
 | POST   | `/admin/search/reindex` | ADMIN | Rebuild every organization's semantic index |
+| POST   | `/admin/attachments/thumbnails/backfill?batch=` | ADMIN | Generate the thumbnails of up to `batch` (1..500) IMAGE attachments that have none; `{processed, generated, failed, remaining}`, repeat until `remaining` is 0 |
 | GET    | `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource[/mcp]` | Public | OAuth discovery (RFC 8414 / RFC 9728) |
 | GET/POST | `/oauth2/authorize`, `/oauth2/token`, `/oauth2/jwks`, `/oauth2/revoke` | OAuth clients | Spring Authorization Server endpoints |
 | POST   | `/oauth2/register` | Public (rate-limited) | Dynamic client registration (RFC 7591), public clients only |
@@ -124,7 +125,8 @@ Org membership roles: `OWNER`, `MANAGER`, `USER`, `SPECTATOR` (read-only).
 | POST   | `/pieces/{id}/attachments`                    | OWNER, MANAGER, USER      | Upload IMAGE, DOCUMENT or AUDIO (`durationMs` optional) |
 | GET    | `/pieces/{id}/attachments(?kind=)`            | any member                | List                            |
 | GET    | `/pieces/{id}/attachments/{aid}/download`     | any member                | 302 to presigned URL            |
-| GET    | `/pieces/{id}/attachments/{aid}/content`      | any member                | Streams the bytes through the backend (what the frontend and the editor use: browsers never reach R2, which Spanish ISPs block during LaLiga matches) |
+| GET    | `/pieces/{id}/attachments/{aid}/content`      | any member                | Streams the bytes through the backend (what the frontend and the editor use: browsers never reach R2, which Spanish ISPs block during LaLiga matches); `ETag` `"att-<id>-orig"` + `Cache-Control: private, max-age=1y, immutable`, 304 on `If-None-Match` |
+| GET    | `/pieces/{id}/attachments/{aid}/thumbnail`    | any member                | JPEG thumbnail of an IMAGE (long side `PIECE_THUMBNAIL_MAX_SIDE`, 512) generated at upload, same immutable cache, `ETag` `"att-<id>-thumb"`; without one (other kinds, not yet backfilled, undecodable) the original with `max-age=300` |
 | DELETE | `/pieces/{id}/attachments/{aid}`              | OWNER, MANAGER, USER      | Soft-delete + best-effort R2 rm |
 | GET    | `/pieces/export(?format=csv\|xlsx&filters)`   | any member                | Bulk export (CSV/XLSX), filtered |
 | GET    | `/pieces/import/template(?format=)`           | OWNER, MANAGER, USER      | Empty header-only template       |
@@ -256,6 +258,18 @@ Per-piece attachment limits (configurable via `stocka.pieces.attachment.*`):
 - AUDIO: mp3/wav/ogg/flac/m4a (what VLC plays on the belén RPi), max 50 MB, max 50 per piece;
   carries `durationMs` measured by the client. The timeline editor names the asset
   `<attachmentId>-<filename>` and reads the bytes from `/content`.
+
+Every IMAGE also gets a **thumbnail** (2026-10-29, `V32__attachment_thumbnails.sql`): `AttachmentThumbnailService`
+decodes the upload with source subsampling (a 16 384 px picture never materializes at full size), applies the
+EXIF orientation (Thumbnailator), flattens transparency on white and writes a JPEG of at most
+`stocka.pieces.attachment.thumbnail-max-side` px (`PIECE_THUMBNAIL_MAX_SIDE`, 512; quality
+`PIECE_THUMBNAIL_QUALITY`, 0.82) stored at `<r2_key>.thumb.jpg`; WebP input needs the TwelveMonkeys reader on the
+classpath. Columns `width`/`height` (displayed size of the original), `thumb_key`, `thumb_width`, `thumb_height`,
+`thumb_size_bytes`; `PieceAttachmentResponseDto` exposes `width`, `height`, `hasThumbnail`. A generation or upload
+failure never blocks the upload (the row keeps `thumb_key` NULL and `/thumbnail` falls back to the original). After
+deploying, run `POST /admin/attachments/thumbnails/backfill` until `remaining` is 0 for the images uploaded before.
+The frontend list/detail/gallery and the editor's catalog and board use `/thumbnail` as a plain `<img src>` through
+their cookie proxies (browser cache + 304); only the lightboxes load `/content`.
 
 ### Semantic search (XEYE)
 

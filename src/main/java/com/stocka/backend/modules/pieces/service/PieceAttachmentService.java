@@ -7,9 +7,11 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
@@ -18,6 +20,7 @@ import javax.imageio.stream.ImageInputStream;
 import org.apache.tika.Tika;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -29,12 +32,14 @@ import org.springframework.web.server.ResponseStatusException;
 import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.organizations.service.OrganizationQuotaProperties;
+import com.stocka.backend.modules.pieces.dto.ThumbnailBackfillReport;
 import com.stocka.backend.modules.pieces.entity.Piece;
 import com.stocka.backend.modules.pieces.entity.PieceAttachment;
 import com.stocka.backend.modules.pieces.entity.PieceAttachmentKind;
 import com.stocka.backend.modules.pieces.repository.PieceAttachmentRepository;
 import com.stocka.backend.modules.pieces.repository.PieceRepository;
 import com.stocka.backend.modules.storage.PresignedDownload;
+import com.stocka.backend.modules.storage.R2Keys;
 import com.stocka.backend.modules.storage.R2Properties;
 import com.stocka.backend.modules.storage.R2Service;
 import com.stocka.backend.modules.storage.R2UnavailableException;
@@ -69,6 +74,9 @@ public class PieceAttachmentService {
     private static final String MIME_OCTET_STREAM = "application/octet-stream";
     private static final String MIME_SVG = "image/svg+xml";
     private static final String MIME_WEBP = "image/webp";
+    private static final String MIME_JPEG = "image/jpeg";
+    /** Upper bound of the {@code batch} of {@link #backfillThumbnails(int)}: one call stays short. */
+    public static final int MAX_BACKFILL_BATCH = 500;
     private static final Tika TIKA = new Tika();
 
     private final PieceAttachmentRepository attachmentRepository;
@@ -79,6 +87,7 @@ public class PieceAttachmentService {
     private final R2Properties r2Properties;
     private final PieceAttachmentProperties limits;
     private final OrganizationQuotaProperties quotas;
+    private final AttachmentThumbnailService thumbnails;
 
     public PieceAttachmentService(
             PieceAttachmentRepository attachmentRepository,
@@ -88,7 +97,8 @@ public class PieceAttachmentService {
             R2Service r2Service,
             R2Properties r2Properties,
             PieceAttachmentProperties limits,
-            OrganizationQuotaProperties quotas
+            OrganizationQuotaProperties quotas,
+            AttachmentThumbnailService thumbnails
     ) {
         this.attachmentRepository = attachmentRepository;
         this.pieceRepository = pieceRepository;
@@ -98,6 +108,7 @@ public class PieceAttachmentService {
         this.r2Properties = r2Properties;
         this.limits = limits;
         this.quotas = quotas;
+        this.thumbnails = thumbnails;
     }
 
     @Transactional
@@ -160,6 +171,12 @@ public class PieceAttachmentService {
         String safeName = file.getOriginalFilename() == null ? "file" : file.getOriginalFilename();
         String key = r2Service.buildPieceKey(piece.getOrganization().getId(), piece.getId(), safeName);
 
+        // Generated before anything reaches R2: a failure here (undecodable image, bug in a
+        // decoder) is logged and the upload goes on without a thumbnail.
+        Optional<Thumbnail> thumbnail = kind == PieceAttachmentKind.IMAGE
+                ? generateThumbnail(bytes, safeName)
+                : Optional.empty();
+
         UploadedObject stored = r2Service.upload(key, new ByteArrayInputStream(bytes), size, detectedMime);
 
         PieceAttachment attachment = new PieceAttachment()
@@ -171,6 +188,7 @@ public class PieceAttachmentService {
                 .setSizeBytes(stored.sizeBytes())
                 .setDurationMs(kind == PieceAttachmentKind.AUDIO ? durationMs : null)
                 .setUploadedBy(currentUser());
+        thumbnail.ifPresent(t -> storeThumbnail(attachment, t));
         PieceAttachment saved = attachmentRepository.save(attachment);
         historyService.recordAttachmentAdded(piece, currentUser(), safeName);
         if (kind == PieceAttachmentKind.IMAGE && piece.getCoverAttachment() == null) {
@@ -213,8 +231,133 @@ public class PieceAttachmentService {
      * @throws com.stocka.backend.modules.storage.R2ObjectNotFoundException when the bytes are gone
      */
     public AttachmentContent openContent(Integer orgId, Integer pieceId, Integer attachmentId) {
-        PieceAttachment attachment = findInPiece(orgId, pieceId, attachmentId);
+        return openContent(findInPiece(orgId, pieceId, attachmentId));
+    }
+
+    /**
+     * Opens the original bytes of an attachment already resolved with
+     * {@link #requireInPiece(Integer, Integer, Integer)}.
+     *
+     * @param attachment the attachment
+     * @return the attachment and an open stream of its original
+     * @throws com.stocka.backend.modules.storage.R2ObjectNotFoundException when the bytes are gone
+     */
+    public AttachmentContent openContent(PieceAttachment attachment) {
         return new AttachmentContent(attachment, r2Service.open(attachment.getR2Key()));
+    }
+
+    /**
+     * Opens the JPEG thumbnail of an IMAGE attachment. The caller checks
+     * {@link PieceAttachment#hasThumbnail()} first and serves the original otherwise.
+     *
+     * @param attachment an attachment with a thumbnail
+     * @return the attachment and an open stream of its thumbnail ({@code image/jpeg},
+     *         {@link PieceAttachment#getThumbSizeBytes()} bytes)
+     * @throws IllegalStateException when the attachment has no thumbnail
+     * @throws com.stocka.backend.modules.storage.R2ObjectNotFoundException when the bytes are gone
+     */
+    public AttachmentContent openThumbnail(PieceAttachment attachment) {
+        if (!attachment.hasThumbnail()) {
+            throw new IllegalStateException("Attachment " + attachment.getId() + " has no thumbnail");
+        }
+        return new AttachmentContent(attachment, r2Service.open(attachment.getThumbKey()));
+    }
+
+    /**
+     * Resolves an attachment of a piece of an organization, for the controllers that need its
+     * metadata (ETag, size, MIME) before deciding whether to open any bytes at all.
+     *
+     * @param orgId        organization the piece belongs to
+     * @param pieceId      piece the attachment belongs to
+     * @param attachmentId the attachment
+     * @return the attachment
+     * @throws ResponseStatusException 404 when the piece is not in the organization or the
+     *                                 attachment is not in the piece
+     */
+    public PieceAttachment requireInPiece(Integer orgId, Integer pieceId, Integer attachmentId) {
+        return findInPiece(orgId, pieceId, attachmentId);
+    }
+
+    /**
+     * Generates the thumbnail of up to {@code batchSize} IMAGE attachments that have none (images
+     * uploaded before V32, or whose thumbnail failed earlier). Each attachment is read from R2,
+     * decoded, stored and saved on its own, so a failure only skips that one; the report names the
+     * failures, which the next batch retries.
+     *
+     * @param batchSize how many attachments to process, clamped to {@code 1..}{@link #MAX_BACKFILL_BATCH}
+     * @return what happened and how many are still pending
+     */
+    public ThumbnailBackfillReport backfillThumbnails(int batchSize) {
+        int size = Math.max(1, Math.min(batchSize, MAX_BACKFILL_BATCH));
+        List<PieceAttachment> pending = attachmentRepository.findByKindWithoutThumbnail(
+                PieceAttachmentKind.IMAGE, PageRequest.of(0, size));
+        int generated = 0;
+        List<Integer> failed = new ArrayList<>();
+        for (PieceAttachment attachment : pending) {
+            if (backfillOne(attachment)) {
+                generated++;
+            } else {
+                failed.add(attachment.getId());
+            }
+        }
+        long remaining = attachmentRepository.countByKindWithoutThumbnail(PieceAttachmentKind.IMAGE);
+        log.info("thumbnail_backfill processed={} generated={} failed={} remaining={}",
+                pending.size(), generated, failed.size(), remaining);
+        return new ThumbnailBackfillReport(pending.size(), generated, List.copyOf(failed), remaining);
+    }
+
+    private boolean backfillOne(PieceAttachment attachment) {
+        byte[] bytes;
+        try (InputStream in = r2Service.open(attachment.getR2Key())) {
+            bytes = in.readAllBytes();
+        } catch (IOException | RuntimeException e) {
+            log.warn("thumbnail_backfill_read_failed attachmentId={} key={} reason={}",
+                    attachment.getId(), attachment.getR2Key(), e.getMessage());
+            return false;
+        }
+        Optional<Thumbnail> thumbnail = generateThumbnail(bytes, attachment.getOriginalFilename());
+        if (thumbnail.isEmpty() || !storeThumbnail(attachment, thumbnail.get())) {
+            return false;
+        }
+        attachmentRepository.save(attachment);
+        return true;
+    }
+
+    /** Decodes and scales {@code bytes}; empty (and a warning) when the image cannot be handled. */
+    private Optional<Thumbnail> generateThumbnail(byte[] bytes, String filename) {
+        try {
+            Optional<Thumbnail> thumbnail = thumbnails.generate(bytes);
+            if (thumbnail.isEmpty()) {
+                log.warn("thumbnail_unsupported_format filename={}", filename);
+            }
+            return thumbnail;
+        } catch (IOException | RuntimeException e) {
+            log.warn("thumbnail_generation_failed filename={} reason={}", filename, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Uploads the thumbnail next to the original and records it on the (unsaved) attachment. The
+     * displayed size of the original is recorded even when the upload fails.
+     *
+     * @return whether the thumbnail is now in R2
+     */
+    private boolean storeThumbnail(PieceAttachment attachment, Thumbnail thumbnail) {
+        attachment.setWidth(thumbnail.sourceWidth()).setHeight(thumbnail.sourceHeight());
+        String thumbKey = R2Keys.thumbnailKeyFor(attachment.getR2Key());
+        byte[] bytes = thumbnail.bytes();
+        try {
+            UploadedObject stored = r2Service.upload(thumbKey, new ByteArrayInputStream(bytes), bytes.length, MIME_JPEG);
+            attachment.setThumbKey(stored.key())
+                    .setThumbWidth(thumbnail.width())
+                    .setThumbHeight(thumbnail.height())
+                    .setThumbSizeBytes(stored.sizeBytes());
+            return true;
+        } catch (R2UnavailableException e) {
+            log.warn("thumbnail_upload_failed key={} reason={}", thumbKey, e.getMessage());
+            return false;
+        }
     }
 
     @Transactional
@@ -232,6 +375,13 @@ public class PieceAttachmentService {
             r2Service.delete(attachment.getR2Key());
         } catch (R2UnavailableException e) {
             log.warn("r2_delete_failed key={} reason={}", attachment.getR2Key(), e.getMessage());
+        }
+        if (attachment.hasThumbnail()) {
+            try {
+                r2Service.delete(attachment.getThumbKey());
+            } catch (R2UnavailableException e) {
+                log.warn("r2_delete_failed key={} reason={}", attachment.getThumbKey(), e.getMessage());
+            }
         }
         historyService.recordAttachmentRemoved(piece, currentUser(), attachment.getOriginalFilename());
     }

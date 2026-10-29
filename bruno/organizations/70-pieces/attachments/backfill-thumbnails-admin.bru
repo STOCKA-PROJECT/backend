@@ -1,0 +1,28 @@
+meta {
+  name: Backfill Thumbnails (ADMIN)
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{baseUrl}}/admin/attachments/thumbnails/backfill?batch=50
+  body: none
+  auth: bearer
+}
+
+params:query {
+  batch: 50
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+docs {
+  Genera la miniatura de fins a `batch` (1..500, 50 per defecte) imatges que no en tenen, de
+  totes les organitzacions: les pujades abans de V32 i les que van fallar. Només ADMIN global.
+
+  Resposta: `{processed, generated, failed: [ids], remaining}`. Repeteix la crida fins que
+  `remaining` sigui 0 (o només hi quedin els `failed`, que es tornen a provar a cada lot).
+  Cada imatge es llegeix d'R2, es descodifica i es desa per separat: un error només salta aquella.
+}

@@ -57,6 +57,30 @@ public class PieceAttachment {
     @Column(name = "duration_ms")
     private Long durationMs;
 
+    /** Pixel width of an IMAGE as displayed (EXIF orientation applied); null for other kinds. */
+    @Column(name = "width")
+    private Integer width;
+
+    /** Pixel height of an IMAGE as displayed (EXIF orientation applied); null for other kinds. */
+    @Column(name = "height")
+    private Integer height;
+
+    /**
+     * R2 key of the JPEG thumbnail of an IMAGE ({@code <r2Key>.thumb.jpg}), or null when none
+     * exists yet (other kinds, images uploaded before V32 and not backfilled, undecodable images).
+     */
+    @Column(name = "thumb_key", length = 512)
+    private String thumbKey;
+
+    @Column(name = "thumb_width")
+    private Integer thumbWidth;
+
+    @Column(name = "thumb_height")
+    private Integer thumbHeight;
+
+    @Column(name = "thumb_size_bytes")
+    private Long thumbSizeBytes;
+
     @ManyToOne
     @JoinColumn(name = "uploaded_by_user_id", referencedColumnName = "id")
     private User uploadedBy;
@@ -92,6 +116,20 @@ public class PieceAttachment {
 
     public Long getDurationMs() { return durationMs; }
     public PieceAttachment setDurationMs(Long durationMs) { this.durationMs = durationMs; return this; }
+    public Integer getWidth() { return width; }
+    public PieceAttachment setWidth(Integer width) { this.width = width; return this; }
+    public Integer getHeight() { return height; }
+    public PieceAttachment setHeight(Integer height) { this.height = height; return this; }
+    public String getThumbKey() { return thumbKey; }
+    public PieceAttachment setThumbKey(String thumbKey) { this.thumbKey = thumbKey; return this; }
+    public Integer getThumbWidth() { return thumbWidth; }
+    public PieceAttachment setThumbWidth(Integer thumbWidth) { this.thumbWidth = thumbWidth; return this; }
+    public Integer getThumbHeight() { return thumbHeight; }
+    public PieceAttachment setThumbHeight(Integer thumbHeight) { this.thumbHeight = thumbHeight; return this; }
+    public Long getThumbSizeBytes() { return thumbSizeBytes; }
+    public PieceAttachment setThumbSizeBytes(Long thumbSizeBytes) { this.thumbSizeBytes = thumbSizeBytes; return this; }
+    /** Whether a generated thumbnail exists in R2 for this attachment. */
+    public boolean hasThumbnail() { return thumbKey != null; }
 
     public User getUploadedBy() { return uploadedBy; }
     public PieceAttachment setUploadedBy(User uploadedBy) { this.uploadedBy = uploadedBy; return this; }

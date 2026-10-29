@@ -13,12 +13,19 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.startsWith;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -39,6 +46,7 @@ import org.springframework.web.context.WebApplicationContext;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stocka.backend.modules.organizations.IntegrationTestSupport;
+import com.stocka.backend.modules.storage.R2Properties;
 
 /**
  * End-to-end integration coverage for the pieces / piece-types / locations / attachments / history
@@ -60,6 +68,7 @@ class PiecesFeatureIntegrationTest {
 
     @Autowired private WebApplicationContext context;
     @Autowired private JdbcTemplate jdbcTemplate;
+    @Autowired private R2Properties r2Properties;
 
     private final ObjectMapper om = new ObjectMapper();
 
@@ -1445,6 +1454,366 @@ class PiecesFeatureIntegrationTest {
             mockMvc.perform(get("/organizations/" + orgSlug + "/pieces/" + pieceId)
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isForbidden());
+        }
+    }
+
+    @Nested
+    @DisplayName("Attachment thumbnails")
+    class AttachmentThumbnails {
+        private Integer pieceId;
+
+        @BeforeEach
+        void createPiece() throws Exception {
+            Integer typeId = createSimpleTypeAs(ownerToken, "Figura", false);
+            Integer attrId = firstAttributeIdOfType(typeId);
+            pieceId = createPieceAs(ownerToken, typeId, "Pastor", attrId, "red");
+        }
+
+        private String attachmentsUrl() {
+            return "/organizations/" + orgSlug + "/pieces/" + pieceId + "/attachments";
+        }
+
+        private Map<?, ?> uploadBody(byte[] bytes, String filename, String contentType, String kind) throws Exception {
+            MvcResult r = mockMvc.perform(multipart(attachmentsUrl())
+                            .file(new MockMultipartFile("file", filename, contentType, bytes))
+                            .param("kind", kind)
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isCreated())
+                    .andReturn();
+            return om.readValue(r.getResponse().getContentAsString(), Map.class);
+        }
+
+        private Integer uploadImage() throws Exception {
+            return (Integer) uploadBody(jpegBytes(1200, 800), "p.jpg", "image/jpeg", "IMAGE").get("id");
+        }
+
+        private Path localObject(String key) {
+            return Path.of(r2Properties.getLocalDir()).resolve(key);
+        }
+
+        private String column(String column, Integer attachmentId) {
+            return jdbcTemplate.queryForObject(
+                    "SELECT " + column + " FROM piece_attachments WHERE id = ?", String.class, attachmentId);
+        }
+
+        /** Puts an attachment back in the pre-V32 state: no thumbnail row data, no object. */
+        private void forgetThumbnail(Integer attachmentId) throws Exception {
+            String key = column("thumb_key", attachmentId);
+            if (key != null) {
+                Files.deleteIfExists(localObject(key));
+            }
+            jdbcTemplate.update("UPDATE piece_attachments SET thumb_key = NULL, thumb_width = NULL, "
+                    + "thumb_height = NULL, thumb_size_bytes = NULL WHERE id = ?", attachmentId);
+        }
+
+        private String thumbnailUrl(Integer attachmentId) {
+            return attachmentsUrl() + "/" + attachmentId + "/thumbnail";
+        }
+
+        @Test
+        @DisplayName("uploading an IMAGE generates a 512 px JPEG next to the original and describes it")
+        void uploadImage_generatesThumbnail() throws Exception {
+            Map<?, ?> body = uploadBody(jpegBytes(1200, 800), "p.jpg", "image/jpeg", "IMAGE");
+            Integer id = (Integer) body.get("id");
+
+            assertThat(body.get("hasThumbnail")).isEqualTo(true);
+            assertThat(body.get("width")).isEqualTo(1200);
+            assertThat(body.get("height")).isEqualTo(800);
+
+            String thumbKey = column("thumb_key", id);
+            String r2Key = column("r2_key", id);
+            assertThat(thumbKey).isEqualTo(r2Key + ".thumb.jpg");
+            assertThat(thumbKey).startsWith("org/" + orgId + "/piece/" + pieceId + "/");
+            assertThat(column("thumb_width", id)).isEqualTo("512");
+            assertThat(column("thumb_height", id)).isEqualTo("341");
+            long size = Long.parseLong(column("thumb_size_bytes", id));
+            assertThat(size).isPositive();
+            assertThat(Files.exists(localObject(thumbKey))).isTrue();
+            assertThat(Files.size(localObject(thumbKey))).isEqualTo(size);
+            assertThat(size).isLessThan(Files.size(localObject(r2Key)));
+        }
+
+        @Test
+        @DisplayName("GET /thumbnail streams the JPEG with a one-year immutable private cache and an ETag")
+        void thumbnail_servesJpeg() throws Exception {
+            Integer id = uploadImage();
+            long size = Long.parseLong(column("thumb_size_bytes", id));
+
+            MvcResult r = mockMvc.perform(get(thumbnailUrl(id))
+                            .header("Authorization", "Bearer " + spectatorToken))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Content-Type", "image/jpeg"))
+                    .andExpect(header().longValue("Content-Length", size))
+                    .andExpect(header().string("Cache-Control", containsString("max-age=31536000")))
+                    .andExpect(header().string("Cache-Control", containsString("private")))
+                    .andExpect(header().string("Cache-Control", containsString("immutable")))
+                    .andExpect(header().string("ETag", "\"att-" + id + "-thumb\""))
+                    .andExpect(header().string("Content-Disposition", startsWith("inline; filename=\"p.thumb.jpg\"")))
+                    .andReturn();
+
+            BufferedImage img = ImageIO.read(new ByteArrayInputStream(r.getResponse().getContentAsByteArray()));
+            assertThat(img).isNotNull();
+            assertThat(img.getWidth()).isEqualTo(512);
+            assertThat(img.getHeight()).isEqualTo(341);
+        }
+
+        @Test
+        @DisplayName("GET /thumbnail with a matching If-None-Match answers 304 with the same cache headers and no body")
+        void thumbnail_ifNoneMatch() throws Exception {
+            Integer id = uploadImage();
+            String etag = "\"att-" + id + "-thumb\"";
+
+            MvcResult r = mockMvc.perform(get(thumbnailUrl(id))
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .header("If-None-Match", etag))
+                    .andExpect(status().isNotModified())
+                    .andExpect(header().string("ETag", etag))
+                    .andExpect(header().string("Cache-Control", containsString("immutable")))
+                    .andReturn();
+            assertThat(r.getResponse().getContentAsByteArray()).isEmpty();
+
+            mockMvc.perform(get(thumbnailUrl(id))
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .header("If-None-Match", "W/" + etag))
+                    .andExpect(status().isNotModified());
+
+            mockMvc.perform(get(thumbnailUrl(id))
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .header("If-None-Match", "\"something-else\", " + etag))
+                    .andExpect(status().isNotModified());
+
+            mockMvc.perform(get(thumbnailUrl(id))
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .header("If-None-Match", "*"))
+                    .andExpect(status().isNotModified());
+
+            mockMvc.perform(get(thumbnailUrl(id))
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .header("If-None-Match", "\"att-" + id + "-orig\""))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Content-Type", "image/jpeg"));
+        }
+
+        @Test
+        @DisplayName("GET /content carries an immutable cache and an ETag of its own, honoured by If-None-Match")
+        void content_etag() throws Exception {
+            Integer id = uploadImage();
+            String etag = "\"att-" + id + "-orig\"";
+            String url = attachmentsUrl() + "/" + id + "/content";
+
+            mockMvc.perform(get(url).header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Content-Type", "image/jpeg"))
+                    .andExpect(header().string("ETag", etag))
+                    .andExpect(header().string("Cache-Control", containsString("immutable")))
+                    .andExpect(header().string("Cache-Control", containsString("max-age=31536000")))
+                    .andExpect(header().string("Content-Disposition", startsWith("inline; filename=\"p.jpg\"")));
+
+            mockMvc.perform(get(url)
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .header("If-None-Match", etag))
+                    .andExpect(status().isNotModified())
+                    .andExpect(header().string("ETag", etag));
+
+            mockMvc.perform(get(url)
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .header("If-None-Match", "\"att-" + id + "-thumb\""))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("GET /thumbnail of an attachment without thumbnail serves the original with a short cache")
+        void thumbnail_fallsBackToOriginal() throws Exception {
+            byte[] mp3 = mp3Bytes();
+            Integer id = (Integer) uploadBody(mp3, "nit.mp3", "audio/mpeg", "AUDIO").get("id");
+            String etag = "\"att-" + id + "-orig\"";
+
+            MvcResult r = mockMvc.perform(get(thumbnailUrl(id))
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Content-Type", "audio/mpeg"))
+                    .andExpect(header().longValue("Content-Length", mp3.length))
+                    .andExpect(header().string("ETag", etag))
+                    .andExpect(header().string("Cache-Control", containsString("max-age=300")))
+                    .andExpect(header().string("Cache-Control", containsString("private")))
+                    .andExpect(header().string("Cache-Control", not(containsString("immutable"))))
+                    .andExpect(header().string("Content-Disposition", startsWith("inline; filename=\"nit.mp3\"")))
+                    .andReturn();
+            assertThat(r.getResponse().getContentAsByteArray()).isEqualTo(mp3);
+
+            mockMvc.perform(get(thumbnailUrl(id))
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .header("If-None-Match", etag))
+                    .andExpect(status().isNotModified())
+                    .andExpect(header().string("Cache-Control", containsString("max-age=300")));
+        }
+
+        @Test
+        @DisplayName("GET /thumbnail follows the read rules of the org: members yes, outsiders 403, unknown 404")
+        void thumbnail_access() throws Exception {
+            Integer id = uploadImage();
+
+            mockMvc.perform(get(thumbnailUrl(id)).header("Authorization", "Bearer " + userToken))
+                    .andExpect(status().isOk());
+            mockMvc.perform(get(thumbnailUrl(id)).header("Authorization", "Bearer " + spectatorToken))
+                    .andExpect(status().isOk());
+            mockMvc.perform(get(thumbnailUrl(id)).header("Authorization", "Bearer " + outsiderToken))
+                    .andExpect(status().isForbidden());
+            mockMvc.perform(get(thumbnailUrl(id)))
+                    .andExpect(status().isUnauthorized());
+            mockMvc.perform(get(thumbnailUrl(id + 1000)).header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isNotFound());
+
+            Integer typeId = createSimpleTypeAs(ownerToken, "Altra", false);
+            Integer otherPiece = createPieceAs(ownerToken, typeId, "Ovella", firstAttributeIdOfType(typeId), "x");
+            mockMvc.perform(get("/organizations/" + orgSlug + "/pieces/" + otherPiece + "/attachments/" + id + "/thumbnail")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("the attachment list exposes hasThumbnail and the image size; other kinds carry nulls")
+        void list_exposesThumbnailFields() throws Exception {
+            Integer imageId = uploadImage();
+            Integer docId = (Integer) uploadBody("hola".getBytes(StandardCharsets.UTF_8), "n.txt", "text/plain", "DOCUMENT").get("id");
+
+            mockMvc.perform(get(attachmentsUrl()).param("kind", "IMAGE")
+                            .header("Authorization", "Bearer " + spectatorToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.length()").value(1))
+                    .andExpect(jsonPath("$[0].id").value(imageId))
+                    .andExpect(jsonPath("$[0].hasThumbnail").value(true))
+                    .andExpect(jsonPath("$[0].width").value(1200))
+                    .andExpect(jsonPath("$[0].height").value(800));
+
+            mockMvc.perform(get(attachmentsUrl()).param("kind", "DOCUMENT")
+                            .header("Authorization", "Bearer " + spectatorToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].id").value(docId))
+                    .andExpect(jsonPath("$[0].hasThumbnail").value(false))
+                    .andExpect(jsonPath("$[0].width").doesNotExist())
+                    .andExpect(jsonPath("$[0].height").doesNotExist());
+        }
+
+        @Test
+        @DisplayName("deleting an attachment removes the thumbnail object as well as the original")
+        void delete_removesThumbnailObject() throws Exception {
+            Integer id = uploadImage();
+            Path original = localObject(column("r2_key", id));
+            Path thumb = localObject(column("thumb_key", id));
+            assertThat(Files.exists(original)).isTrue();
+            assertThat(Files.exists(thumb)).isTrue();
+
+            mockMvc.perform(delete(attachmentsUrl() + "/" + id)
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isNoContent());
+
+            assertThat(Files.exists(original)).isFalse();
+            assertThat(Files.exists(thumb)).isFalse();
+            mockMvc.perform(get(thumbnailUrl(id)).header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("POST /admin/attachments/thumbnails/backfill generates the missing thumbnails; ADMIN only")
+        void backfill_generatesMissing() throws Exception {
+            Integer id = uploadImage();
+            forgetThumbnail(id);
+            mockMvc.perform(get(thumbnailUrl(id)).header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("ETag", "\"att-" + id + "-orig\""));
+
+            for (String token : List.of(managerToken, userToken, spectatorToken, outsiderToken)) {
+                mockMvc.perform(post("/admin/attachments/thumbnails/backfill")
+                                .header("Authorization", "Bearer " + token))
+                        .andExpect(status().isForbidden());
+            }
+            mockMvc.perform(post("/admin/attachments/thumbnails/backfill"))
+                    .andExpect(status().isUnauthorized());
+            assertThat(column("thumb_key", id)).isNull();
+
+            mockMvc.perform(post("/admin/attachments/thumbnails/backfill")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.processed").value(1))
+                    .andExpect(jsonPath("$.generated").value(1))
+                    .andExpect(jsonPath("$.failed").isEmpty())
+                    .andExpect(jsonPath("$.remaining").value(0));
+
+            String thumbKey = column("thumb_key", id);
+            assertThat(thumbKey).isEqualTo(column("r2_key", id) + ".thumb.jpg");
+            assertThat(Files.exists(localObject(thumbKey))).isTrue();
+            assertThat(column("thumb_width", id)).isEqualTo("512");
+            mockMvc.perform(get(thumbnailUrl(id)).header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Content-Type", "image/jpeg"))
+                    .andExpect(header().string("ETag", "\"att-" + id + "-thumb\""));
+
+            mockMvc.perform(post("/admin/attachments/thumbnails/backfill")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.processed").value(0))
+                    .andExpect(jsonPath("$.remaining").value(0));
+        }
+
+        @Test
+        @DisplayName("the backfill reports an image whose original is gone and keeps it pending")
+        void backfill_reportsMissingOriginal() throws Exception {
+            Integer id = uploadImage();
+            forgetThumbnail(id);
+            Files.delete(localObject(column("r2_key", id)));
+
+            mockMvc.perform(post("/admin/attachments/thumbnails/backfill")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.processed").value(1))
+                    .andExpect(jsonPath("$.generated").value(0))
+                    .andExpect(jsonPath("$.failed[0]").value(id))
+                    .andExpect(jsonPath("$.remaining").value(1));
+            assertThat(column("thumb_key", id)).isNull();
+        }
+
+        @Test
+        @DisplayName("the backfill processes `batch` images per call, oldest first")
+        void backfill_batch() throws Exception {
+            Integer first = uploadImage();
+            Integer second = uploadImage();
+            forgetThumbnail(first);
+            forgetThumbnail(second);
+
+            mockMvc.perform(post("/admin/attachments/thumbnails/backfill").param("batch", "1")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.processed").value(1))
+                    .andExpect(jsonPath("$.generated").value(1))
+                    .andExpect(jsonPath("$.remaining").value(1));
+            assertThat(column("thumb_key", first)).isNotNull();
+            assertThat(column("thumb_key", second)).isNull();
+
+            mockMvc.perform(post("/admin/attachments/thumbnails/backfill").param("batch", "1")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.processed").value(1))
+                    .andExpect(jsonPath("$.remaining").value(0));
+            assertThat(column("thumb_key", second)).isNotNull();
+
+            mockMvc.perform(post("/admin/attachments/thumbnails/backfill").param("batch", "0")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.processed").value(0));
+        }
+
+        @Test
+        @DisplayName("the backfill ignores DOCUMENT and AUDIO attachments")
+        void backfill_ignoresOtherKinds() throws Exception {
+            uploadBody(mp3Bytes(), "nit.mp3", "audio/mpeg", "AUDIO");
+            uploadBody("hola".getBytes(StandardCharsets.UTF_8), "n.txt", "text/plain", "DOCUMENT");
+
+            mockMvc.perform(post("/admin/attachments/thumbnails/backfill")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.processed").value(0))
+                    .andExpect(jsonPath("$.remaining").value(0));
         }
     }
 }

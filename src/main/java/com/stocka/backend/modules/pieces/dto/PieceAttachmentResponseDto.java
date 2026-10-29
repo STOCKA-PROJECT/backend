@@ -8,7 +8,9 @@ import com.stocka.backend.modules.pieces.entity.PieceAttachmentKind;
 /**
  * Metadata about a piece attachment exposed to the client. The {@code r2Key} is intentionally
  * omitted. {@code durationMs} is only set for {@link PieceAttachmentKind#AUDIO} attachments whose
- * upload reported it.
+ * upload reported it. {@code width}/{@code height} are the pixel size of an IMAGE as displayed and
+ * {@code hasThumbnail} tells whether {@code /thumbnail} serves a reduced JPEG or falls back to the
+ * original; both are null/false for the other kinds.
  */
 public record PieceAttachmentResponseDto(
         Integer id,
@@ -17,6 +19,9 @@ public record PieceAttachmentResponseDto(
         String mimeType,
         long sizeBytes,
         Long durationMs,
+        Integer width,
+        Integer height,
+        boolean hasThumbnail,
         Integer uploadedByUserId,
         Date createdAt
 ) {
@@ -28,6 +33,9 @@ public record PieceAttachmentResponseDto(
                 attachment.getMimeType(),
                 attachment.getSizeBytes(),
                 attachment.getDurationMs(),
+                attachment.getWidth(),
+                attachment.getHeight(),
+                attachment.hasThumbnail(),
                 attachment.getUploadedBy() == null ? null : attachment.getUploadedBy().getId(),
                 attachment.getCreatedAt()
         );

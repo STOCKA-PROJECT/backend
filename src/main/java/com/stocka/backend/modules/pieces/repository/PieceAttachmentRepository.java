@@ -3,6 +3,7 @@ package com.stocka.backend.modules.pieces.repository;
 import java.util.Collection;
 import java.util.List;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -21,6 +22,27 @@ public interface PieceAttachmentRepository extends JpaRepository<PieceAttachment
     List<PieceAttachment> findByPieceAndKind(Piece piece, PieceAttachmentKind kind);
 
     long countByPieceAndKind(Piece piece, PieceAttachmentKind kind);
+
+    /**
+     * Active attachments of {@code kind} that have no thumbnail yet, oldest first. Images uploaded
+     * before V32 (and the ones the server failed to decode) show up here until the admin backfill
+     * generates their thumbnail.
+     *
+     * @param kind     the attachment kind, {@link PieceAttachmentKind#IMAGE} in practice
+     * @param pageable size of the batch to return
+     * @return the next batch, empty when every attachment of that kind has a thumbnail
+     */
+    @Query("SELECT a FROM PieceAttachment a WHERE a.kind = :kind AND a.thumbKey IS NULL ORDER BY a.id ASC")
+    List<PieceAttachment> findByKindWithoutThumbnail(@Param("kind") PieceAttachmentKind kind, Pageable pageable);
+
+    /**
+     * How many active attachments of {@code kind} still have no thumbnail.
+     *
+     * @param kind the attachment kind
+     * @return the count
+     */
+    @Query("SELECT COUNT(a) FROM PieceAttachment a WHERE a.kind = :kind AND a.thumbKey IS NULL")
+    long countByKindWithoutThumbnail(@Param("kind") PieceAttachmentKind kind);
 
     /**
      * Counts non-soft-deleted attachments per piece for the given pieces in a single query, so the
