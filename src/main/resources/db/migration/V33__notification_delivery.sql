@@ -23,6 +23,10 @@ CREATE TABLE IF NOT EXISTS notification_outbox (
     CONSTRAINT fk_notif_outbox_org FOREIGN KEY (organization_id) REFERENCES organizations(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- id is @GeneratedValue(AUTO): on MariaDB Hibernate maps AUTO to a per-table sequence named
+-- notification_outbox_seq, so ddl-auto=validate in prod needs it (mirroring V13, V24 and V31).
+CREATE SEQUENCE IF NOT EXISTS notification_outbox_seq START WITH 1 INCREMENT BY 50 NOCACHE NOCYCLE;
+
 -- The digest flusher groups the unsent rows by recipient and organization every tick.
 CREATE INDEX IF NOT EXISTS idx_notif_outbox_pending
     ON notification_outbox (sent_at, user_id, organization_id, event_at);
