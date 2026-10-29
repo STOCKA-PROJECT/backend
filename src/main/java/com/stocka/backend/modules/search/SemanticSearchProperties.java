@@ -26,7 +26,7 @@ public class SemanticSearchProperties {
     private String listPrefix = "stocka-org-";
     private int maxResults = 200;
     private double minScore = 0.3;
-    private Duration trainingDelay = Duration.ofMinutes(10);
+    private Duration trainingDelay = Duration.ofMinutes(30);
     private Duration timeout = Duration.ofSeconds(10);
     private boolean llmEnrichment = true;
     private String embeddingModel = "";

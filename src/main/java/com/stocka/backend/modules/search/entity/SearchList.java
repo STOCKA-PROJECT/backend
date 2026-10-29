@@ -10,8 +10,9 @@ import jakarta.persistence.Table;
 /**
  * The XEYE list that indexes the pieces of one organization.
  *
- * <p>{@code pendingSince} is set whenever an element changes and cleared when a training is
- * launched, so the scheduler can batch many edits into one training.
+ * <p>{@code pendingSince} is set by the first change after a training and cleared when the next
+ * training is launched; {@code lastChangeAt} is bumped by every change, so the scheduler waits for
+ * the edits to go quiet and batches a whole burst into one training.
  */
 @Entity
 @Table(name = "search_lists")
@@ -30,6 +31,9 @@ public class SearchList {
     @Column(name = "pending_since")
     private LocalDateTime pendingSince;
 
+    @Column(name = "last_change_at")
+    private LocalDateTime lastChangeAt;
+
     @Column(name = "last_training_launched_at")
     private LocalDateTime lastTrainingLaunchedAt;
 
@@ -47,6 +51,9 @@ public class SearchList {
 
     public LocalDateTime getPendingSince() { return pendingSince; }
     public SearchList setPendingSince(LocalDateTime pendingSince) { this.pendingSince = pendingSince; return this; }
+
+    public LocalDateTime getLastChangeAt() { return lastChangeAt; }
+    public SearchList setLastChangeAt(LocalDateTime lastChangeAt) { this.lastChangeAt = lastChangeAt; return this; }
 
     public LocalDateTime getLastTrainingLaunchedAt() { return lastTrainingLaunchedAt; }
     public SearchList setLastTrainingLaunchedAt(LocalDateTime at) { this.lastTrainingLaunchedAt = at; return this; }

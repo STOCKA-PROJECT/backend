@@ -227,20 +227,21 @@ class SemanticSearchIndexerTest {
         }
 
         @Test
-        @DisplayName("marks the list pending only when it was not pending already")
+        @DisplayName("keeps the first pendingSince but bumps lastChangeAt on a later change")
         void marksPendingOnce() {
-            SearchList list = knownList().setPendingSince(EARLIER);
+            SearchList list = knownList().setPendingSince(EARLIER).setLastChangeAt(EARLIER);
             when(lists.findById(ORG_ID)).thenReturn(Optional.of(list));
             when(entries.findById(PIECE_ID)).thenReturn(Optional.of(knownEntry()));
 
             sut.index(PIECE_ID);
 
             assertThat(list.getPendingSince()).isEqualTo(EARLIER);
-            verify(lists, never()).save(any());
+            assertThat(list.getLastChangeAt()).isEqualTo(NOW);
+            verify(lists).save(list);
         }
 
         @Test
-        @DisplayName("sets pendingSince to now on the first change")
+        @DisplayName("sets pendingSince and lastChangeAt to now on the first change")
         void setsPending() {
             SearchList list = knownList();
             when(lists.findById(ORG_ID)).thenReturn(Optional.of(list));
@@ -249,6 +250,7 @@ class SemanticSearchIndexerTest {
             sut.index(PIECE_ID);
 
             assertThat(list.getPendingSince()).isEqualTo(NOW);
+            assertThat(list.getLastChangeAt()).isEqualTo(NOW);
             verify(lists).save(list);
         }
 
@@ -295,6 +297,7 @@ class SemanticSearchIndexerTest {
             verify(client).deleteElement(LIST_ID, ELEMENT_ID);
             verify(entries).delete(entry);
             assertThat(list.getPendingSince()).isEqualTo(NOW);
+            assertThat(list.getLastChangeAt()).isEqualTo(NOW);
         }
 
         @Test
@@ -374,6 +377,7 @@ class SemanticSearchIndexerTest {
             sut.reindex(ORG_ID);
 
             assertThat(list.getPendingSince()).isEqualTo(NOW);
+            assertThat(list.getLastChangeAt()).isEqualTo(NOW);
         }
 
         @Test
@@ -389,6 +393,7 @@ class SemanticSearchIndexerTest {
 
             assertThat(result).isEqualTo(new ReindexResult(0, 0));
             assertThat(list.getPendingSince()).isNull();
+            assertThat(list.getLastChangeAt()).isNull();
         }
 
         @Test

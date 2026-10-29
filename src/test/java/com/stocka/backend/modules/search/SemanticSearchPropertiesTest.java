@@ -71,6 +71,12 @@ class SemanticSearchPropertiesTest {
         }
 
         @Test
+        @DisplayName("waits 30 minutes after the last change by default")
+        void trainingDelayDefault() {
+            assertThat(new SemanticSearchProperties().getTrainingDelay()).isEqualTo(Duration.ofMinutes(30));
+        }
+
+        @Test
         @DisplayName("tolerates null durations and strings")
         void nullSafe() {
             SemanticSearchProperties props = new SemanticSearchProperties();

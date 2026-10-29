@@ -2,6 +2,7 @@ package com.stocka.backend.modules.search.service;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,14 +18,21 @@ import com.stocka.backend.modules.search.entity.SearchList;
 import com.stocka.backend.modules.search.repository.SearchListRepository;
 
 /**
- * Launches one XEYE training per list once its changes have settled.
+ * Launches one XEYE training per list once its changes have settled, like the activity digest.
  *
  * <p>XEYE never trains by itself: elements edited after the last training only match by text
- * until a new one runs. This job looks every {@code stocka.search.xeye.training-check-ms} for
- * lists pending for longer than {@link SemanticSearchProperties#getTrainingDelay()} and launches
- * their training. A list whose training is already running (409) or whose launch failed for a
- * temporary reason stays pending and is retried on the next tick; a launch XEYE rejects for good
- * (for example an empty list) clears the flag.
+ * until a new one runs. Two scheduled entry points launch it:
+ * <ul>
+ *   <li>a tick every {@code stocka.search.xeye.training-check-ms} trains the pending lists whose
+ *       <em>last</em> change is older than {@link SemanticSearchProperties#getTrainingDelay()}
+ *       (30 min), so a burst of edits costs one training however long it lasts;</li>
+ *   <li>a cron at {@code stocka.search.xeye.training-cron} (midnight in
+ *       {@code stocka.search.xeye.training-zone}) trains every list still pending, so a day of
+ *       edits that never go quiet is trained at least once a day.</li>
+ * </ul>
+ * A list whose training is already running (409) or whose launch failed for a temporary reason
+ * stays pending and is retried by the next tick once quiet; a launch XEYE rejects for good (for
+ * example an empty list) clears the flag.
  */
 @Component
 public class SemanticSearchTrainer {
@@ -49,13 +57,25 @@ public class SemanticSearchTrainer {
         this.clock = clock;
     }
 
-    /** Scheduled entry point: launches the trainings whose debounce window has elapsed. */
+    /** Tick: launches the trainings of the pending lists whose edits have gone quiet. */
     @Scheduled(fixedDelayString = "${stocka.search.xeye.training-check-ms:60000}",
             initialDelayString = "${stocka.search.xeye.training-check-ms:60000}")
     public void launchDueTrainings() {
         if (!properties.isConfigured()) return;
         LocalDateTime cutoff = LocalDateTime.now(clock).minus(properties.getTrainingDelay());
-        for (SearchList list : lists.findByPendingSinceBefore(cutoff)) {
+        launchAll(lists.findQuietPending(cutoff));
+    }
+
+    /** Nightly: launches the training of every list still pending, quiet or not. */
+    @Scheduled(cron = "${stocka.search.xeye.training-cron:0 0 0 * * *}",
+            zone = "${stocka.search.xeye.training-zone:Europe/Madrid}")
+    public void launchPendingTrainings() {
+        if (!properties.isConfigured()) return;
+        launchAll(lists.findByPendingSinceIsNotNull());
+    }
+
+    private void launchAll(List<SearchList> pending) {
+        for (SearchList list : pending) {
             launch(list);
         }
     }

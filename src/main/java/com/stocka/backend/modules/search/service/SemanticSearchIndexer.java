@@ -36,8 +36,8 @@ import com.stocka.backend.modules.search.repository.SearchListRepository;
  * incremental path (one piece, one HTTP call); {@link #reindex(Integer)} rebuilds a whole
  * organization in two batch calls and is the way to backfill after enabling the feature or to
  * repair drift (renamed types or locations are not re-indexed until the piece is edited again).
- * Every change marks the list as pending so {@link SemanticSearchTrainer} launches one training
- * for a burst of edits. All methods are no-ops when the feature is not configured.
+ * Every change marks the list as pending and bumps its last change so {@link SemanticSearchTrainer}
+ * launches one training once a burst of edits goes quiet. All methods are no-ops when the feature is not configured.
  */
 @Service
 public class SemanticSearchIndexer {
@@ -207,9 +207,11 @@ public class SemanticSearchIndexer {
     }
 
     private void markPending(SearchList list) {
+        LocalDateTime now = now();
         if (list.getPendingSince() == null) {
-            lists.save(list.setPendingSince(now()));
+            list.setPendingSince(now);
         }
+        lists.save(list.setLastChangeAt(now));
     }
 
     private ElementInput toInput(Piece piece) {

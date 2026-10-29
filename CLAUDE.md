@@ -306,7 +306,11 @@ per organization (`stocka-org-<id>`, table `search_lists`) with one element per 
 (table `search_entries`): `text` = name · serial, `description` = types, free text, location path,
 owner and attribute values (`PieceSearchDocument`), `params.pieceId`. Piece lifecycle events
 index/remove elements asynchronously (`PieceLifecycleSearchListener`); `SemanticSearchTrainer`
-launches one training per list once edits have settled (`XEYE_TRAINING_DELAY`, default 10m).
+batches trainings like the activity digest (2026-10-29, `V35__search_training_last_change.sql`): every
+change sets `pending_since` (first one) and `last_change_at` (always); a tick every
+`XEYE_TRAINING_CHECK_MS` trains the pending lists whose **last** change is older than
+`XEYE_TRAINING_DELAY` (30m), and a cron (`XEYE_TRAINING_CRON`, `0 0 0 * * *`, zone `XEYE_TRAINING_ZONE`,
+`Europe/Madrid`) trains whatever is still pending; a list busy training (409) waits for the next quiet tick.
 `GET /pieces?q=` then ranks through XEYE (`PieceSearchRanker` → `SemanticSearchRanker`, hits under
 `XEYE_MIN_SCORE` dropped, at most `XEYE_MAX_RESULTS`), applies the structural filters on top and
 falls back to `LIKE` when the feature is off, nothing is indexed yet or XEYE fails. On startup

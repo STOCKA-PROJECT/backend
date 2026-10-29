@@ -33,6 +33,7 @@ public final class IntegrationTestSupport {
      */
     public static void cleanDatabase(JdbcTemplate jdbc) {
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
+        jdbc.execute("DELETE FROM search_entries");
         jdbc.execute("DELETE FROM piece_history");
         jdbc.execute("DELETE FROM piece_attribute_values");
         jdbc.execute("DELETE FROM piece_attachments");
@@ -49,6 +50,7 @@ public final class IntegrationTestSupport {
         jdbc.execute("DELETE FROM organization_invitations");
         jdbc.execute("DELETE FROM organization_members");
         jdbc.execute("DELETE FROM organization_slug_history");
+        jdbc.execute("DELETE FROM search_lists");
         jdbc.execute("DELETE FROM organizations");
         jdbc.execute("DELETE FROM security_audit_entries");
         jdbc.execute("DELETE FROM oauth_identities");
