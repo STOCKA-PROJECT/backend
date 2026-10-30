@@ -136,4 +136,25 @@ class SceneJsonCodecTest {
             assertThat(out.path("layers").get(0).path("name").asText()).isEqualTo("Capa 1");
         }
     }
+
+
+    @Nested
+    @DisplayName("portTypes")
+    class PortTypes {
+
+        @Test
+        @DisplayName("the type each port plays is read with integer keys and written back; absent when empty")
+        void roundTrip() {
+            JsonNode original = codec.mapper().readTree(EDITOR_DOCUMENT.replace("\"ports\":[7],", "\"ports\":[7,8],\"portTypes\":{\"8\":3},"));
+            SceneDocument doc = codec.parse(original);
+            assertThat(doc.items().get(0).portTypes()).containsExactly(Map.entry(8, 3));
+            assertThat(doc.items().get(0).portRole(8, 2)).isEqualTo(3);
+            assertThat(doc.items().get(0).portRole(7, 2)).isEqualTo(2);
+            assertThat(codec.toJson(doc, original).path("items").get(0).path("portTypes").path("8").asInt()).isEqualTo(3);
+
+            SceneDocument plain = codec.parse(codec.mapper().readTree(EDITOR_DOCUMENT));
+            assertThat(plain.items().get(0).portTypes()).isEmpty();
+            assertThat(codec.toJson(plain, null).path("items").get(0).has("portTypes")).isFalse();
+        }
+    }
 }

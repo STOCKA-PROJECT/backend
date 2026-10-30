@@ -12,7 +12,9 @@ import com.stocka.backend.modules.ports.entity.Port;
  * @param id          port id
  * @param name        port name (unique per organization; the show target)
  * @param kind        catalog id of the kind ({@code relay}, {@code led_strip}...)
- * @param pieceTypeId piece type the port belongs to; {@code null} for infrastructure ports
+ * @param pieceTypeId piece type the port plays: its own type in the organization's list, the item's
+ *                    {@code portTypes} role once resolved for an item ({@link #playing(Integer)});
+ *                    {@code null} for infrastructure ports
  * @param pin         GPIO pin for kinds that have one; {@code null} otherwise
  * @param config      kind-specific configuration keys, never {@code null}
  * @param position    order among the organization's ports
@@ -38,5 +40,13 @@ public record ShowPort(
     public static ShowPort from(Port port, Map<String, Object> config) {
         return new ShowPort(port.getId(), port.getName(), port.getKind() == null ? null : port.getKind().catalogId(),
                 port.getPieceTypeId(), port.getPin(), config, port.getPosition());
+    }
+
+    /**
+     * @param typeId the piece type the port plays for an item
+     * @return the same port with {@code pieceTypeId} replaced by that role
+     */
+    public ShowPort playing(Integer typeId) {
+        return new ShowPort(id, name, kind, typeId, pin, config, position);
     }
 }

@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.function.IntFunction;
 
@@ -107,7 +108,22 @@ public record ExecutionPlan(
                             + piece.map(PieceRef::name).orElse(item.id()) + "» ja no existeix."));
                     continue;
                 }
-                ports.add(port);
+                // The port plays one type of the piece (`portTypes`, else its own type); the actions of
+                // that type drive it. Checked like the editor's `buildExecutionPlan`.
+                Integer role = item.portRole(port.id(), port.pieceTypeId());
+                if (piece.isPresent() && role != null) {
+                    int typeIndex = piece.get().typeIds().indexOf(role);
+                    String typeKind = typeIndex < 0 ? null : piece.get().typeKinds().get(typeIndex);
+                    if (typeIndex < 0) {
+                        issues.add(ShowIssue.error("E_PORT_TYPE_MISMATCH", "El port «" + port.name() + "» fa d'un tipus que «"
+                                + piece.get().name() + "» no té.", null, port.name()));
+                    } else if (typeKind != null && !typeKind.equals(port.kind())) {
+                        issues.add(ShowIssue.error("E_PORT_KIND_MISMATCH", "El port «" + port.name() + "» (" + port.kind()
+                                + ") no pot fer de «" + piece.get().typeNames().get(typeIndex) + "» (" + typeKind + ").",
+                                null, port.name()));
+                    }
+                }
+                ports.add(Objects.equals(role, port.pieceTypeId()) ? port : port.playing(role));
             }
             items.add(new ExecutionItem(item.id(), item.pieceId(), piece.map(PieceRef::name).orElse(null), ports));
         }

@@ -156,9 +156,36 @@ public record SceneDocument(
             @Param("Piece attribute driving the width (cm)") String widthAttr,
             @Param("Piece attribute driving the height (cm)") String heightAttr,
             @Param("Hardware port ids bound to the item") List<Integer> ports,
-            @Param("LED polyline inside the item, fractions of its size") List<LedPoint> ledPath) {
+            @Param("LED polyline inside the item, fractions of its size") List<LedPoint> ledPath,
+            @JsonInclude(JsonInclude.Include.NON_EMPTY)
+            @Param("Piece type each bound port plays for this item (port id → type id); a port without an entry plays its own type")
+            Map<Integer, Integer> portTypes) {
         public Item {
             ports = ports == null ? new ArrayList<>() : new ArrayList<>(ports);
+            portTypes = portTypes == null ? new LinkedHashMap<>() : new LinkedHashMap<>(portTypes);
+        }
+
+        /**
+         * The piece type a bound port plays for this item: the explicit {@code portTypes} entry, else the
+         * port's own type. The actions of that type drive the port, so a piece with two types of the
+         * same kind (a figure with «Llum» and «Moviment», both relays) gets one port per type.
+         *
+         * @param portId     the port
+         * @param portTypeId the port's own piece type ({@code null} for infrastructure ports)
+         * @return the type id the port plays, or {@code null} when it plays none
+         */
+        public Integer portRole(int portId, Integer portTypeId) {
+            Integer explicit = portTypes.get(portId);
+            return explicit != null ? explicit : portTypeId;
+        }
+
+        /**
+         * @param ports     new port ids
+         * @param portTypes new roles
+         * @return a copy with other fields untouched
+         */
+        public Item withPorts(List<Integer> ports, Map<Integer, Integer> portTypes) {
+            return new Item(id, pieceId, layerId, x, y, width, height, rotation, widthAttr, heightAttr, ports, ledPath, portTypes);
         }
     }
 

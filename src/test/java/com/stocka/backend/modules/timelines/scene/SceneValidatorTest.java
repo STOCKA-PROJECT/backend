@@ -53,7 +53,7 @@ class SceneValidatorTest {
     }
 
     private Item item(String id, int pieceId, Integer... ports) {
-        Item it = new Item(id, pieceId, "layer-1", 0, 0, 100, 100, 0, null, null, List.of(ports), null);
+        Item it = new Item(id, pieceId, "layer-1", 0, 0, 100, 100, 0, null, null, List.of(ports), null, null);
         items.add(it);
         tracks.add(new Track("t-" + id, id, "T"));
         return it;
@@ -81,8 +81,8 @@ class SceneValidatorTest {
         @Test
         @DisplayName("duplicate ids and dangling references are errors")
         void structure() {
-            items.add(new Item("a", 1, "layer-1", 0, 0, 10, 10, 0, null, null, List.of(), null));
-            items.add(new Item("a", 1, "layer-9", 0, 0, 10, 10, 0, null, null, List.of(), null));
+            items.add(new Item("a", 1, "layer-1", 0, 0, 10, 10, 0, null, null, List.of(), null, null));
+            items.add(new Item("a", 1, "layer-9", 0, 0, 10, 10, 0, null, null, List.of(), null, null));
             tracks.add(new Track("t", "zzz", "T"));
             clips.add(new Clip("c", "nope", null, -1, 0, Map.of(), null));
             List<String> codes = codes(1000);
@@ -226,6 +226,75 @@ class SceneValidatorTest {
             List<String> codes = codes(10_000);
             assertThat(codes).contains("W_OVERLAP", "W_NO_PORT").doesNotContain("W_CLIP_PAST_END");
             assertThat(codes).doesNotContain("E_PARAM_REQUIRED");
+        }
+    }
+
+
+    @Nested
+    @DisplayName("port roles (portTypes)")
+    class PortRoles {
+
+        @BeforeEach
+        void twoRelayTypes() {
+            ctx.piece(3, "Molí", List.of(40, 41), List.of("Llum", "Moviment"), List.of("relay", "relay"))
+                    .port(102, "Sortida 2", 41, "relay")
+                    .action(503, "turn_on", "Il·luminar", 40, "Llum", "relay")
+                    .action(504, "turn_on", "Moure", 41, "Moviment", "relay");
+        }
+
+        private Item itemPlaying(String id, int pieceId, List<Integer> ports, Map<Integer, Integer> portTypes) {
+            Item it = new Item(id, pieceId, "layer-1", 0, 0, 100, 100, 0, null, null, ports, null, portTypes);
+            items.add(it);
+            tracks.add(new Track("t-" + id, id, "T"));
+            return it;
+        }
+
+        @Test
+        @DisplayName("a port of another type may play a type of the piece of the same kind; each action then reaches its port")
+        void rolesAccepted() {
+            itemPlaying("m", 3, List.of(101, 102), Map.of(101, 40));
+            clip("a", "m", 503, 0, 1000, Map.of());
+            clip("b", "m", 504, 2000, 1000, Map.of());
+            assertThat(codes(10_000)).doesNotContain("E_PORT_TYPE_MISMATCH", "E_PORT_KIND_MISMATCH", "W_NO_PORT");
+        }
+
+        @Test
+        @DisplayName("without a role the port plays its own type, which the piece must have")
+        void ownTypeMustBeOfPiece() {
+            itemPlaying("m", 3, List.of(101), Map.of());
+            List<SceneIssue> issues = SceneValidator.validate(doc(1000), ctx, catalog);
+            assertThat(issues).extracting(SceneIssue::code).containsExactly("E_PORT_TYPE_MISMATCH");
+            assertThat(issues.get(0).message()).contains("Focos").contains("30").contains("Molí");
+        }
+
+        @Test
+        @DisplayName("a role of another kind is refused")
+        void kindMismatch() {
+            itemPlaying("m", 3, List.of(100), Map.of(100, 40));
+            List<SceneIssue> issues = SceneValidator.validate(doc(1000), ctx, catalog);
+            assertThat(issues).extracting(SceneIssue::code).containsExactly("E_PORT_KIND_MISMATCH");
+            assertThat(issues.get(0).message()).contains("Fondo1").contains("led_segment").contains("Llum").contains("relay");
+        }
+
+        @Test
+        @DisplayName("an action whose type no port plays warns and names the type")
+        void noPortForType() {
+            itemPlaying("m", 3, List.of(102), Map.of());
+            clip("a", "m", 503, 0, 1000, Map.of());
+            clip("b", "m", 504, 2000, 1000, Map.of());
+            List<SceneIssue> noPort = SceneValidator.validate(doc(10_000), ctx, catalog).stream()
+                    .filter(i -> i.code().equals("W_NO_PORT")).toList();
+            assertThat(noPort).hasSize(1);
+            assertThat(noPort.get(0).clipId()).isEqualTo("a");
+            assertThat(noPort.get(0).message()).contains("Llum");
+        }
+
+        @Test
+        @DisplayName("a stale port plays nothing: it warns and the action does not reach it")
+        void stalePort() {
+            itemPlaying("m", 3, List.of(999), Map.of(999, 40));
+            clip("a", "m", 503, 0, 1000, Map.of());
+            assertThat(codes(10_000)).contains("W_PORT_STALE", "W_NO_PORT").doesNotContain("E_PORT_TYPE_MISMATCH");
         }
     }
 }

@@ -18,6 +18,7 @@ import com.stocka.backend.modules.contract.CatalogKind;
 import com.stocka.backend.modules.contract.CatalogParam;
 import com.stocka.backend.modules.contract.OutputCatalog;
 import com.stocka.backend.modules.contract.OutputKind;
+import com.stocka.backend.modules.timelines.scene.SceneContext;
 import com.stocka.backend.modules.timelines.scene.SceneDocument;
 import com.stocka.backend.modules.timelines.show.ExecutionPlan.ExecutionItem;
 import com.stocka.backend.modules.timelines.show.ExecutionPlan.ExecutionStep;
@@ -165,12 +166,18 @@ public class ShowPackageBuilder {
             if (item == null) continue;
             String label = step.label() != null ? step.label() : step.action().displayName();
             String itemName = item.pieceName() != null ? item.pieceName() : item.itemId();
+            // Each port plays one type of the piece (its `portTypes` role, else its own type): the action
+            // reaches the ports playing the action's type, so a piece with two relay types drives one
+            // relay per type.
             List<ShowPort> targets = item.ports().stream()
                     .filter(p -> Objects.equals(p.pieceTypeId(), step.action().pieceTypeId())).toList();
             if (targets.isEmpty()) {
-                issues.add(ShowIssue.error("E_NO_PORT", "La peça «" + itemName
-                        + "» no té cap port del tipus de peça de l'acció «" + step.action().displayName() + "» (clip «"
-                        + label + "», " + step.startMs() + " ms).", step.clipId(), null));
+                String typeName = typeNameOf(input.context(), item.pieceId(), step.action().pieceTypeId());
+                issues.add(ShowIssue.error("E_NO_PORT", typeName != null
+                        ? "La peça «" + itemName + "» no té cap port que faci de «" + typeName + "» per a l'acció «"
+                        + step.action().displayName() + "» (clip «" + label + "», " + step.startMs() + " ms)."
+                        : "La peça «" + itemName + "» no té cap port del tipus de peça de l'acció «" + step.action().displayName()
+                        + "» (clip «" + label + "», " + step.startMs() + " ms).", step.clipId(), null));
                 continue;
             }
             for (ShowPort port : targets) {
@@ -289,6 +296,15 @@ public class ShowPackageBuilder {
      * Which pieces each hardware port drives, for the player to show next to the port ({@code meta.pieces}).
      * Items without a known piece are skipped; a piece on a strip names the strip and its own segment.
      */
+    /** @return the name of a type of the piece, or {@code null} when the piece or the type is unknown */
+    private static String typeNameOf(SceneContext context, Integer pieceId, Integer typeId) {
+        if (context == null || pieceId == null || typeId == null) return null;
+        return context.pieceById(pieceId).map(piece -> {
+            int index = piece.typeIds().indexOf(typeId);
+            return index < 0 ? null : piece.typeNames().get(index);
+        }).orElse(null);
+    }
+
     static Map<String, List<String>> piecesByPort(ExecutionPlan plan, Map<String, Map<Integer, String>> segmentOf,
                                                   Map<String, Map<String, Object>> hardware) {
         Map<String, Set<String>> byPort = new LinkedHashMap<>();

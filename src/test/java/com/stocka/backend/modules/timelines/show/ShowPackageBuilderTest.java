@@ -61,7 +61,7 @@ class ShowPackageBuilderTest {
 
     private static Item withPorts(Item item, Integer... ports) {
         return new Item(item.id(), item.pieceId(), item.layerId(), item.x(), item.y(), item.width(), item.height(),
-                item.rotation(), item.widthAttr(), item.heightAttr(), List.of(ports), item.ledPath());
+                item.rotation(), item.widthAttr(), item.heightAttr(), List.of(ports), item.ledPath(), item.portTypes());
     }
 
     private static Clip withParams(Clip clip, Map<String, Object> params) {
@@ -407,18 +407,20 @@ class ShowPackageBuilderTest {
         }
 
         @Test
-        @DisplayName("ignores ports of another piece type on the same item and fails when none matches")
+        @DisplayName("refuses a port playing a type the piece lacks and fails when no port plays the action's type")
         void otherTypePorts() {
             List<Item> items = items();
             replace(items, i -> i.id().equals("i-focos"), i -> withPorts(i, 1, 6));
             Assembled ok = builder.assemble(Belen2026Fixture.input(doc(items, clips())));
             assertThat(ok.timeline().stream().filter(e -> e.target().equals("Fondo1") && e.action().equals("turn_on"))).isEmpty();
-            assertThat(errors(ok)).isEmpty();
+            assertThat(codes(errors(ok))).as("a port playing a type the piece lacks is refused, like the validator does")
+                    .containsExactly("E_PORT_TYPE_MISMATCH");
             replace(items, i -> i.id().equals("i-focos"), i -> withPorts(i, 6));
             Assembled bad = builder.assemble(Belen2026Fixture.input(doc(items, clips())));
             assertThat(codes(errors(bad))).contains("E_NO_PORT");
-            assertThat(errors(bad).get(0).message()).contains("Focos").contains("«Encendre»");
-            assertThat(errors(bad).get(0).clipId()).isEqualTo("c01");
+            ShowIssue noPort = errors(bad).stream().filter(e -> e.code().equals("E_NO_PORT")).findFirst().orElseThrow();
+            assertThat(noPort.message()).contains("Focos").contains("«Tipus 1»").contains("«Encendre»");
+            assertThat(noPort.clipId()).isEqualTo("c01");
         }
 
         @Test
@@ -812,6 +814,62 @@ class ShowPackageBuilderTest {
             SceneDocument doc = doc(items(), clipsWithAudio(Belen2026Fixture.config("audio_name", "12-nature.mp3", "start", -1), 1000));
             Assembled assembled = builder.assemble(ShowBuildInput.of(doc, trimContext(), Belen2026Fixture.ports()));
             assertThat(codes(errors(assembled))).contains("E_PARAM_RANGE");
+        }
+    }
+
+
+    @Nested
+    @DisplayName("port roles (portTypes)")
+    class PortRoles {
+
+        private static final int LLUM = Belen2026Fixture.TIMED_RELAY_TYPE;
+
+        /** Focos with two relay types: its own (RELAY_TYPE) and «Llum» (the timed relay type). */
+        private StubSceneContext context() {
+            return Belen2026Fixture.context().piece(1, "Focos", List.of(Belen2026Fixture.RELAY_TYPE, LLUM),
+                    List.of("Tipus 1", "Llum"), List.of("relay", "relay"));
+        }
+
+        /** Focos bound to relays 1 (its own) and 2 (Sembra's), with one clip per type. */
+        private SceneDocument docWithRoles(Map<Integer, Integer> roles) {
+            List<Item> items = items();
+            replace(items, i -> i.id().equals("i-focos"), i -> i.withPorts(List.of(1, 2), roles));
+            items.removeIf(i -> i.id().equals("i-sembra"));
+            List<Clip> clips = new ArrayList<>(List.of(
+                    new Clip("k1", "t-i-focos", 13, 0, 1000, Map.of(), null),
+                    new Clip("k2", "t-i-focos", 41, 500, 2000, Map.of(), null)));
+            return ShowPackageBuilderTest.doc(items, clips);
+        }
+
+        @Test
+        @DisplayName("drives one port per type of the piece: the action of each type reaches the port playing it")
+        void onePortPerType() {
+            Assembled assembled = builder.assemble(ShowBuildInput.of(docWithRoles(Map.of(2, LLUM)), context(), Belen2026Fixture.ports()));
+            assertThat(errors(assembled)).isEmpty();
+            assertThat(assembled.timeline().stream().map(e -> e.t() + " " + e.target() + "." + e.action()).toList())
+                    .containsExactly("0 Focos.turn_on", "500 Sembra.turn_on");
+            assertThat(assembled.timeline().get(1).params()).containsKey("time");
+            assertThat(assembled.pieces()).containsEntry("Sembra", List.of("Focos"));
+        }
+
+        @Test
+        @DisplayName("without a role a port plays its own type, so «Llum» reaches nothing; wrong roles are refused")
+        void missingAndWrongRoles() {
+            Assembled none = builder.assemble(ShowBuildInput.of(docWithRoles(Map.of()), context(), Belen2026Fixture.ports()));
+            assertThat(codes(errors(none))).containsExactly("E_NO_PORT");
+            assertThat(errors(none).get(0).message()).contains("«Llum»").contains("«Encendre un temps»");
+            assertThat(errors(none).get(0).clipId()).isEqualTo("k2");
+
+            Assembled foreign = builder.assemble(ShowBuildInput.of(docWithRoles(Map.of(2, Belen2026Fixture.SEGMENT_TYPE)), context(),
+                    Belen2026Fixture.ports()));
+            assertThat(codes(errors(foreign))).contains("E_PORT_TYPE_MISMATCH");
+
+            StubSceneContext withSegment = context().piece(1, "Focos", List.of(Belen2026Fixture.RELAY_TYPE, LLUM, Belen2026Fixture.SEGMENT_TYPE),
+                    List.of("Tipus 1", "Llum", "Tipus 2"), List.of("relay", "relay", "led_segment"));
+            Assembled kind = builder.assemble(ShowBuildInput.of(docWithRoles(Map.of(2, Belen2026Fixture.SEGMENT_TYPE)), withSegment,
+                    Belen2026Fixture.ports()));
+            assertThat(codes(errors(kind))).contains("E_PORT_KIND_MISMATCH");
+            assertThat(errors(kind).get(0).port()).isEqualTo("Sembra");
         }
     }
 }

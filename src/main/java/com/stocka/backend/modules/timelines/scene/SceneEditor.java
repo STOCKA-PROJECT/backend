@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 import com.stocka.backend.modules.timelines.scene.SceneContext.ActionRef;
@@ -123,9 +124,9 @@ public final class SceneEditor {
             x = SceneDocument.toPx(op.x());
             y = SceneDocument.toPx(op.y());
         }
-        List<Integer> ports = resolvePorts(i, "add_item", piece, op.ports());
+        Bindings bindings = resolvePorts(i, "add_item", piece, op.ports(), op.portTypes());
         Item item = new Item(uniqueId("item"), piece.id(), layerId, x, y, width, height,
-                op.rotation() == null ? 0 : op.rotation(), null, null, ports, null);
+                op.rotation() == null ? 0 : op.rotation(), null, null, bindings.ports(), null, bindings.portTypes());
         doc.items().add(item);
         created.add(item.id());
         Track track = new Track(uniqueId("track"), item.id(), piece.name());
@@ -150,7 +151,7 @@ public final class SceneEditor {
                 op.width() == null ? it.width() : SceneDocument.toPx(positive(i, "update_item", "width", op.width(), 1)),
                 op.height() == null ? it.height() : SceneDocument.toPx(positive(i, "update_item", "height", op.height(), 1)),
                 op.rotation() == null ? it.rotation() : op.rotation(),
-                it.widthAttr(), it.heightAttr(), it.ports(), it.ledPath());
+                it.widthAttr(), it.heightAttr(), it.ports(), it.ledPath(), it.portTypes());
         doc.items().set(index, updated);
         log.add("item " + it.id() + " updated");
     }
@@ -159,10 +160,10 @@ public final class SceneEditor {
         int index = indexOfItem(i, "set_item_ports", op.itemId());
         Item it = doc.items().get(index);
         PieceRef piece = context.pieceById(it.pieceId() == null ? -1 : it.pieceId()).orElse(null);
-        List<Integer> ports = resolvePorts(i, "set_item_ports", piece, op.ports());
-        doc.items().set(index, new Item(it.id(), it.pieceId(), it.layerId(), it.x(), it.y(), it.width(), it.height(),
-                it.rotation(), it.widthAttr(), it.heightAttr(), ports, it.ledPath()));
-        log.add("item " + it.id() + " ports set to " + ports);
+        Bindings bindings = resolvePorts(i, "set_item_ports", piece, op.ports(), op.portTypes());
+        doc.items().set(index, it.withPorts(bindings.ports(), bindings.portTypes()));
+        log.add("item " + it.id() + " ports set to " + bindings.ports()
+                + (bindings.portTypes().isEmpty() ? "" : " playing " + bindings.portTypes()));
     }
 
     private void removeItem(int i, SceneOp.RemoveItem op) {
@@ -336,18 +337,78 @@ public final class SceneEditor {
                 chosen.stream().map(p -> p.id() + " " + p.name()).toList());
     }
 
-    private List<Integer> resolvePorts(int i, String op, PieceRef piece, List<String> refs) {
-        List<Integer> out = new ArrayList<>();
-        if (refs == null) return out;
+    /** Port ids bound to an item and the piece type each one plays for it (explicit entries only). */
+    private record Bindings(List<Integer> ports, Map<Integer, Integer> portTypes) {
+    }
+
+    /**
+     * Resolves port references and the type each one plays: the {@code portTypes} entry (by port id or
+     * name → type id or name of the piece), else the port's own type. The role must be a type of the
+     * piece and of the port's kind, as the validator and the export require.
+     */
+    private Bindings resolvePorts(int i, String op, PieceRef piece, List<String> refs, Map<String, String> typeRefs) {
+        List<Integer> ports = new ArrayList<>();
+        Map<Integer, Integer> roles = new LinkedHashMap<>();
+        if (refs == null) return new Bindings(ports, roles);
+        Map<String, String> pendingTypeRefs = typeRefs == null ? new LinkedHashMap<>() : new LinkedHashMap<>(typeRefs);
         for (String ref : refs) {
             PortRef port = resolvePort(i, op, ref);
-            if (piece != null && port.pieceTypeId() != null && !piece.typeIds().contains(port.pieceTypeId())) {
-                throw new SceneOpException(i, op, "port \"" + port.name() + "\" belongs to a piece type that \""
-                        + piece.name() + "\" does not have");
+            Integer role = port.pieceTypeId();
+            String typeRef = takeTypeRef(pendingTypeRefs, port);
+            if (typeRef != null) {
+                role = resolvePieceType(i, op, piece, port, typeRef);
+                roles.put(port.id(), role);
             }
-            if (!out.contains(port.id())) out.add(port.id());
+            if (piece != null && role != null) {
+                int typeIndex = piece.typeIds().indexOf(role);
+                if (typeIndex < 0) {
+                    throw new SceneOpException(i, op, "port \"" + port.name() + "\" belongs to a piece type that \""
+                            + piece.name() + "\" does not have; pass portTypes to make it play one of its types of kind "
+                            + port.kind(), piece.typeNames());
+                }
+                if (!Objects.equals(piece.typeKinds().get(typeIndex), port.kind())) {
+                    throw new SceneOpException(i, op, "port \"" + port.name() + "\" is a " + port.kind()
+                            + " output and cannot play type \"" + piece.typeNames().get(typeIndex) + "\" ("
+                            + piece.typeKinds().get(typeIndex) + ")");
+                }
+            }
+            if (!ports.contains(port.id())) ports.add(port.id());
         }
-        return out;
+        if (!pendingTypeRefs.isEmpty()) {
+            throw new SceneOpException(i, op, "portTypes names ports that are not in ports: " + pendingTypeRefs.keySet());
+        }
+        return new Bindings(ports, roles);
+    }
+
+    /** Removes and returns the {@code portTypes} entry of a port (keyed by its id or its name), or {@code null}. */
+    private static String takeTypeRef(Map<String, String> typeRefs, PortRef port) {
+        for (String key : typeRefs.keySet()) {
+            boolean byId = parseInt(key).map(id -> id == port.id()).orElse(false);
+            if (byId || key.trim().equalsIgnoreCase(port.name())) {
+                return typeRefs.remove(key);
+            }
+        }
+        return null;
+    }
+
+    /** A type of the piece, by id or exact name (case-insensitive); the item's piece must be known. */
+    private static int resolvePieceType(int i, String op, PieceRef piece, PortRef port, String ref) {
+        if (piece == null) {
+            throw new SceneOpException(i, op, "the item's piece no longer exists, so port \"" + port.name()
+                    + "\" cannot be given a type");
+        }
+        if (ref == null || ref.isBlank()) {
+            throw new SceneOpException(i, op, "the type of port \"" + port.name() + "\" is empty");
+        }
+        Optional<Integer> byId = parseInt(ref);
+        for (int t = 0; t < piece.typeIds().size(); t++) {
+            int typeId = piece.typeIds().get(t);
+            if (byId.map(id -> id == typeId).orElse(false) || piece.typeNames().get(t).equalsIgnoreCase(ref.trim())) {
+                return typeId;
+            }
+        }
+        throw new SceneOpException(i, op, "\"" + piece.name() + "\" has no type " + ref + " for port \"" + port.name() + "\"",
+                piece.typeNames());
     }
 
     private PortRef resolvePort(int i, String op, String ref) {

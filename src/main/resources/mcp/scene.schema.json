@@ -49,7 +49,12 @@
           "rotation": { "type": "number", "description": "Degrees, clockwise." },
           "widthAttr": { "type": ["string", "null"], "description": "Piece attribute name driving the width (cm)." },
           "heightAttr": { "type": ["string", "null"], "description": "Piece attribute name driving the height (cm)." },
-          "ports": { "type": "array", "items": { "type": "integer" }, "description": "Ids of the hardware ports bound to this item (ports_list). Only ports whose piece type matches the piece are valid." },
+          "ports": { "type": "array", "items": { "type": "integer" }, "description": "Ids of the hardware ports bound to this item (ports_list). A port is valid when its kind is the kind of one of the piece's types." },
+          "portTypes": {
+            "type": "object",
+            "additionalProperties": { "type": "integer" },
+            "description": "Piece type each bound port plays for this item (port id → type id). The actions of a type drive the ports playing it, so a piece with two relay types gets one relay per type. A port without an entry plays its own type."
+          },
           "ledPath": {
             "type": ["array", "null"],
             "description": "Polyline the LEDs follow inside the item, as fractions of its size (0,0 top-left; 1,1 bottom-right).",

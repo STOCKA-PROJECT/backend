@@ -186,7 +186,7 @@ public final class Belen2026Fixture {
     }
 
     public static Item item(String id, int pieceId, Integer... ports) {
-        return new Item(id, pieceId, "layer-1", 0, 0, 100, 100, 0, null, null, List.of(ports), null);
+        return new Item(id, pieceId, "layer-1", 0, 0, 100, 100, 0, null, null, List.of(ports), null, null);
     }
 
     public static Clip clip(String id, String itemId, Integer actionId, long startMs, long durationMs, Map<String, Object> params) {

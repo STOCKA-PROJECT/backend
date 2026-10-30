@@ -61,7 +61,7 @@ class SceneEditorTest {
         @Test
         @DisplayName("add_item by id places the piece on the first layer, on a grid, with a track")
         void addById() {
-            Change change = apply(new SceneOp.AddItem(2, null, null, null, null, null, null, null, null));
+            Change change = apply(new SceneOp.AddItem(2, null, null, null, null, null, null, null, null, null));
             assertThat(change.createdIds()).containsExactly("item-1", "track-1");
             Item item = doc.items().get(0);
             assertThat(item.pieceId()).isEqualTo(2);
@@ -76,7 +76,7 @@ class SceneEditorTest {
         @Test
         @DisplayName("add_item by unique name, with cm geometry and ports by name")
         void addByName() {
-            apply(new SceneOp.AddItem(null, "casa", null, 12.5, 7.0, 30.0, 4.0, 90.0, List.of("Fondo1")));
+            apply(new SceneOp.AddItem(null, "casa", null, 12.5, 7.0, 30.0, 4.0, 90.0, List.of("Fondo1"), null));
             Item item = doc.items().get(0);
             assertThat(item.pieceId()).isEqualTo(2);
             assertThat(item.x()).isEqualTo(125);
@@ -90,32 +90,32 @@ class SceneEditorTest {
         @Test
         @DisplayName("an exact name wins over partial matches")
         void exactNameWins() {
-            apply(new SceneOp.AddItem(null, "Pastor", null, null, null, null, null, null, null));
+            apply(new SceneOp.AddItem(null, "Pastor", null, null, null, null, null, null, null, null));
             assertThat(doc.items().get(0).pieceId()).isEqualTo(1);
         }
 
         @Test
         @DisplayName("an ambiguous name lists the candidates; an unknown name or id fails")
         void nameErrors() {
-            SceneOpException ambiguous = failure(new SceneOp.AddItem(null, "pas", null, null, null, null, null, null, null));
+            SceneOpException ambiguous = failure(new SceneOp.AddItem(null, "pas", null, null, null, null, null, null, null, null));
             assertThat(ambiguous.getParams()).containsEntry("index", 0).containsEntry("op", "add_item");
             assertThat(ambiguous.getParams().get("detail").toString()).contains("several");
-            SceneOpException several = failure(new SceneOp.AddItem(null, "tor", null, null, null, null, null, null, null));
+            SceneOpException several = failure(new SceneOp.AddItem(null, "tor", null, null, null, null, null, null, null, null));
             assertThat(several.getParams()).containsKey("candidates");
-            assertThat(failure(new SceneOp.AddItem(null, "zzz", null, null, null, null, null, null, null)).getParams()
+            assertThat(failure(new SceneOp.AddItem(null, "zzz", null, null, null, null, null, null, null, null)).getParams()
                     .get("detail").toString()).contains("no piece");
-            assertThat(failure(new SceneOp.AddItem(99, null, null, null, null, null, null, null, null)).getParams()
+            assertThat(failure(new SceneOp.AddItem(99, null, null, null, null, null, null, null, null, null)).getParams()
                     .get("detail").toString()).contains("piece not found");
-            assertThat(failure(new SceneOp.AddItem(null, null, null, null, null, null, null, null, null)).getParams()
+            assertThat(failure(new SceneOp.AddItem(null, null, null, null, null, null, null, null, null, null)).getParams()
                     .get("detail").toString()).contains("required");
         }
 
         @Test
         @DisplayName("ports must exist and match the piece's types")
         void portRules() {
-            assertThat(failure(new SceneOp.AddItem(2, null, null, null, null, null, null, null, List.of("Nope")))
+            assertThat(failure(new SceneOp.AddItem(2, null, null, null, null, null, null, null, List.of("Nope"), null))
                     .getParams().get("detail").toString()).contains("port not found");
-            assertThat(failure(new SceneOp.AddItem(1, null, null, null, null, null, null, null, List.of("100")))
+            assertThat(failure(new SceneOp.AddItem(1, null, null, null, null, null, null, null, List.of("100"), null))
                     .getParams().get("detail").toString()).contains("piece type");
         }
 
@@ -123,7 +123,7 @@ class SceneEditorTest {
         @DisplayName("items are placed on a grid of 8 columns")
         void grid() {
             for (int i = 0; i < 9; i++) {
-                apply(new SceneOp.AddItem(1, null, null, null, null, null, null, null, null));
+                apply(new SceneOp.AddItem(1, null, null, null, null, null, null, null, null, null));
             }
             assertThat(doc.items().get(7).x()).isEqualTo(20 + 7 * 120);
             assertThat(doc.items().get(8).x()).isEqualTo(20);
@@ -133,7 +133,7 @@ class SceneEditorTest {
         @Test
         @DisplayName("update_item changes geometry and layer; unknown layer fails")
         void update() {
-            apply(new SceneOp.AddItem(1, null, null, null, null, null, null, null, null),
+            apply(new SceneOp.AddItem(1, null, null, null, null, null, null, null, null, null),
                     new SceneOp.AddLayer("Fons"));
             apply(new SceneOp.UpdateItem("item-1", "layer-2", 1.0, 2.0, 3.0, 4.0, 45.0));
             Item it = doc.items().get(0);
@@ -150,8 +150,8 @@ class SceneEditorTest {
         @Test
         @DisplayName("set_item_ports replaces the ports; remove_item cascades to tracks, clips and strip order")
         void portsAndRemoval() {
-            apply(new SceneOp.AddItem(2, null, null, null, null, null, null, null, null),
-                    new SceneOp.SetItemPorts("item-1", List.of("Fondo1")),
+            apply(new SceneOp.AddItem(2, null, null, null, null, null, null, null, null, null),
+                    new SceneOp.SetItemPorts("item-1", List.of("Fondo1"), null),
                     new SceneOp.AddClip("item-1", null, "clear", 0L, null, null, 1000L, null, null),
                     new SceneOp.SetStripOrder("Fondo1", List.of("item-1")));
             assertThat(doc.items().get(0).ports()).containsExactly(100);
@@ -174,7 +174,7 @@ class SceneEditorTest {
             Change change = apply(new SceneOp.AddLayer("Fons"));
             assertThat(change.createdIds()).containsExactly("layer-2");
             assertThat(doc.layers().get(1).z()).isEqualTo(1);
-            apply(new SceneOp.AddItem(1, null, null, null, null, null, null, null, null),
+            apply(new SceneOp.AddItem(1, null, null, null, null, null, null, null, null, null),
                     new SceneOp.AddTrack("item-1", "Segona"));
             assertThat(doc.tracks()).extracting(t -> t.name()).containsExactly("Pastor", "Segona");
             apply(new SceneOp.RenameTrack("track-2", "Tercera"));
@@ -195,7 +195,7 @@ class SceneEditorTest {
 
         @BeforeEach
         void item() {
-            apply(new SceneOp.AddItem(2, null, null, null, null, null, null, null, List.of("Fondo1")));
+            apply(new SceneOp.AddItem(2, null, null, null, null, null, null, null, List.of("Fondo1"), null));
         }
 
         @Test
@@ -296,7 +296,7 @@ class SceneEditorTest {
         @DisplayName("the show lasts until the end of its last clip, also when it grows, shrinks or loses every clip")
         void durationFollowsTheLastClip() {
             assertThat(doc.durationMs()).isEqualTo(SceneDocument.DEFAULT_DURATION_MS);
-            apply(new SceneOp.AddItem(2, null, null, null, null, null, null, null, null));
+            apply(new SceneOp.AddItem(2, null, null, null, null, null, null, null, null, null));
             Change added = apply(new SceneOp.AddClip("item-1", null, "clear", 90_000L, null, null, 5000L, null, null));
             assertThat(doc.durationMs()).isEqualTo(95_000);
             String clipId = added.createdIds().get(added.createdIds().size() - 1);
@@ -309,7 +309,7 @@ class SceneEditorTest {
         @Test
         @DisplayName("set_strip_order resolves the port and checks the items")
         void stripOrder() {
-            apply(new SceneOp.AddItem(2, null, null, null, null, null, null, null, null));
+            apply(new SceneOp.AddItem(2, null, null, null, null, null, null, null, null, null));
             apply(new SceneOp.SetStripOrder("100", List.of("item-1")));
             assertThat(doc.stripOrder()).containsEntry("100", List.of("item-1"));
             assertThat(failure(new SceneOp.SetStripOrder("Fondo1", List.of("item-9"))).getParams().get("detail").toString())
@@ -355,12 +355,65 @@ class SceneEditorTest {
         void atomic() {
             SceneDocument before = doc;
             assertThatThrownBy(() -> SceneEditor.apply(before, List.of(
-                    new SceneOp.AddItem(1, null, null, null, null, null, null, null, null),
+                    new SceneOp.AddItem(1, null, null, null, null, null, null, null, null, null),
                     new SceneOp.RemoveClip("missing")), ctx))
                     .isInstanceOf(SceneOpException.class)
                     .satisfies(e -> assertThat(((SceneOpException) e).getParams()).containsEntry("index", 1));
             // The editor mutates the lists of the document it was given: callers must not reuse it on failure.
             assertThat(failure(new SceneOp.SetBoard(0.0, null, null)).getParams()).containsEntry("index", 0);
+        }
+    }
+
+
+    @Nested
+    @DisplayName("port roles (portTypes)")
+    class PortRoles {
+
+        @BeforeEach
+        void twoRelayTypes() {
+            ctx.piece(4, "Molí", List.of(40, 41), List.of("Llum", "Moviment"), List.of("relay", "relay"))
+                    .port(102, "Sortida 2", 41, "relay")
+                    .port(103, "Sortida 3", 41, "relay");
+        }
+
+        @Test
+        @DisplayName("set_item_ports binds each port as a type of the piece, by port id or name and type id or name")
+        void setRoles() {
+            apply(new SceneOp.AddItem(4, null, null, null, null, null, null, null, null, null));
+            Change change = apply(new SceneOp.SetItemPorts("item-1", List.of("Sortida 2", "103"), Map.of("sortida 2", "Llum", "103", "41")));
+            Item it = doc.items().get(0);
+            assertThat(it.ports()).containsExactly(102, 103);
+            assertThat(it.portTypes()).containsExactly(Map.entry(102, 40), Map.entry(103, 41));
+            assertThat(change.log()).anyMatch(l -> l.contains("playing"));
+            // update_item keeps the roles; set_item_ports without roles falls back to the ports' own types
+            apply(new SceneOp.UpdateItem("item-1", null, 5.0, null, null, null, null));
+            assertThat(doc.items().get(0).portTypes()).containsEntry(102, 40);
+            apply(new SceneOp.SetItemPorts("item-1", List.of("Sortida 2"), null));
+            assertThat(doc.items().get(0).portTypes()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("add_item accepts a port of another type when portTypes makes it play a type of the piece")
+        void addItemWithRole() {
+            apply(new SceneOp.AddItem(4, null, null, null, null, null, null, null, List.of("Focos"), Map.of("Focos", "Llum")));
+            assertThat(doc.items().get(0).ports()).containsExactly(101);
+            assertThat(doc.items().get(0).portTypes()).containsExactly(Map.entry(101, 40));
+        }
+
+        @Test
+        @DisplayName("refuses a foreign type without a role, a type the piece lacks, another kind, unknown keys and blanks")
+        void failures() {
+            apply(new SceneOp.AddItem(4, null, null, null, null, null, null, null, null, null));
+            assertThat(detail(new SceneOp.SetItemPorts("item-1", List.of("Focos"), null))).contains("does not have").contains("portTypes");
+            assertThat(detail(new SceneOp.SetItemPorts("item-1", List.of("Focos"), Map.of("Focos", "Edifici")))).contains("has no type");
+            assertThat(detail(new SceneOp.SetItemPorts("item-1", List.of("Fondo1"), Map.of("Fondo1", "Llum")))).contains("cannot play");
+            assertThat(detail(new SceneOp.SetItemPorts("item-1", List.of("Sortida 2"), Map.of("Sortida 3", "Llum")))).contains("not in ports");
+            assertThat(detail(new SceneOp.SetItemPorts("item-1", List.of("Sortida 2"), Map.of("Sortida 2", " ")))).contains("empty");
+            assertThat(doc.items().get(0).ports()).isEmpty();
+        }
+
+        private String detail(SceneOp op) {
+            return failure(op).getParams().get("detail").toString();
         }
     }
 }

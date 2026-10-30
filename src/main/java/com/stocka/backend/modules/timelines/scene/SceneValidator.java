@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
@@ -62,9 +63,19 @@ public final class SceneValidator {
                 if (port.isEmpty()) {
                     issues.add(SceneIssue.warning("W_PORT_STALE", "Item " + item.id() + " is bound to port " + portId
                             + ", which no longer exists.", item.id(), null));
-                } else if (port.get().pieceTypeId() != null && !piece.get().typeIds().contains(port.get().pieceTypeId())) {
+                    continue;
+                }
+                // The role the port plays (portTypes, else its own type) must be a type of the piece, of the port's kind.
+                Integer role = item.portRole(port.get().id(), port.get().pieceTypeId());
+                if (role == null) continue;
+                int typeIndex = piece.get().typeIds().indexOf(role);
+                if (typeIndex < 0) {
                     issues.add(SceneIssue.error("E_PORT_TYPE_MISMATCH", "Port \"" + port.get().name()
-                            + "\" belongs to a piece type that \"" + piece.get().name() + "\" does not have.", item.id(), null));
+                            + "\" plays piece type " + role + ", which \"" + piece.get().name() + "\" does not have.", item.id(), null));
+                } else if (!Objects.equals(piece.get().typeKinds().get(typeIndex), port.get().kind())) {
+                    issues.add(SceneIssue.error("E_PORT_KIND_MISMATCH", "Port \"" + port.get().name() + "\" ("
+                            + port.get().kind() + ") cannot play type \"" + piece.get().typeNames().get(typeIndex) + "\" ("
+                            + piece.get().typeKinds().get(typeIndex) + ").", item.id(), null));
                 }
             }
         }
@@ -159,9 +170,11 @@ public final class SceneValidator {
                     + action.typeName() + "\", which the piece does not have" + where + ".", item.id(), clip.id()));
             return;
         }
-        if (action.kind() != null && item.ports().isEmpty()) {
-            issues.add(SceneIssue.warning("W_NO_PORT", "The item is not bound to any port, so this action cannot reach "
-                    + "hardware" + where + ".", item.id(), clip.id()));
+        if (action.kind() != null && !reachesPort(item, action.typeId(), context)) {
+            issues.add(SceneIssue.warning("W_NO_PORT", item.ports().isEmpty()
+                    ? "The item is not bound to any port, so this action cannot reach hardware" + where + "."
+                    : "No port of the item plays type \"" + action.typeName() + "\", so this action cannot reach hardware"
+                    + where + " (bind one as that type).", item.id(), clip.id()));
         }
 
         Map<String, ActionParameterDto> declared = new HashMap<>();
@@ -221,6 +234,17 @@ public final class SceneValidator {
             issues.add(SceneIssue.warning("W_FADE_FROM_BLACK", "The fade has no from_color: it will start from black" + where + ".",
                     item.id(), clip.id()));
         }
+    }
+
+    /** @return whether some bound port of the item plays the given piece type (stale ports play none) */
+    private static boolean reachesPort(Item item, int typeId, SceneContext context) {
+        for (Integer portId : item.ports()) {
+            Optional<PortRef> port = portId == null ? Optional.empty() : context.portById(portId);
+            if (port.isPresent() && Objects.equals(item.portRole(port.get().id(), port.get().pieceTypeId()), typeId)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static CatalogAction catalogAction(OutputCatalog catalog, ActionRef action) {
