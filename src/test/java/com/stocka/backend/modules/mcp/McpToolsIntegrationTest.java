@@ -248,5 +248,36 @@ class McpToolsIntegrationTest {
             oauth.ok(token, "timeline_delete", "{\"org\":\"acme\",\"timelineId\":" + timelineId + "}");
             assertThat(oauth.ok(token, "timelines_list", "{\"org\":\"acme\"}").path("items").size()).isZero();
         }
+
+        @Test
+        @DisplayName("timeline_duplicate copies the scene into a new timeline at version 1")
+        void duplicate() throws Exception {
+            int sourceId = oauth.ok(token, "timeline_create", "{\"org\":\"acme\",\"name\":\"Nadal\"}").path("id").asInt();
+            oauth.ok(token, "timeline_scene_edit", "{\"org\":\"acme\",\"timelineId\":" + sourceId
+                    + ",\"expectedVersion\":1,\"ops\":[{\"op\":\"set_board\",\"width\":100}]}");
+
+            JsonNode named = oauth.ok(token, "timeline_duplicate",
+                    "{\"org\":\"acme\",\"timelineId\":" + sourceId + ",\"name\":\"Nadal 2027\"}");
+            assertThat(named.path("name").asText()).isEqualTo("Nadal 2027");
+            assertThat(named.path("id").asInt()).isNotEqualTo(sourceId);
+            assertThat(named.path("version").asInt()).isEqualTo(1);
+            JsonNode copyScene = oauth.ok(token, "timeline_scene_get", "{\"org\":\"acme\",\"timelineId\":"
+                    + named.path("id").asInt() + ",\"format\":\"raw\"}");
+            JsonNode sourceScene = oauth.ok(token, "timeline_scene_get", "{\"org\":\"acme\",\"timelineId\":"
+                    + sourceId + ",\"format\":\"raw\"}");
+            assertThat(copyScene.path("document")).isEqualTo(sourceScene.path("document"));
+            assertThat(sourceScene.path("version").asInt()).isEqualTo(2);
+
+            // Without a name the copy gets the localized "(copy)" suffix of the caller's language.
+            JsonNode automatic = oauth.ok(token, "timeline_duplicate", "{\"org\":\"acme\",\"timelineId\":" + sourceId + "}");
+            assertThat(automatic.path("name").asText()).startsWith("Nadal (").endsWith(")");
+
+            JsonNode taken = oauth.error(token, "timeline_duplicate",
+                    "{\"org\":\"acme\",\"timelineId\":" + sourceId + ",\"name\":\"Nadal\"}");
+            assertThat(taken.path("error").asText()).isEqualTo("timelines.name_conflict");
+            JsonNode missing = oauth.error(token, "timeline_duplicate", "{\"org\":\"acme\",\"timelineId\":999999}");
+            assertThat(missing.path("error").asText()).isEqualTo("timelines.not_found");
+            assertThat(oauth.ok(token, "timelines_list", "{\"org\":\"acme\"}").path("items").size()).isEqualTo(3);
+        }
     }
 }

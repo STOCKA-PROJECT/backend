@@ -98,6 +98,7 @@ On startup, `RoleSeeder` creates USER/ADMIN roles, then `AdminSeeder` creates a 
 | GET/POST | `/auth/connect/login`, `/auth/connect/2fa`, `/oauth2/consent` | Browser | Login + consent pages of the authorization server (Thymeleaf) |
 | POST   | `/mcp` | MCP access token | MCP server (Streamable HTTP, stateless, JSON-RPC) |
 | GET/DELETE | `/users/me/connected-apps[?clientId=]` | Authenticated | OAuth clients the user authorized; revoke |
+| POST   | `/organizations/{orgSlug}/timelines/{id}/duplicate` | OWNER, MANAGER, USER | Copy of the timeline and its scene (scene version 1); optional `{name}`, else the first free `"<name> (còpia N)"` in the `Accept-Language` (`timelines.copy_name*`); 409 `timelines.name_conflict`. MCP: `timeline_duplicate` |
 | POST   | `/organizations/{orgSlug}/timelines/{id}/scene/ops` | OWNER, MANAGER, USER | Apply scene operations atomically (see `SceneOp`) |
 | GET    | `/organizations/{orgSlug}/timelines/{id}/scene/summary` | any member | Compact scene view with validation findings |
 | POST   | `/organizations/{orgSlug}/timelines/{id}/scene/validate` | any member | Validation report of the scene |

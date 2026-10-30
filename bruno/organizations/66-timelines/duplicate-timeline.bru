@@ -1,0 +1,32 @@
+meta {
+  name: Duplicate Timeline
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{baseUrl}}/organizations/{{orgId}}/timelines/{{timelineId}}/duplicate
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+  Accept-Language: ca
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {}
+}
+
+docs {
+  Copies the timeline and its scene (the copy's scene starts at version 1). The body is optional:
+  without `name` the copy is called "<name> (còpia)", then "(còpia 2)"… in the Accept-Language of
+  the request (es "copia", en "copy"). Send `{"name": "Belén 2027"}` to choose it; a taken name is
+  409 `timelines.name_conflict`. 201 with the new timeline, 404 `timelines.not_found`, 403 for a
+  SPECTATOR.
+}

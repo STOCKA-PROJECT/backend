@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.stocka.backend.modules.organizations.service.OrganizationResolver;
 import com.stocka.backend.modules.timelines.dto.CreateTimelineDto;
+import com.stocka.backend.modules.timelines.dto.DuplicateTimelineDto;
 import com.stocka.backend.modules.timelines.dto.TimelineResponseDto;
 import com.stocka.backend.modules.timelines.dto.UpdateTimelineDto;
 import com.stocka.backend.modules.timelines.entity.Timeline;
@@ -78,6 +79,25 @@ public class TimelineController {
     ) {
         Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
         return ResponseEntity.ok(TimelineResponseDto.from(timelineService.update(orgId, timelineId, dto)));
+    }
+
+    /**
+     * Copies a timeline and its scene. The body is optional: without a name the copy is called
+     * "&lt;name&gt; (còpia)" (then "(còpia 2)"…) in the {@code Accept-Language} of the request.
+     *
+     * @return 201 with the new timeline; 404 when the source is not in the organization, 409 when
+     *         the explicit name is taken
+     */
+    @PostMapping("/{timelineId}/duplicate")
+    @PreAuthorize("@orgSecurity.canWritePieces(#orgSlug, principal)")
+    public ResponseEntity<TimelineResponseDto> duplicate(
+            @PathVariable String orgSlug,
+            @PathVariable Integer timelineId,
+            @RequestBody(required = false) DuplicateTimelineDto dto
+    ) {
+        Integer orgId = orgResolver.requireCurrent(orgSlug).getId();
+        Timeline copy = timelineService.duplicate(orgId, timelineId, dto);
+        return ResponseEntity.status(HttpStatus.CREATED).body(TimelineResponseDto.from(copy));
     }
 
     @DeleteMapping("/{timelineId}")

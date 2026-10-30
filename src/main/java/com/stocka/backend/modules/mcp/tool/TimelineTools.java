@@ -14,6 +14,7 @@ import com.stocka.backend.modules.mcp.tool.support.OrgAccess;
 import com.stocka.backend.modules.oauth.OAuthScope;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.timelines.dto.CreateTimelineDto;
+import com.stocka.backend.modules.timelines.dto.DuplicateTimelineDto;
 import com.stocka.backend.modules.timelines.dto.UpdateTimelineDto;
 import com.stocka.backend.modules.timelines.dto.UpsertTimelineSceneDto;
 import com.stocka.backend.modules.timelines.entity.Timeline;
@@ -31,8 +32,8 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Timelines and their scenes: list, inspect (compact or raw), create, edit through operations,
- * validate, export as a show package, replace, delete.
+ * Timelines and their scenes: list, inspect (compact or raw), create, duplicate, edit through
+ * operations, validate, export as a show package, replace, delete.
  */
 @Component
 public class TimelineTools implements ToolSource {
@@ -76,6 +77,12 @@ public class TimelineTools implements ToolSource {
             @Param(value = "Organization slug", required = true) String org,
             @Param(value = "Timeline id", required = true) Integer timelineId,
             @Param(value = "New name", required = true) String name) {
+    }
+
+    public record DuplicateInput(
+            @Param(value = "Organization slug", required = true) String org,
+            @Param(value = "Timeline id to copy", required = true) Integer timelineId,
+            @Param("Name of the copy, unique in the organization (default: \"<name> (copy)\", numbered when taken)") String name) {
     }
 
     public record SceneGetInput(
@@ -147,6 +154,11 @@ public class TimelineTools implements ToolSource {
                         "Creates a timeline with an empty scene (one layer, given length and board size) and returns "
                                 + "its id and scene version. Needs OWNER, MANAGER or USER.",
                         CreateInput.class, OAuthScope.TIMELINES_WRITE, ToolHints.CREATE, this::create)
+                        .returning(TimelineView.class),
+                ToolDefinition.of("timeline_duplicate",
+                        "Copies a timeline with its whole scene (board, items, tracks, clips, schedule) into a new "
+                                + "timeline and returns it; the copy's scene starts at version 1. Needs OWNER, MANAGER or USER.",
+                        DuplicateInput.class, OAuthScope.TIMELINES_WRITE, ToolHints.CREATE, this::duplicate)
                         .returning(TimelineView.class),
                 ToolDefinition.of("timeline_update",
                         "Renames a timeline. Needs OWNER, MANAGER or USER.",
@@ -227,6 +239,14 @@ public class TimelineTools implements ToolSource {
         scenes.createEmpty(org.getId(), timeline.getId(), duration,
                 new SceneDocument.Board(SceneDocument.toPx(width), SceneDocument.toPx(height), null));
         return view(org, timeline);
+    }
+
+    private TimelineView duplicate(ToolCall<DuplicateInput> call) {
+        DuplicateInput in = call.input();
+        Organization org = access.writePieces(call.caller(), in.org());
+        DuplicateTimelineDto dto = new DuplicateTimelineDto();
+        dto.setName(in.name());
+        return view(org, timelines.duplicate(org.getId(), in.timelineId(), dto));
     }
 
     private TimelineView update(ToolCall<UpdateInput> call) {

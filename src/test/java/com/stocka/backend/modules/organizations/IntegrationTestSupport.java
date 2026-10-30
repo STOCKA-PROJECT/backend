@@ -51,6 +51,8 @@ public final class IntegrationTestSupport {
         jdbc.execute("DELETE FROM organization_members");
         jdbc.execute("DELETE FROM organization_slug_history");
         jdbc.execute("DELETE FROM search_lists");
+        jdbc.execute("DELETE FROM timeline_scenes");
+        jdbc.execute("DELETE FROM timelines");
         jdbc.execute("DELETE FROM organizations");
         jdbc.execute("DELETE FROM security_audit_entries");
         jdbc.execute("DELETE FROM oauth_identities");

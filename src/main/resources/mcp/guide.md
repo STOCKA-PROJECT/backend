@@ -51,7 +51,9 @@ Workflow:
 1. `timelines_list` / `timeline_get` (summary) / `timeline_scene_get` (`format: "compact"` by default,
    `"raw"` for the full document).
 2. `timeline_create` (name) creates the timeline and an empty scene; note the `version`. The show lasts
-   until the end of its last clip: there is no length to set.
+   until the end of its last clip: there is no length to set. To start from an existing show (a variant,
+   next year's belén) use `timeline_duplicate` instead: it copies the whole scene into a new timeline
+   (`name` optional) and the copy's scene starts at version 1.
 3. `timeline_scene_edit` applies a list of operations atomically and returns the new `version`, the
    ids it created and validation issues. Always pass `expectedVersion`; on
    `timeline_scenes.version_conflict` re-read with `timeline_scene_get` and retry.

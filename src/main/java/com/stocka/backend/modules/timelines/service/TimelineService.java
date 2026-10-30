@@ -2,8 +2,13 @@ package com.stocka.backend.modules.timelines.service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -15,32 +20,41 @@ import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.organizations.service.OrganizationService;
 import com.stocka.backend.modules.timelines.dto.CreateTimelineDto;
+import com.stocka.backend.modules.timelines.dto.DuplicateTimelineDto;
 import com.stocka.backend.modules.timelines.dto.UpdateTimelineDto;
 import com.stocka.backend.modules.timelines.entity.Timeline;
+import com.stocka.backend.modules.timelines.entity.TimelineScene;
 import com.stocka.backend.modules.timelines.repository.TimelineRepository;
 import com.stocka.backend.modules.timelines.repository.TimelineSceneRepository;
 
 /**
- * CRUD for {@link Timeline} entities. Names are unique per organization; deletes are soft and free
- * the name for reuse by mangling the stored value, mirroring the piece-types pattern.
+ * CRUD and duplication for {@link Timeline} entities. Names are unique per organization; deletes are
+ * soft and free the name for reuse by mangling the stored value, mirroring the piece-types pattern.
  */
 @Service
 public class TimelineService {
     static final int MAX_NAME_LENGTH = 120;
+    /** Most "(còpia N)" suffixes tried before giving up with a name conflict. */
+    static final int MAX_COPY_NUMBER = 1000;
     private static final String SOFT_DELETE_SUFFIX = "::deleted::";
+    private static final String COPY_NAME_KEY = "timelines.copy_name";
+    private static final String COPY_NAME_NUMBERED_KEY = "timelines.copy_name_numbered";
 
     private final TimelineRepository timelineRepository;
     private final OrganizationService organizationService;
     private final TimelineSceneRepository sceneRepository;
+    private final MessageSource messageSource;
 
     public TimelineService(
             TimelineRepository timelineRepository,
             OrganizationService organizationService,
-            TimelineSceneRepository sceneRepository
+            TimelineSceneRepository sceneRepository,
+            MessageSource messageSource
     ) {
         this.timelineRepository = timelineRepository;
         this.organizationService = organizationService;
         this.sceneRepository = sceneRepository;
+        this.messageSource = messageSource;
     }
 
     @Transactional
@@ -83,6 +97,41 @@ public class TimelineService {
         return saveAndFlush(timeline);
     }
 
+    /**
+     * Copies a timeline and its scene into a new timeline of the same organization. The scene
+     * document is copied verbatim (its references already belong to the organization) and starts
+     * again at version 1; a timeline that was never edited gives a copy without scene.
+     *
+     * @param orgId      organization id
+     * @param timelineId timeline to copy
+     * @param dto        optional explicit name; {@code null} (or a {@code null} name) picks the
+     *                   first free "&lt;name&gt; (còpia)", "&lt;name&gt; (còpia 2)"… in the request locale
+     * @return the new timeline
+     * @throws ApiException 404 when the timeline is not in the organization, 409 when the explicit
+     *                      name is taken or no copy name is free
+     */
+    @Transactional
+    public Timeline duplicate(Integer orgId, Integer timelineId, DuplicateTimelineDto dto) {
+        Timeline source = findInOrg(orgId, timelineId);
+        Organization org = source.getOrganization();
+        String name;
+        if (dto != null && dto.getName() != null) {
+            name = sanitizeName(dto.getName());
+            ensureUniqueName(org, name, null);
+        } else {
+            name = freeCopyName(org, source.getName());
+        }
+        Timeline copy = saveAndFlush(new Timeline()
+                .setOrganization(org)
+                .setName(name));
+        sceneRepository.findByTimeline(source).ifPresent(scene -> sceneRepository.save(new TimelineScene()
+                .setTimeline(copy)
+                .setSchemaVersion(scene.getSchemaVersion())
+                .setDocument(scene.getDocument())
+                .setVersion(1)));
+        return copy;
+    }
+
     @Transactional
     public void softDelete(Integer orgId, Integer timelineId) {
         Timeline timeline = findInOrg(orgId, timelineId);
@@ -102,6 +151,37 @@ public class TimelineService {
         if (existing.isPresent() && (excludeId == null || !existing.get().getId().equals(excludeId))) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.TIMELINES_NAME_CONFLICT);
         }
+    }
+
+    private String freeCopyName(Organization org, String sourceName) {
+        Set<String> taken = timelineRepository.findByOrganization(org).stream()
+                .map(Timeline::getName)
+                .collect(Collectors.toSet());
+        Locale locale = LocaleContextHolder.getLocale();
+        for (int number = 1; number <= MAX_COPY_NUMBER; number++) {
+            String candidate = copyName(sourceName, number, locale);
+            if (!taken.contains(candidate)) {
+                return candidate;
+            }
+        }
+        throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.TIMELINES_NAME_CONFLICT);
+    }
+
+    /**
+     * Formats the {@code number}-th copy name of {@code base}, cutting the base so the result fits
+     * {@link #MAX_NAME_LENGTH}.
+     */
+    private String copyName(String base, int number, Locale locale) {
+        String key = number == 1 ? COPY_NAME_KEY : COPY_NAME_NUMBERED_KEY;
+        // The number goes as text so MessageFormat does not group its digits ("1.000").
+        Object[] args = {base, String.valueOf(number)};
+        String name = messageSource.getMessage(key, args, locale);
+        int overflow = name.length() - MAX_NAME_LENGTH;
+        if (overflow > 0) {
+            args[0] = base.substring(0, Math.max(0, base.length() - overflow)).stripTrailing();
+            name = messageSource.getMessage(key, args, locale);
+        }
+        return name;
     }
 
     private Timeline saveAndFlush(Timeline timeline) {

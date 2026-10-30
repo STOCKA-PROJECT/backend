@@ -2,7 +2,7 @@
 
 Generated from the registered definitions by `McpToolCatalogTest` (`./mvnw test -Dtest=McpToolCatalogTest -Dstocka.docs.write=true`). Every tool takes the organization slug as `org` unless stated otherwise; scopes are checked before the organization role.
 
-## Tools (60)
+## Tools (61)
 
 | Tool | Scope | Hints | Description |
 |---|---|---|---|
@@ -60,6 +60,7 @@ Generated from the registered definitions by `McpToolCatalogTest` (`./mvnw test 
 | `timeline_get` | `read` | read-only idempotent | A timeline with the compact view of its scene: items (piece names, ports, position in cm), tracks, clips in time order with action names and parameters, and validation findings. |
 | `timeline_scene_get` | `read` | read-only idempotent | The scene of a timeline: format compact (default) returns the summary; raw returns the full editor document (large). Both include the version. |
 | `timeline_create` | `timelines:write` |  | Creates a timeline with an empty scene (one layer, given length and board size) and returns its id and scene version. Needs OWNER, MANAGER or USER. |
+| `timeline_duplicate` | `timelines:write` |  | Copies a timeline with its whole scene (board, items, tracks, clips, schedule) into a new timeline and returns it; the copy's scene starts at version 1. Needs OWNER, MANAGER or USER. |
 | `timeline_update` | `timelines:write` | idempotent | Renames a timeline. Needs OWNER, MANAGER or USER. |
 | `timeline_scene_edit` | `timelines:write` | idempotent | Edits the scene with a batch of operations (add_item, add_clip, move_clip, remove_clip, set_board …), applied atomically. The show lasts until the end of its last clip. Sizes in cm, times in ms, references by id or unique name. Returns the new version, the ids created (use them in the next batch), validation findings and the compact scene. On timeline_scenes.version_conflict re-read the scene and retry. Needs OWNER, MANAGER or USER. |
 | `timeline_scene_put` | `timelines:write` | idempotent | Replaces the whole scene document (for restores or bulk rewrites; prefer timeline_scene_edit). Needs OWNER, MANAGER or USER. |
@@ -536,6 +537,14 @@ No arguments.
 | `durationMs` | integer | no | Length in ms of the empty timeline (default 60000); once it has clips the show lasts until the end of the last one |
 | `boardWidthCm` | number | no | Board width in cm (default 128) |
 | `boardHeightCm` | number | no | Board height in cm (default 72) |
+
+#### `timeline_duplicate`
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `org` | string | yes | Organization slug |
+| `timelineId` | integer | yes | Timeline id to copy |
+| `name` | string | no | Name of the copy, unique in the organization (default: "<name> (copy)", numbered when taken) |
 
 #### `timeline_update`
 
