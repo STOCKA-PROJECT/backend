@@ -59,9 +59,11 @@ Workflow:
    `timeline_scenes.version_conflict` re-read with `timeline_scene_get` and retry.
    Operations: `add_layer`, `add_item` (pieceId or pieceName; x/y/width/height in cm, auto-placed when
    omitted; `ports` by id or name), `update_item`, `set_item_ports` (`ports` by id or name, any port of the
-   kind of one of the piece's types; when the piece has several types of the same kind, e.g. «Llum» and
-   «Moviment» both relays, `portTypes` `{"Sortida 3": "Llum", "Sortida 4": "Moviment"}` says which type each
-   port plays, and the actions of each type drive only its port; a port without an entry plays its own
+   kind of one of the piece's types; a type drives one port, so two ports playing the same type are refused;
+   when the piece has several types of the same kind, e.g. «Llum» and «Moviment» both relays, `portTypes`
+   `{"Sortida 3": "Llum", "Sortida 4": "Moviment"}` says which type each port plays, and the actions of each
+   type drive only its port; `{"Sortida 3": ["Llum", "Moviment"]}` makes one port play both (the tracks of
+   both types drive it, warned as `W_PORT_SHARED_ROLES`); a port without an entry plays its own
    type), `remove_item`, `add_track`,
    `rename_track`, `remove_track`, `add_clip` (itemId or trackId; action by name or id; `startMs` or
    `after: clipId`; `durationMs`; `params` by name), `update_clip`, `move_clip`, `remove_clip`,

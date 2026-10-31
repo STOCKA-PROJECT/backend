@@ -142,19 +142,58 @@ class SceneJsonCodecTest {
     @DisplayName("portTypes")
     class PortTypes {
 
+        private SceneDocument parse(String portTypes) {
+            return codec.parse(codec.mapper().readTree(EDITOR_DOCUMENT.replace("\"ports\":[7],", "\"ports\":[7,8],\"portTypes\":" + portTypes + ",")));
+        }
+
+        private JsonNode written(String portTypes) {
+            JsonNode original = codec.mapper().readTree(EDITOR_DOCUMENT.replace("\"ports\":[7],", "\"ports\":[7,8],\"portTypes\":" + portTypes + ","));
+            return codec.toJson(codec.parse(original), original).path("items").get(0).path("portTypes");
+        }
+
         @Test
-        @DisplayName("the type each port plays is read with integer keys and written back; absent when empty")
+        @DisplayName("the type each port plays is read with integer keys and written back as a number; absent when empty")
         void roundTrip() {
-            JsonNode original = codec.mapper().readTree(EDITOR_DOCUMENT.replace("\"ports\":[7],", "\"ports\":[7,8],\"portTypes\":{\"8\":3},"));
-            SceneDocument doc = codec.parse(original);
-            assertThat(doc.items().get(0).portTypes()).containsExactly(Map.entry(8, 3));
-            assertThat(doc.items().get(0).portRole(8, 2)).isEqualTo(3);
-            assertThat(doc.items().get(0).portRole(7, 2)).isEqualTo(2);
-            assertThat(codec.toJson(doc, original).path("items").get(0).path("portTypes").path("8").asInt()).isEqualTo(3);
+            SceneDocument doc = parse("{\"8\":3}");
+            assertThat(doc.items().get(0).portTypes()).containsExactly(Map.entry(8, List.of(3)));
+            assertThat(doc.items().get(0).portRoles(8, 2)).containsExactly(3);
+            assertThat(doc.items().get(0).portRoles(7, 2)).containsExactly(2);
+            assertThat(doc.items().get(0).portRoles(7, null)).isEmpty();
+            JsonNode out = written("{\"8\":3}");
+            assertThat(out.path("8").isNumber()).isTrue();
+            assertThat(out.path("8").asInt()).isEqualTo(3);
 
             SceneDocument plain = codec.parse(codec.mapper().readTree(EDITOR_DOCUMENT));
             assertThat(plain.items().get(0).portTypes()).isEmpty();
             assertThat(codec.toJson(plain, null).path("items").get(0).has("portTypes")).isFalse();
+        }
+
+        @Test
+        @DisplayName("a list of types makes the port play all of them; one element or duplicates collapse to a number")
+        void listOfRoles() {
+            SceneDocument doc = parse("{\"8\":[3,4]}");
+            assertThat(doc.items().get(0).portTypes()).containsExactly(Map.entry(8, List.of(3, 4)));
+            assertThat(doc.items().get(0).portRoles(8, 2)).containsExactly(3, 4);
+            JsonNode out = written("{\"8\":[3,4]}");
+            assertThat(out.path("8").isArray()).isTrue();
+            assertThat(out.path("8")).extracting(JsonNode::asInt).containsExactly(3, 4);
+
+            assertThat(written("{\"8\":[3]}").path("8").isNumber()).isTrue();
+            assertThat(written("{\"8\":[3,3]}").path("8").asInt()).isEqualTo(3);
+            assertThat(parse("{\"8\":[]}").items().get(0).portRoles(8, 2)).as("an empty list falls back to the port's own type").containsExactly(2);
+            assertThat(parse("{\"8\":[3],\"7\":[4,5]}").items().get(0).portTypes())
+                    .containsExactly(Map.entry(8, List.of(3)), Map.entry(7, List.of(4, 5)));
+        }
+
+        @Test
+        @DisplayName("a value that is neither a type id nor a list of them, or a key that is not a port id, is a 400")
+        void invalid() {
+            for (String bad : List.of("{\"8\":\"Llum\"}", "{\"8\":[3,\"x\"]}", "{\"8\":{\"id\":3}}", "{\"eight\":3}", "[3]")) {
+                assertThatThrownBy(() -> parse(bad)).as(bad)
+                        .isInstanceOf(ApiException.class)
+                        .extracting(e -> ((ApiException) e).getCode()).isEqualTo(ErrorCodes.TIMELINE_SCENE_DOCUMENT_INVALID);
+            }
+            assertThat(parse("null").items().get(0).portTypes()).isEmpty();
         }
     }
 }

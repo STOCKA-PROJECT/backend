@@ -350,12 +350,18 @@ refused by `/mcp`, MCP tokens by the REST API.
   exception to `{error, message, hint, params}` (`ToolErrorMapper`). JSON Schemas come from `ToolSchemas`
   (records → properties; `SceneOp` → `oneOf`). Resources (`stocka://guide`, `stocka://catalog`,
   `stocka://schema/scene`, `stocka://org/{slug}/overview`) and prompts live in `resource/` and `prompt/`.
-- Port bindings of an item (2026-10-30): `Item.ports` plus optional `portTypes` (port id → piece type the port
-  plays for that item; absent = the port's own type). Compatibility is by kind (a relay port fits any relay type of
-  the piece), the actions of a type drive the ports playing it (`ExecutionPlan` resolves the role into
-  `ShowPort.pieceTypeId`), and `SceneValidator`/`ExecutionPlan` report `E_PORT_TYPE_MISMATCH` (role not a type of
-  the piece) and `E_PORT_KIND_MISMATCH`; `set_item_ports`/`add_item` take `portTypes` by port id/name → type
-  id/name. Same model in the editor (`utils/portRoles.ts`). No migration: it lives in the scene JSON.
+- Port bindings of an item (2026-10-30, one port per type since 2026-10-31): `Item.ports` plus optional `portTypes`
+  (port id → piece type the port plays for that item, or a list of type ids when the same port plays several types
+  of the piece; absent = the port's own type; `PortTypesSerializer` writes a single role as a number so older scenes
+  do not change). Compatibility is by kind (a relay port fits any relay type of the piece), the actions of a type
+  drive the port playing it (`ExecutionPlan` lists the port once per role, `ShowPort.pieceTypeId`), and
+  `SceneValidator`/`ExecutionPlan` report `E_PORT_TYPE_MISMATCH` (role not a type of the piece),
+  `E_PORT_KIND_MISMATCH`, `W_PORT_SHARED_ROLES` (one port plays several types of the piece: chosen on purpose, the
+  tracks of all of them drive it) and `W_PORT_ROLE_DUPLICATE` (several ports play the same type, older scenes).
+  A type drives one port: `set_item_ports`/`add_item` refuse two ports playing the same type and take `portTypes`
+  by port id/name → type id/name or a list of them. Same model in the editor (`utils/portRoles.ts`: one dropdown
+  per type, `withTypePort`). No migration: it lives in the scene JSON. Plan:
+  `../timeline-editor/docs/plan/puertos-por-tipo.md`.
 - Timelines are edited through `SceneOp` batches (`SceneEditor`, `SceneValidator`, `SceneSummary`,
   `SceneJsonCodec` keeps unknown editor fields) with optimistic `version`; since 2026-10-23 a show lasts until the
   end of its last clip (`SceneDocument` derives `durationMs`; the stored value only counts without clips; op

@@ -242,7 +242,7 @@ class SceneValidatorTest {
                     .action(504, "turn_on", "Moure", 41, "Moviment", "relay");
         }
 
-        private Item itemPlaying(String id, int pieceId, List<Integer> ports, Map<Integer, Integer> portTypes) {
+        private Item itemPlaying(String id, int pieceId, List<Integer> ports, Map<Integer, List<Integer>> portTypes) {
             Item it = new Item(id, pieceId, "layer-1", 0, 0, 100, 100, 0, null, null, ports, null, portTypes);
             items.add(it);
             tracks.add(new Track("t-" + id, id, "T"));
@@ -252,10 +252,43 @@ class SceneValidatorTest {
         @Test
         @DisplayName("a port of another type may play a type of the piece of the same kind; each action then reaches its port")
         void rolesAccepted() {
-            itemPlaying("m", 3, List.of(101, 102), Map.of(101, 40));
+            itemPlaying("m", 3, List.of(101, 102), Map.of(101, List.of(40)));
             clip("a", "m", 503, 0, 1000, Map.of());
             clip("b", "m", 504, 2000, 1000, Map.of());
-            assertThat(codes(10_000)).doesNotContain("E_PORT_TYPE_MISMATCH", "E_PORT_KIND_MISMATCH", "W_NO_PORT");
+            assertThat(codes(10_000)).doesNotContain("E_PORT_TYPE_MISMATCH", "E_PORT_KIND_MISMATCH", "W_NO_PORT",
+                    "W_PORT_ROLE_DUPLICATE", "W_PORT_SHARED_ROLES");
+        }
+
+        @Test
+        @DisplayName("one port may play two types of the piece: both actions reach it, with a warning")
+        void sharedPort() {
+            itemPlaying("m", 3, List.of(102), Map.of(102, List.of(40, 41)));
+            clip("a", "m", 503, 0, 1000, Map.of());
+            clip("b", "m", 504, 2000, 1000, Map.of());
+            List<SceneIssue> issues = SceneValidator.validate(doc(10_000), ctx, catalog);
+            assertThat(issues).extracting(SceneIssue::code).contains("W_PORT_SHARED_ROLES")
+                    .doesNotContain("W_NO_PORT", "W_PORT_ROLE_DUPLICATE", "E_PORT_TYPE_MISMATCH");
+            SceneIssue shared = issues.stream().filter(i -> i.code().equals("W_PORT_SHARED_ROLES")).findFirst().orElseThrow();
+            assertThat(shared.itemId()).isEqualTo("m");
+            assertThat(shared.message()).contains("Sortida 2").contains("Llum").contains("Moviment").contains("Molí");
+        }
+
+        @Test
+        @DisplayName("two ports playing the same type (older scenes) warn: a type drives one port")
+        void duplicateRole() {
+            itemPlaying("m", 3, List.of(101, 102), Map.of(101, List.of(41)));
+            List<SceneIssue> issues = SceneValidator.validate(doc(10_000), ctx, catalog);
+            assertThat(issues).extracting(SceneIssue::code).containsExactly("W_PORT_ROLE_DUPLICATE");
+            assertThat(issues.get(0).itemId()).isEqualTo("m");
+            assertThat(issues.get(0).message()).contains("Focos").contains("Sortida 2").contains("Moviment").contains("Molí");
+        }
+
+        @Test
+        @DisplayName("roles the piece lacks and stale ports do not count as shared or duplicated")
+        void cardinalityIgnoresInvalidRoles() {
+            itemPlaying("m", 3, List.of(102, 999), Map.of(102, List.of(41, 77), 999, List.of(41)));
+            assertThat(codes(10_000)).contains("E_PORT_TYPE_MISMATCH", "W_PORT_STALE")
+                    .doesNotContain("W_PORT_SHARED_ROLES", "W_PORT_ROLE_DUPLICATE");
         }
 
         @Test
@@ -270,7 +303,7 @@ class SceneValidatorTest {
         @Test
         @DisplayName("a role of another kind is refused")
         void kindMismatch() {
-            itemPlaying("m", 3, List.of(100), Map.of(100, 40));
+            itemPlaying("m", 3, List.of(100), Map.of(100, List.of(40)));
             List<SceneIssue> issues = SceneValidator.validate(doc(1000), ctx, catalog);
             assertThat(issues).extracting(SceneIssue::code).containsExactly("E_PORT_KIND_MISMATCH");
             assertThat(issues.get(0).message()).contains("Fondo1").contains("led_segment").contains("Llum").contains("relay");
@@ -292,7 +325,7 @@ class SceneValidatorTest {
         @Test
         @DisplayName("a stale port plays nothing: it warns and the action does not reach it")
         void stalePort() {
-            itemPlaying("m", 3, List.of(999), Map.of(999, 40));
+            itemPlaying("m", 3, List.of(999), Map.of(999, List.of(40)));
             clip("a", "m", 503, 0, 1000, Map.of());
             assertThat(codes(10_000)).contains("W_PORT_STALE", "W_NO_PORT").doesNotContain("E_PORT_TYPE_MISMATCH");
         }

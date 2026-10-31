@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -65,19 +66,20 @@ public final class SceneValidator {
                             + ", which no longer exists.", item.id(), null));
                     continue;
                 }
-                // The role the port plays (portTypes, else its own type) must be a type of the piece, of the port's kind.
-                Integer role = item.portRole(port.get().id(), port.get().pieceTypeId());
-                if (role == null) continue;
-                int typeIndex = piece.get().typeIds().indexOf(role);
-                if (typeIndex < 0) {
-                    issues.add(SceneIssue.error("E_PORT_TYPE_MISMATCH", "Port \"" + port.get().name()
-                            + "\" plays piece type " + role + ", which \"" + piece.get().name() + "\" does not have.", item.id(), null));
-                } else if (!Objects.equals(piece.get().typeKinds().get(typeIndex), port.get().kind())) {
-                    issues.add(SceneIssue.error("E_PORT_KIND_MISMATCH", "Port \"" + port.get().name() + "\" ("
-                            + port.get().kind() + ") cannot play type \"" + piece.get().typeNames().get(typeIndex) + "\" ("
-                            + piece.get().typeKinds().get(typeIndex) + ").", item.id(), null));
+                // Each role the port plays (portTypes, else its own type) must be a type of the piece, of the port's kind.
+                for (Integer role : item.portRoles(port.get().id(), port.get().pieceTypeId())) {
+                    int typeIndex = piece.get().typeIds().indexOf(role);
+                    if (typeIndex < 0) {
+                        issues.add(SceneIssue.error("E_PORT_TYPE_MISMATCH", "Port \"" + port.get().name()
+                                + "\" plays piece type " + role + ", which \"" + piece.get().name() + "\" does not have.", item.id(), null));
+                    } else if (!Objects.equals(piece.get().typeKinds().get(typeIndex), port.get().kind())) {
+                        issues.add(SceneIssue.error("E_PORT_KIND_MISMATCH", "Port \"" + port.get().name() + "\" ("
+                                + port.get().kind() + ") cannot play type \"" + piece.get().typeNames().get(typeIndex) + "\" ("
+                                + piece.get().typeKinds().get(typeIndex) + ").", item.id(), null));
+                    }
                 }
             }
+            validateRoleCardinality(item, piece.get(), context, issues);
         }
 
         Map<String, List<Clip>> clipsByTrack = new HashMap<>();
@@ -236,11 +238,48 @@ public final class SceneValidator {
         }
     }
 
+    /**
+     * A type of the piece drives one port: several ports playing the same type (scenes saved before
+     * the editor enforced it) and one port playing several types of the piece (chosen on purpose: the
+     * tracks of both types drive it) are warned about, not refused.
+     */
+    private static void validateRoleCardinality(Item item, PieceRef piece, SceneContext context, List<SceneIssue> issues) {
+        Map<Integer, List<String>> portsByType = new LinkedHashMap<>();
+        Map<String, List<String>> typesByPort = new LinkedHashMap<>();
+        for (Integer portId : item.ports()) {
+            Optional<PortRef> port = portId == null ? Optional.empty() : context.portById(portId);
+            if (port.isEmpty()) continue;
+            for (Integer role : item.portRoles(port.get().id(), port.get().pieceTypeId())) {
+                int typeIndex = piece.typeIds().indexOf(role);
+                if (typeIndex < 0) continue;
+                portsByType.computeIfAbsent(role, k -> new ArrayList<>()).add(port.get().name());
+                typesByPort.computeIfAbsent(port.get().name(), k -> new ArrayList<>()).add(piece.typeNames().get(typeIndex));
+            }
+        }
+        portsByType.forEach((typeId, ports) -> {
+            if (ports.size() > 1) {
+                issues.add(SceneIssue.warning("W_PORT_ROLE_DUPLICATE", "Ports " + quoted(ports) + " all play type \""
+                        + piece.typeNames().get(piece.typeIds().indexOf(typeId)) + "\" of \"" + piece.name()
+                        + "\"; a type drives one port.", item.id(), null));
+            }
+        });
+        typesByPort.forEach((port, types) -> {
+            if (types.size() > 1) {
+                issues.add(SceneIssue.warning("W_PORT_SHARED_ROLES", "Port \"" + port + "\" plays types " + quoted(types)
+                        + " of \"" + piece.name() + "\": the tracks of all of them drive it.", item.id(), null));
+            }
+        });
+    }
+
+    private static String quoted(List<String> names) {
+        return String.join(", ", names.stream().map(n -> "\"" + n + "\"").toList());
+    }
+
     /** @return whether some bound port of the item plays the given piece type (stale ports play none) */
     private static boolean reachesPort(Item item, int typeId, SceneContext context) {
         for (Integer portId : item.ports()) {
             Optional<PortRef> port = portId == null ? Optional.empty() : context.portById(portId);
-            if (port.isPresent() && Objects.equals(item.portRole(port.get().id(), port.get().pieceTypeId()), typeId)) {
+            if (port.isPresent() && item.portRoles(port.get().id(), port.get().pieceTypeId()).contains(typeId)) {
                 return true;
             }
         }

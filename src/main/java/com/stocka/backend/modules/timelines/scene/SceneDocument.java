@@ -8,6 +8,15 @@ import java.util.Objects;
 import java.util.OptionalLong;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.JsonParser;
+import tools.jackson.databind.DeserializationContext;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.SerializationContext;
+import tools.jackson.databind.ValueDeserializer;
+import tools.jackson.databind.ValueSerializer;
+import tools.jackson.databind.annotation.JsonDeserialize;
+import tools.jackson.databind.annotation.JsonSerialize;
 import com.stocka.backend.modules.common.schema.Param;
 
 /**
@@ -158,25 +167,34 @@ public record SceneDocument(
             @Param("Hardware port ids bound to the item") List<Integer> ports,
             @Param("LED polyline inside the item, fractions of its size") List<LedPoint> ledPath,
             @JsonInclude(JsonInclude.Include.NON_EMPTY)
-            @Param("Piece type each bound port plays for this item (port id → type id); a port without an entry plays its own type")
-            Map<Integer, Integer> portTypes) {
+            @JsonSerialize(using = PortTypesSerializer.class)
+            @JsonDeserialize(using = PortTypesDeserializer.class)
+            @Param("Piece type each bound port plays for this item (port id → type id, or a list of type ids when the port plays "
+                    + "several types of the piece); a port without an entry plays its own type")
+            Map<Integer, List<Integer>> portTypes) {
         public Item {
             ports = ports == null ? new ArrayList<>() : new ArrayList<>(ports);
-            portTypes = portTypes == null ? new LinkedHashMap<>() : new LinkedHashMap<>(portTypes);
+            Map<Integer, List<Integer>> copy = new LinkedHashMap<>();
+            if (portTypes != null) {
+                portTypes.forEach((port, roles) -> copy.put(port, roles == null ? List.of() : List.copyOf(roles)));
+            }
+            portTypes = copy;
         }
 
         /**
-         * The piece type a bound port plays for this item: the explicit {@code portTypes} entry, else the
-         * port's own type. The actions of that type drive the port, so a piece with two types of the
-         * same kind (a figure with «Llum» and «Moviment», both relays) gets one port per type.
+         * The piece types a bound port plays for this item: the explicit {@code portTypes} entry, else the
+         * port's own type. The actions of each type drive the port. A type drives one port, so a piece
+         * with two types of the same kind (a figure with «Llum» and «Moviment», both relays) gets one
+         * port per type, or the same port for both when it was chosen for both.
          *
          * @param portId     the port
          * @param portTypeId the port's own piece type ({@code null} for infrastructure ports)
-         * @return the type id the port plays, or {@code null} when it plays none
+         * @return the type ids the port plays, empty when it plays none
          */
-        public Integer portRole(int portId, Integer portTypeId) {
-            Integer explicit = portTypes.get(portId);
-            return explicit != null ? explicit : portTypeId;
+        public List<Integer> portRoles(int portId, Integer portTypeId) {
+            List<Integer> explicit = portTypes.get(portId);
+            if (explicit != null && !explicit.isEmpty()) return explicit;
+            return portTypeId == null ? List.of() : List.of(portTypeId);
         }
 
         /**
@@ -184,8 +202,76 @@ public record SceneDocument(
          * @param portTypes new roles
          * @return a copy with other fields untouched
          */
-        public Item withPorts(List<Integer> ports, Map<Integer, Integer> portTypes) {
+        public Item withPorts(List<Integer> ports, Map<Integer, List<Integer>> portTypes) {
             return new Item(id, pieceId, layerId, x, y, width, height, rotation, widthAttr, heightAttr, ports, ledPath, portTypes);
+        }
+    }
+
+    /**
+     * Writes {@link Item#portTypes()} as the editor stores it: a single role as a number, several as a
+     * list, so scenes written before a port could play several types do not change.
+     */
+    public static final class PortTypesSerializer extends ValueSerializer<Map<Integer, List<Integer>>> {
+        @Override
+        public void serialize(Map<Integer, List<Integer>> value, JsonGenerator gen, SerializationContext ctxt) {
+            gen.writeStartObject();
+            for (Map.Entry<Integer, List<Integer>> entry : value.entrySet()) {
+                gen.writeName(String.valueOf(entry.getKey()));
+                List<Integer> roles = entry.getValue();
+                if (roles.size() == 1) {
+                    gen.writeNumber(roles.get(0));
+                } else {
+                    gen.writeStartArray();
+                    for (Integer role : roles) {
+                        gen.writeNumber(role);
+                    }
+                    gen.writeEndArray();
+                }
+            }
+            gen.writeEndObject();
+        }
+
+        @Override
+        public boolean isEmpty(SerializationContext ctxt, Map<Integer, List<Integer>> value) {
+            return value == null || value.isEmpty();
+        }
+    }
+
+    /** Reads {@link Item#portTypes()}: each value is a type id or a list of type ids, keyed by port id. */
+    public static final class PortTypesDeserializer extends ValueDeserializer<Map<Integer, List<Integer>>> {
+        @Override
+        public Map<Integer, List<Integer>> deserialize(JsonParser p, DeserializationContext ctxt) {
+            JsonNode node = ctxt.readTree(p);
+            Map<Integer, List<Integer>> out = new LinkedHashMap<>();
+            if (node == null || node.isNull()) return out;
+            if (!node.isObject()) {
+                throw new IllegalArgumentException("portTypes must be an object keyed by port id");
+            }
+            for (Map.Entry<String, JsonNode> entry : node.properties()) {
+                int portId;
+                try {
+                    portId = Integer.parseInt(entry.getKey().trim());
+                } catch (NumberFormatException e) {
+                    throw new IllegalArgumentException("portTypes key is not a port id: " + entry.getKey(), e);
+                }
+                out.put(portId, rolesOf(entry.getKey(), entry.getValue()));
+            }
+            return out;
+        }
+
+        private static List<Integer> rolesOf(String key, JsonNode value) {
+            if (value.isNumber()) return List.of(value.intValue());
+            if (value.isArray()) {
+                List<Integer> roles = new ArrayList<>();
+                for (JsonNode role : value) {
+                    if (!role.isNumber()) {
+                        throw new IllegalArgumentException("portTypes." + key + " holds a type id that is not a number");
+                    }
+                    if (!roles.contains(role.intValue())) roles.add(role.intValue());
+                }
+                return List.copyOf(roles);
+            }
+            throw new IllegalArgumentException("portTypes." + key + " must be a type id or a list of type ids");
         }
     }
 

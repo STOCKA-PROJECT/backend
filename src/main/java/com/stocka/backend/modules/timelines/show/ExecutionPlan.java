@@ -108,23 +108,28 @@ public record ExecutionPlan(
                             + piece.map(PieceRef::name).orElse(item.id()) + "» ja no existeix."));
                     continue;
                 }
-                // The port plays one type of the piece (`portTypes`, else its own type); the actions of
-                // that type drive it. Checked like the editor's `buildExecutionPlan`.
-                Integer role = item.portRole(port.id(), port.pieceTypeId());
-                if (piece.isPresent() && role != null) {
-                    int typeIndex = piece.get().typeIds().indexOf(role);
-                    String typeKind = typeIndex < 0 ? null : piece.get().typeKinds().get(typeIndex);
-                    if (typeIndex < 0) {
-                        issues.add(ShowIssue.error("E_PORT_TYPE_MISMATCH", "El port «" + port.name() + "» fa d'un tipus que «"
-                                + piece.get().name() + "» no té.", null, port.name()));
-                    } else if (typeKind != null && !typeKind.equals(port.kind())) {
-                        issues.add(ShowIssue.error("E_PORT_KIND_MISMATCH", "El port «" + port.name() + "» (" + port.kind()
-                                + ") no pot fer de «" + piece.get().typeNames().get(typeIndex) + "» (" + typeKind + ").",
-                                null, port.name()));
+                // The port plays one or more types of the piece (`portTypes`, else its own type); the
+                // actions of each type drive it, so the plan lists the port once per role. Checked like
+                // the editor's `buildExecutionPlan`.
+                List<Integer> roles = item.portRoles(port.id(), port.pieceTypeId());
+                for (Integer role : roles) {
+                    if (piece.isPresent()) {
+                        int typeIndex = piece.get().typeIds().indexOf(role);
+                        String typeKind = typeIndex < 0 ? null : piece.get().typeKinds().get(typeIndex);
+                        if (typeIndex < 0) {
+                            issues.add(ShowIssue.error("E_PORT_TYPE_MISMATCH", "El port «" + port.name() + "» fa d'un tipus que «"
+                                    + piece.get().name() + "» no té.", null, port.name()));
+                        } else if (typeKind != null && !typeKind.equals(port.kind())) {
+                            issues.add(ShowIssue.error("E_PORT_KIND_MISMATCH", "El port «" + port.name() + "» (" + port.kind()
+                                    + ") no pot fer de «" + piece.get().typeNames().get(typeIndex) + "» (" + typeKind + ").",
+                                    null, port.name()));
+                        }
                     }
+                    ports.add(Objects.equals(role, port.pieceTypeId()) ? port : port.playing(role));
                 }
-                ports.add(Objects.equals(role, port.pieceTypeId()) ? port : port.playing(role));
+                if (roles.isEmpty()) ports.add(port);
             }
+            piece.ifPresent(p -> warnRoleCardinality(p, ports, issues));
             items.add(new ExecutionItem(item.id(), item.pieceId(), piece.map(PieceRef::name).orElse(null), ports));
         }
 
@@ -234,5 +239,34 @@ public record ExecutionPlan(
 
     private static Optional<PieceRef> pieceOf(SceneContext context, Integer pieceId) {
         return pieceId == null ? Optional.empty() : context.pieceById(pieceId);
+    }
+
+    /**
+     * A type of the piece drives one port: several ports playing it (older scenes) and one port playing
+     * several types of the piece (chosen on purpose) are warned about, not refused, like the validator does.
+     */
+    private static void warnRoleCardinality(PieceRef piece, List<ShowPort> ports, List<ShowIssue> issues) {
+        Map<Integer, List<String>> portsByType = new LinkedHashMap<>();
+        Map<String, List<String>> typesByPort = new LinkedHashMap<>();
+        for (ShowPort port : ports) {
+            int typeIndex = port.pieceTypeId() == null ? -1 : piece.typeIds().indexOf(port.pieceTypeId());
+            if (typeIndex < 0) continue;
+            portsByType.computeIfAbsent(port.pieceTypeId(), k -> new ArrayList<>()).add(port.name());
+            typesByPort.computeIfAbsent(port.name(), k -> new ArrayList<>()).add(piece.typeNames().get(typeIndex));
+        }
+        portsByType.forEach((typeId, names) -> {
+            if (names.size() > 1) {
+                issues.add(ShowIssue.warning("W_PORT_ROLE_DUPLICATE", "«" + piece.name() + "» té " + names.size() + " ports fent de «"
+                        + piece.typeNames().get(piece.typeIds().indexOf(typeId)) + "» (" + String.join(", ", names)
+                        + "): un tipus hauria de moure un sol port.", null, names.get(0)));
+            }
+        });
+        typesByPort.forEach((name, types) -> {
+            if (types.size() > 1) {
+                issues.add(ShowIssue.warning("W_PORT_SHARED_ROLES", "El port «" + name + "» fa de "
+                        + String.join(" i ", types.stream().map(t -> "«" + t + "»").toList()) + " de «" + piece.name()
+                        + "»: les pistes de tots dos tipus el mouen.", null, name));
+            }
+        });
     }
 }

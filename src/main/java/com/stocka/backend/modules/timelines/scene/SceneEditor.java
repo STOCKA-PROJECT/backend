@@ -1,6 +1,7 @@
 package com.stocka.backend.modules.timelines.scene;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -338,38 +339,48 @@ public final class SceneEditor {
     }
 
     /** Port ids bound to an item and the piece type each one plays for it (explicit entries only). */
-    private record Bindings(List<Integer> ports, Map<Integer, Integer> portTypes) {
+    private record Bindings(List<Integer> ports, Map<Integer, List<Integer>> portTypes) {
     }
 
     /**
-     * Resolves port references and the type each one plays: the {@code portTypes} entry (by port id or
-     * name → type id or name of the piece), else the port's own type. The role must be a type of the
-     * piece and of the port's kind, as the validator and the export require.
+     * Resolves port references and the types each one plays: the {@code portTypes} entry (by port id or
+     * name → type id or name of the piece, or a list of them), else the port's own type. Every role must
+     * be a type of the piece and of the port's kind, as the validator and the export require, and a type
+     * drives one port: two ports playing the same type are refused.
      */
-    private Bindings resolvePorts(int i, String op, PieceRef piece, List<String> refs, Map<String, String> typeRefs) {
+    private Bindings resolvePorts(int i, String op, PieceRef piece, List<String> refs, Map<String, Object> typeRefs) {
         List<Integer> ports = new ArrayList<>();
-        Map<Integer, Integer> roles = new LinkedHashMap<>();
+        Map<Integer, List<Integer>> roles = new LinkedHashMap<>();
         if (refs == null) return new Bindings(ports, roles);
-        Map<String, String> pendingTypeRefs = typeRefs == null ? new LinkedHashMap<>() : new LinkedHashMap<>(typeRefs);
+        Map<String, Object> pendingTypeRefs = typeRefs == null ? new LinkedHashMap<>() : new LinkedHashMap<>(typeRefs);
+        Map<Integer, PortRef> portOfType = new LinkedHashMap<>();
         for (String ref : refs) {
             PortRef port = resolvePort(i, op, ref);
-            Integer role = port.pieceTypeId();
-            String typeRef = takeTypeRef(pendingTypeRefs, port);
+            List<Integer> portRoles = port.pieceTypeId() == null ? List.of() : List.of(port.pieceTypeId());
+            Object typeRef = takeTypeRef(pendingTypeRefs, port);
             if (typeRef != null) {
-                role = resolvePieceType(i, op, piece, port, typeRef);
-                roles.put(port.id(), role);
+                portRoles = resolvePieceTypes(i, op, piece, port, typeRef);
+                roles.put(port.id(), portRoles);
             }
-            if (piece != null && role != null) {
-                int typeIndex = piece.typeIds().indexOf(role);
-                if (typeIndex < 0) {
-                    throw new SceneOpException(i, op, "port \"" + port.name() + "\" belongs to a piece type that \""
-                            + piece.name() + "\" does not have; pass portTypes to make it play one of its types of kind "
-                            + port.kind(), piece.typeNames());
+            for (Integer role : portRoles) {
+                if (piece != null) {
+                    int typeIndex = piece.typeIds().indexOf(role);
+                    if (typeIndex < 0) {
+                        throw new SceneOpException(i, op, "port \"" + port.name() + "\" belongs to a piece type that \""
+                                + piece.name() + "\" does not have; pass portTypes to make it play one of its types of kind "
+                                + port.kind(), piece.typeNames());
+                    }
+                    if (!Objects.equals(piece.typeKinds().get(typeIndex), port.kind())) {
+                        throw new SceneOpException(i, op, "port \"" + port.name() + "\" is a " + port.kind()
+                                + " output and cannot play type \"" + piece.typeNames().get(typeIndex) + "\" ("
+                                + piece.typeKinds().get(typeIndex) + ")");
+                    }
                 }
-                if (!Objects.equals(piece.typeKinds().get(typeIndex), port.kind())) {
-                    throw new SceneOpException(i, op, "port \"" + port.name() + "\" is a " + port.kind()
-                            + " output and cannot play type \"" + piece.typeNames().get(typeIndex) + "\" ("
-                            + piece.typeKinds().get(typeIndex) + ")");
+                PortRef other = portOfType.putIfAbsent(role, port);
+                if (other != null && other.id() != port.id()) {
+                    String typeName = piece == null ? "type " + role : "type \"" + piece.typeNames().get(piece.typeIds().indexOf(role)) + "\"";
+                    throw new SceneOpException(i, op, "ports \"" + other.name() + "\" and \"" + port.name() + "\" would both play "
+                            + typeName + "; a type drives one port, so bind one of them or give the other a different type in portTypes");
                 }
             }
             if (!ports.contains(port.id())) ports.add(port.id());
@@ -381,7 +392,7 @@ public final class SceneEditor {
     }
 
     /** Removes and returns the {@code portTypes} entry of a port (keyed by its id or its name), or {@code null}. */
-    private static String takeTypeRef(Map<String, String> typeRefs, PortRef port) {
+    private static Object takeTypeRef(Map<String, Object> typeRefs, PortRef port) {
         for (String key : typeRefs.keySet()) {
             boolean byId = parseInt(key).map(id -> id == port.id()).orElse(false);
             if (byId || key.trim().equalsIgnoreCase(port.name())) {
@@ -389,6 +400,23 @@ public final class SceneEditor {
             }
         }
         return null;
+    }
+
+    /**
+     * The types a {@code portTypes} entry names: one type id or name, or a list of them (duplicates
+     * collapsed); an empty entry is refused.
+     */
+    private static List<Integer> resolvePieceTypes(int i, String op, PieceRef piece, PortRef port, Object ref) {
+        List<Object> refs = ref instanceof Collection<?> many ? new ArrayList<>(many) : List.of(ref);
+        if (refs.isEmpty()) {
+            throw new SceneOpException(i, op, "the type of port \"" + port.name() + "\" is empty");
+        }
+        List<Integer> out = new ArrayList<>();
+        for (Object one : refs) {
+            int typeId = resolvePieceType(i, op, piece, port, one == null ? null : String.valueOf(one));
+            if (!out.contains(typeId)) out.add(typeId);
+        }
+        return List.copyOf(out);
     }
 
     /** A type of the piece, by id or exact name (case-insensitive); the item's piece must be known. */

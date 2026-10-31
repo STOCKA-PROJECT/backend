@@ -383,11 +383,11 @@ class SceneEditorTest {
             Change change = apply(new SceneOp.SetItemPorts("item-1", List.of("Sortida 2", "103"), Map.of("sortida 2", "Llum", "103", "41")));
             Item it = doc.items().get(0);
             assertThat(it.ports()).containsExactly(102, 103);
-            assertThat(it.portTypes()).containsExactly(Map.entry(102, 40), Map.entry(103, 41));
+            assertThat(it.portTypes()).containsExactly(Map.entry(102, List.of(40)), Map.entry(103, List.of(41)));
             assertThat(change.log()).anyMatch(l -> l.contains("playing"));
             // update_item keeps the roles; set_item_ports without roles falls back to the ports' own types
             apply(new SceneOp.UpdateItem("item-1", null, 5.0, null, null, null, null));
-            assertThat(doc.items().get(0).portTypes()).containsEntry(102, 40);
+            assertThat(doc.items().get(0).portTypes()).containsEntry(102, List.of(40));
             apply(new SceneOp.SetItemPorts("item-1", List.of("Sortida 2"), null));
             assertThat(doc.items().get(0).portTypes()).isEmpty();
         }
@@ -397,7 +397,42 @@ class SceneEditorTest {
         void addItemWithRole() {
             apply(new SceneOp.AddItem(4, null, null, null, null, null, null, null, List.of("Focos"), Map.of("Focos", "Llum")));
             assertThat(doc.items().get(0).ports()).containsExactly(101);
-            assertThat(doc.items().get(0).portTypes()).containsExactly(Map.entry(101, 40));
+            assertThat(doc.items().get(0).portTypes()).containsExactly(Map.entry(101, List.of(40)));
+        }
+
+        @Test
+        @DisplayName("a portTypes entry may list several types: the port then plays all of them (duplicates collapsed, ids as numbers too)")
+        void severalRolesOnOnePort() {
+            apply(new SceneOp.AddItem(4, null, null, null, null, null, null, null, null, null));
+            Change change = apply(new SceneOp.SetItemPorts("item-1", List.of("Sortida 2"), Map.of("Sortida 2", List.of("Llum", 41, "llum"))));
+            Item it = doc.items().get(0);
+            assertThat(it.ports()).containsExactly(102);
+            assertThat(it.portTypes()).containsExactly(Map.entry(102, List.of(40, 41)));
+            assertThat(it.portRoles(102, 41)).containsExactly(40, 41);
+            assertThat(change.log()).anyMatch(l -> l.contains("playing"));
+            // A single value may be a number as well as a name; the same port named twice is bound once.
+            apply(new SceneOp.SetItemPorts("item-1", List.of("Sortida 2", "102"), Map.of("102", 40)));
+            assertThat(doc.items().get(0).ports()).containsExactly(102);
+            assertThat(doc.items().get(0).portTypes()).containsExactly(Map.entry(102, List.of(40)));
+        }
+
+        @Test
+        @DisplayName("refuses two ports playing the same type: a type drives one port, and nothing is written")
+        void duplicateRoleRefused() {
+            apply(new SceneOp.AddItem(4, null, null, null, null, null, null, null, List.of("Sortida 2"), Map.of("Sortida 2", "Llum")));
+            // Both ports would play their own type «Moviment».
+            assertThat(detail(new SceneOp.SetItemPorts("item-1", List.of("Sortida 2", "Sortida 3"), null)))
+                    .contains("would both play").contains("Moviment").contains("Sortida 2").contains("Sortida 3");
+            // Explicit roles, one of them inside a list.
+            assertThat(detail(new SceneOp.SetItemPorts("item-1", List.of("Sortida 2", "Sortida 3"), Map.of("Sortida 2", "Llum", "Sortida 3", List.of("Moviment", "Llum")))))
+                    .contains("would both play").contains("Llum");
+            assertThat(detail(new SceneOp.AddItem(4, null, null, null, null, null, null, null, List.of("Sortida 2", "Sortida 3"), null)))
+                    .contains("would both play");
+            assertThat(detail(new SceneOp.SetItemPorts("item-1", List.of("Sortida 2"), Map.of("Sortida 2", List.of()))))
+                    .contains("empty");
+            assertThat(doc.items()).hasSize(1);
+            assertThat(doc.items().get(0).ports()).containsExactly(102);
+            assertThat(doc.items().get(0).portTypes()).containsExactly(Map.entry(102, List.of(40)));
         }
 
         @Test

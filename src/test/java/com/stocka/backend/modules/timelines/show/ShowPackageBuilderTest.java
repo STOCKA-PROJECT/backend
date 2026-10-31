@@ -831,9 +831,13 @@ class ShowPackageBuilderTest {
         }
 
         /** Focos bound to relays 1 (its own) and 2 (Sembra's), with one clip per type. */
-        private SceneDocument docWithRoles(Map<Integer, Integer> roles) {
+        private SceneDocument docWithRoles(Map<Integer, List<Integer>> roles) {
+            return docWithRoles(List.of(1, 2), roles);
+        }
+
+        private SceneDocument docWithRoles(List<Integer> ports, Map<Integer, List<Integer>> roles) {
             List<Item> items = items();
-            replace(items, i -> i.id().equals("i-focos"), i -> i.withPorts(List.of(1, 2), roles));
+            replace(items, i -> i.id().equals("i-focos"), i -> i.withPorts(ports, roles));
             items.removeIf(i -> i.id().equals("i-sembra"));
             List<Clip> clips = new ArrayList<>(List.of(
                     new Clip("k1", "t-i-focos", 13, 0, 1000, Map.of(), null),
@@ -844,7 +848,7 @@ class ShowPackageBuilderTest {
         @Test
         @DisplayName("drives one port per type of the piece: the action of each type reaches the port playing it")
         void onePortPerType() {
-            Assembled assembled = builder.assemble(ShowBuildInput.of(docWithRoles(Map.of(2, LLUM)), context(), Belen2026Fixture.ports()));
+            Assembled assembled = builder.assemble(ShowBuildInput.of(docWithRoles(Map.of(2, List.of(LLUM))), context(), Belen2026Fixture.ports()));
             assertThat(errors(assembled)).isEmpty();
             assertThat(assembled.timeline().stream().map(e -> e.t() + " " + e.target() + "." + e.action()).toList())
                     .containsExactly("0 Focos.turn_on", "500 Sembra.turn_on");
@@ -860,16 +864,45 @@ class ShowPackageBuilderTest {
             assertThat(errors(none).get(0).message()).contains("«Llum»").contains("«Encendre un temps»");
             assertThat(errors(none).get(0).clipId()).isEqualTo("k2");
 
-            Assembled foreign = builder.assemble(ShowBuildInput.of(docWithRoles(Map.of(2, Belen2026Fixture.SEGMENT_TYPE)), context(),
+            Assembled foreign = builder.assemble(ShowBuildInput.of(docWithRoles(Map.of(2, List.of(Belen2026Fixture.SEGMENT_TYPE))), context(),
                     Belen2026Fixture.ports()));
             assertThat(codes(errors(foreign))).contains("E_PORT_TYPE_MISMATCH");
 
             StubSceneContext withSegment = context().piece(1, "Focos", List.of(Belen2026Fixture.RELAY_TYPE, LLUM, Belen2026Fixture.SEGMENT_TYPE),
                     List.of("Tipus 1", "Llum", "Tipus 2"), List.of("relay", "relay", "led_segment"));
-            Assembled kind = builder.assemble(ShowBuildInput.of(docWithRoles(Map.of(2, Belen2026Fixture.SEGMENT_TYPE)), withSegment,
+            Assembled kind = builder.assemble(ShowBuildInput.of(docWithRoles(Map.of(2, List.of(Belen2026Fixture.SEGMENT_TYPE))), withSegment,
                     Belen2026Fixture.ports()));
             assertThat(codes(errors(kind))).contains("E_PORT_KIND_MISMATCH");
             assertThat(errors(kind).get(0).port()).isEqualTo("Sembra");
+        }
+
+        @Test
+        @DisplayName("a port playing both types of the piece receives the actions of both, named once in meta.pieces, with a warning")
+        void sharedPort() {
+            SceneDocument doc = docWithRoles(List.of(1), Map.of(1, List.of(Belen2026Fixture.RELAY_TYPE, LLUM)));
+            Assembled assembled = builder.assemble(ShowBuildInput.of(doc, context(), Belen2026Fixture.ports()));
+            assertThat(errors(assembled)).isEmpty();
+            assertThat(assembled.timeline().stream().map(e -> e.t() + " " + e.target() + "." + e.action()).toList())
+                    .containsExactly("0 Focos.turn_on", "500 Focos.turn_on");
+            assertThat(assembled.pieces()).containsEntry("Focos", List.of("Focos"));
+            List<ShowIssue> shared = assembled.issues().stream().filter(i -> i.code().equals("W_PORT_SHARED_ROLES")).toList();
+            assertThat(shared).hasSize(1);
+            assertThat(shared.get(0).port()).isEqualTo("Focos");
+            assertThat(shared.get(0).message()).contains("«Tipus 1»").contains("«Llum»").contains("«Focos»");
+            assertThat(assembled.issues()).extracting(ShowIssue::code).doesNotContain("W_PORT_ROLE_DUPLICATE");
+        }
+
+        @Test
+        @DisplayName("two ports playing the same type (older scenes) warn once and both still receive the action")
+        void duplicateRole() {
+            Assembled assembled = builder.assemble(ShowBuildInput.of(docWithRoles(Map.of(2, List.of(Belen2026Fixture.RELAY_TYPE))),
+                    context(), Belen2026Fixture.ports()));
+            assertThat(assembled.timeline().stream().filter(e -> e.t() == 0).map(ShowEvent::target).toList())
+                    .containsExactly("Focos", "Sembra");
+            List<ShowIssue> dup = assembled.issues().stream().filter(i -> i.code().equals("W_PORT_ROLE_DUPLICATE")).toList();
+            assertThat(dup).hasSize(1);
+            assertThat(dup.get(0).message()).contains("2 ports").contains("Focos, Sembra").contains("«Tipus 1»");
+            assertThat(assembled.issues()).extracting(ShowIssue::code).doesNotContain("W_PORT_SHARED_ROLES");
         }
     }
 }

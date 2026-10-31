@@ -72,14 +72,17 @@ public record SceneSummary(
             Optional<PieceRef> piece = item.pieceId() == null ? Optional.empty() : context.pieceById(item.pieceId());
             String name = piece.map(PieceRef::name).orElse("(missing piece " + item.pieceId() + ")");
             pieceNames.put(item.id(), name);
-            // A port playing a type other than its own says so: "Sortida 3 (as Llum)".
+            // A port playing a type other than its own, or several, says so: "Sortida 3 (as Llum, Moviment)".
             List<String> ports = new ArrayList<>();
             for (Integer portId : item.ports()) {
                 ports.add(context.portById(portId).map(p -> {
-                    Integer role = item.portRole(p.id(), p.pieceTypeId());
-                    if (role == null || role.equals(p.pieceTypeId()) || piece.isEmpty()) return p.name();
-                    int typeIndex = piece.get().typeIds().indexOf(role);
-                    return p.name() + " (as " + (typeIndex < 0 ? "type " + role : piece.get().typeNames().get(typeIndex)) + ")";
+                    List<Integer> roles = item.portRoles(p.id(), p.pieceTypeId());
+                    if (roles.isEmpty() || piece.isEmpty() || roles.equals(List.of(p.pieceTypeId()))) return p.name();
+                    List<String> names = roles.stream().map(role -> {
+                        int typeIndex = piece.get().typeIds().indexOf(role);
+                        return typeIndex < 0 ? "type " + role : piece.get().typeNames().get(typeIndex);
+                    }).toList();
+                    return p.name() + " (as " + String.join(", ", names) + ")";
                 }).orElse("#" + portId));
             }
             itemSummaries.add(new ItemSummary(item.id(), item.pieceId(), name,

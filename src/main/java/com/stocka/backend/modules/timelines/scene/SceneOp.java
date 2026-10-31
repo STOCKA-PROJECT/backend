@@ -51,8 +51,9 @@ public sealed interface SceneOp permits SceneOp.AddLayer, SceneOp.AddItem, Scene
             @Param("Height in cm (default 10)") Double height,
             @Param("Rotation in degrees (default 0)") Double rotation,
             @Param("Hardware ports to bind, by id or name (hardware organizations only)") List<String> ports,
-            @Param("Piece type each port plays (port id or name → type id or name of the piece); needed when the piece "
-                    + "has several types of the same kind, e.g. a figure with «Llum» and «Moviment» both relays") Map<String, String> portTypes)
+            @Param("Piece type each port plays (port id or name → type id or name of the piece, or a list of them when the "
+                    + "same port plays several types); needed when the piece has several types of the same kind, e.g. a "
+                    + "figure with «Llum» and «Moviment» both relays. A type drives one port") Map<String, Object> portTypes)
             implements SceneOp {
     }
 
@@ -71,8 +72,9 @@ public sealed interface SceneOp permits SceneOp.AddLayer, SceneOp.AddItem, Scene
     record SetItemPorts(
             @Param(value = "Item id", required = true) String itemId,
             @Param(value = "Ports by id or name; empty list unbinds", required = true) List<String> ports,
-            @Param("Piece type each port plays (port id or name → type id or name of the piece); a port without an entry "
-                    + "plays its own type. Use it when the piece has several types of the same kind") Map<String, String> portTypes)
+            @Param("Piece type each port plays (port id or name → type id or name of the piece, or a list of them when the "
+                    + "same port plays several types); a port without an entry plays its own type. Use it when the piece has "
+                    + "several types of the same kind. A type drives one port: two ports playing the same type are refused") Map<String, Object> portTypes)
             implements SceneOp {
     }
 
