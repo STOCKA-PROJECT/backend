@@ -350,18 +350,24 @@ refused by `/mcp`, MCP tokens by the REST API.
   exception to `{error, message, hint, params}` (`ToolErrorMapper`). JSON Schemas come from `ToolSchemas`
   (records → properties; `SceneOp` → `oneOf`). Resources (`stocka://guide`, `stocka://catalog`,
   `stocka://schema/scene`, `stocka://org/{slug}/overview`) and prompts live in `resource/` and `prompt/`.
-- Port bindings of an item (2026-10-30, one port per type since 2026-10-31): `Item.ports` plus optional `portTypes`
-  (port id → piece type the port plays for that item, or a list of type ids when the same port plays several types
-  of the piece; absent = the port's own type; `PortTypesSerializer` writes a single role as a number so older scenes
-  do not change). Compatibility is by kind (a relay port fits any relay type of the piece), the actions of a type
-  drive the port playing it (`ExecutionPlan` lists the port once per role, `ShowPort.pieceTypeId`), and
-  `SceneValidator`/`ExecutionPlan` report `E_PORT_TYPE_MISMATCH` (role not a type of the piece),
-  `E_PORT_KIND_MISMATCH`, `W_PORT_SHARED_ROLES` (one port plays several types of the piece: chosen on purpose, the
-  tracks of all of them drive it) and `W_PORT_ROLE_DUPLICATE` (several ports play the same type, older scenes).
-  A type drives one port: `set_item_ports`/`add_item` refuse two ports playing the same type and take `portTypes`
-  by port id/name → type id/name or a list of them. Same model in the editor (`utils/portRoles.ts`: one dropdown
-  per type, `withTypePort`). No migration: it lives in the scene JSON. Plan:
-  `../timeline-editor/docs/plan/puertos-por-tipo.md`.
+- Port bindings of an item (2026-10-30; several ports per type with a track per port since 2026-11-04): `Item.ports`
+  plus optional `portTypes` (port id → piece type the port plays for that item, or a list of type ids when the same
+  port plays several types of the piece; absent = the port's own type; `PortTypesSerializer` writes a single role as a
+  number so older scenes do not change). Compatibility is by kind (a relay port fits any relay type of the piece), the
+  actions of a type drive the ports playing it (`ExecutionPlan` lists the port once per role, `ShowPort.pieceTypeId`),
+  and `SceneValidator`/`ExecutionPlan` report `E_PORT_TYPE_MISMATCH` (role not a type of the piece),
+  `E_PORT_KIND_MISMATCH` and `W_PORT_SHARED_ROLES` (one port plays several types of the piece: chosen on purpose, the
+  tracks of all of them drive it). A type may drive **several ports** (a piece with two independent lights or motors):
+  `Track.portId` (`SceneDocument.Track`, optional, lives in the scene JSON, no migration) makes a track drive only that
+  port of the item, so the piece gets a track per relay; a track without port drives every port playing the action's
+  type (`W_PORTS_TOGETHER` when there are several). Ops: `add_track {itemId, port?}`, `set_track_port {trackId, port?}`,
+  `add_clip {itemId, port?}` (the port's track, created if missing); a clip on a port track must be of a type the port
+  plays (`SceneEditor` refuses it in `add_clip`/`update_clip`/`move_clip`, `SceneValidator` and the export report
+  `E_TRACK_PORT_MISMATCH`; a port the item is no longer bound to is `E_TRACK_PORT_UNBOUND`, and `set_item_ports`
+  frees the tracks of a port it unbinds). The editor mirrors it (`utils/portRoles.ts`: one list per type with
+  `addTypePort`/`moveTypePort`, «Pista» button per port, port tracks named «Peça · Port» on the timeline). The
+  `show.json` does not change (events are per port), so neither the Pi nor the belén app are touched. Plans:
+  `../timeline-editor/docs/plan/puertos-por-tipo.md`, `../timeline-editor/docs/plan/pistas-por-puerto.md`.
 - Timelines are edited through `SceneOp` batches (`SceneEditor`, `SceneValidator`, `SceneSummary`,
   `SceneJsonCodec` keeps unknown editor fields) with optimistic `version`; since 2026-10-23 a show lasts until the
   end of its last clip (`SceneDocument` derives `durationMs`; the stored value only counts without clips; op

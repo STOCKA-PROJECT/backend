@@ -3,11 +3,13 @@ package com.stocka.backend.modules.timelines.show;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.IntFunction;
 
 import com.stocka.backend.modules.piecetypes.dto.ActionParameterDto;
@@ -71,13 +73,15 @@ public record ExecutionPlan(
      *
      * @param clipId     clip id
      * @param itemId     board item the step drives
+     * @param portId     the one port of the item the step drives (its track's port), or {@code null} for every
+     *                   port playing the action's type
      * @param startMs    start
      * @param durationMs length
      * @param action     resolved action, or {@code null} when the clip has none or it is unresolved
      * @param params     final parameter values by name (dynamic values the clip lacks are {@code null})
      * @param label      clip label, or {@code null}
      */
-    public record ExecutionStep(String clipId, String itemId, long startMs, long durationMs, ExecutionAction action,
+    public record ExecutionStep(String clipId, String itemId, Integer portId, long startMs, long durationMs, ExecutionAction action,
                                 Map<String, Object> params, String label) {
     }
 
@@ -129,20 +133,21 @@ public record ExecutionPlan(
                 }
                 if (roles.isEmpty()) ports.add(port);
             }
-            piece.ifPresent(p -> warnRoleCardinality(p, ports, issues));
             items.add(new ExecutionItem(item.id(), item.pieceId(), piece.map(PieceRef::name).orElse(null), ports));
         }
 
-        Map<String, String> itemIdByTrack = new HashMap<>();
+        Map<String, Track> trackById = new HashMap<>();
         for (Track track : doc.tracks()) {
-            itemIdByTrack.put(track.id(), track.itemId());
+            trackById.put(track.id(), track);
         }
+        Map<String, Set<Integer>> typesOnGeneralTracks = new HashMap<>();
         List<Clip> clips = new ArrayList<>(doc.clips());
         clips.sort((a, b) -> Long.compare(a.startMs(), b.startMs()));
         List<ExecutionStep> schedule = new ArrayList<>();
         for (Clip clip : clips) {
             String clipLabel = clip.label() != null ? clip.label() : clip.id();
-            String itemId = itemIdByTrack.get(clip.trackId());
+            Track track = trackById.get(clip.trackId());
+            String itemId = track == null ? null : track.itemId();
             if (itemId == null) {
                 issues.add(ShowIssue.warning("W_TRACK_MISSING",
                         "El clip " + clipLabel + " apunta a una pista inexistent i s'ha omès.", clip.id(), null));
@@ -164,10 +169,17 @@ public record ExecutionPlan(
                 } else {
                     action = new ExecutionAction(def.id(), def.name(), def.displayName(), def.typeId());
                     params = resolveParams(def, clip.paramValues(), clip.durationMs());
+                    if (track.portId() == null) {
+                        typesOnGeneralTracks.computeIfAbsent(itemId, k -> new HashSet<>()).add(def.typeId());
+                    }
                 }
             }
-            schedule.add(new ExecutionStep(clip.id(), itemId, clip.startMs(), clip.durationMs(), action, params,
+            schedule.add(new ExecutionStep(clip.id(), itemId, track.portId(), clip.startMs(), clip.durationMs(), action, params,
                     clip.label()));
+        }
+        for (ExecutionItem item : items) {
+            pieceOf(context, item.pieceId()).ifPresent(p -> warnRoleCardinality(p, item.ports(),
+                    typesOnGeneralTracks.getOrDefault(item.itemId(), Set.of()), issues));
         }
         return new ExecutionPlan(doc.durationMs(), doc.fps() == null ? 30 : doc.fps(), items, schedule, issues);
     }
@@ -242,10 +254,15 @@ public record ExecutionPlan(
     }
 
     /**
-     * A type of the piece drives one port: several ports playing it (older scenes) and one port playing
-     * several types of the piece (chosen on purpose) are warned about, not refused, like the validator does.
+     * Several ports may play the same type of the piece (two independent lights): the clips of a track
+     * without port drive all of them at once, warned about so the author adds a track per port when they
+     * should move separately. One port playing several types of the piece (chosen on purpose) is warned
+     * about too, not refused, like the validator does.
+     *
+     * @param typesOnGeneralTracks types of the piece with steps on a track without port
      */
-    private static void warnRoleCardinality(PieceRef piece, List<ShowPort> ports, List<ShowIssue> issues) {
+    private static void warnRoleCardinality(PieceRef piece, List<ShowPort> ports, Set<Integer> typesOnGeneralTracks,
+                                            List<ShowIssue> issues) {
         Map<Integer, List<String>> portsByType = new LinkedHashMap<>();
         Map<String, List<String>> typesByPort = new LinkedHashMap<>();
         for (ShowPort port : ports) {
@@ -255,10 +272,11 @@ public record ExecutionPlan(
             typesByPort.computeIfAbsent(port.name(), k -> new ArrayList<>()).add(piece.typeNames().get(typeIndex));
         }
         portsByType.forEach((typeId, names) -> {
-            if (names.size() > 1) {
-                issues.add(ShowIssue.warning("W_PORT_ROLE_DUPLICATE", "«" + piece.name() + "» té " + names.size() + " ports fent de «"
-                        + piece.typeNames().get(piece.typeIds().indexOf(typeId)) + "» (" + String.join(", ", names)
-                        + "): un tipus hauria de moure un sol port.", null, names.get(0)));
+            if (names.size() > 1 && typesOnGeneralTracks.contains(typeId)) {
+                issues.add(ShowIssue.warning("W_PORTS_TOGETHER", "Els clips de «"
+                        + piece.typeNames().get(piece.typeIds().indexOf(typeId)) + "» a la pista general de «" + piece.name()
+                        + "» mouen " + names.size() + " ports alhora (" + String.join(", ", names)
+                        + "): crea una pista per port per moure'ls per separat.", null, names.get(0)));
             }
         });
         typesByPort.forEach((name, types) -> {

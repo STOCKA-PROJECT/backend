@@ -22,6 +22,7 @@ import com.stocka.backend.modules.common.schema.Param;
         @JsonSubTypes.Type(value = SceneOp.RemoveItem.class, name = "remove_item"),
         @JsonSubTypes.Type(value = SceneOp.AddTrack.class, name = "add_track"),
         @JsonSubTypes.Type(value = SceneOp.RenameTrack.class, name = "rename_track"),
+        @JsonSubTypes.Type(value = SceneOp.SetTrackPort.class, name = "set_track_port"),
         @JsonSubTypes.Type(value = SceneOp.RemoveTrack.class, name = "remove_track"),
         @JsonSubTypes.Type(value = SceneOp.AddClip.class, name = "add_clip"),
         @JsonSubTypes.Type(value = SceneOp.UpdateClip.class, name = "update_clip"),
@@ -32,7 +33,7 @@ import com.stocka.backend.modules.common.schema.Param;
         @JsonSubTypes.Type(value = SceneOp.SetSchedule.class, name = "set_schedule")
 })
 public sealed interface SceneOp permits SceneOp.AddLayer, SceneOp.AddItem, SceneOp.UpdateItem, SceneOp.SetItemPorts,
-        SceneOp.RemoveItem, SceneOp.AddTrack, SceneOp.RenameTrack, SceneOp.RemoveTrack, SceneOp.AddClip,
+        SceneOp.RemoveItem, SceneOp.AddTrack, SceneOp.RenameTrack, SceneOp.SetTrackPort, SceneOp.RemoveTrack, SceneOp.AddClip,
         SceneOp.UpdateClip, SceneOp.MoveClip, SceneOp.RemoveClip, SceneOp.SetBoard,
         SceneOp.SetStripOrder, SceneOp.SetSchedule {
 
@@ -53,7 +54,8 @@ public sealed interface SceneOp permits SceneOp.AddLayer, SceneOp.AddItem, Scene
             @Param("Hardware ports to bind, by id or name (hardware organizations only)") List<String> ports,
             @Param("Piece type each port plays (port id or name → type id or name of the piece, or a list of them when the "
                     + "same port plays several types); needed when the piece has several types of the same kind, e.g. a "
-                    + "figure with «Llum» and «Moviment» both relays. A type drives one port") Map<String, Object> portTypes)
+                    + "figure with «Llum» and «Moviment» both relays. Several ports may play the same type (a piece with two "
+                    + "independent lights): then add a track per port to drive them separately") Map<String, Object> portTypes)
             implements SceneOp {
     }
 
@@ -74,7 +76,9 @@ public sealed interface SceneOp permits SceneOp.AddLayer, SceneOp.AddItem, Scene
             @Param(value = "Ports by id or name; empty list unbinds", required = true) List<String> ports,
             @Param("Piece type each port plays (port id or name → type id or name of the piece, or a list of them when the "
                     + "same port plays several types); a port without an entry plays its own type. Use it when the piece has "
-                    + "several types of the same kind. A type drives one port: two ports playing the same type are refused") Map<String, Object> portTypes)
+                    + "several types of the same kind. Several ports may play the same type (two independent lights): the clips "
+                    + "of a track without port drive all of them, a track with port (add_track with port) drives only that one. "
+                    + "Tracks driving a port that is unbound here lose their port") Map<String, Object> portTypes)
             implements SceneOp {
     }
 
@@ -82,10 +86,12 @@ public sealed interface SceneOp permits SceneOp.AddLayer, SceneOp.AddItem, Scene
     record RemoveItem(@Param(value = "Item id", required = true) String itemId) implements SceneOp {
     }
 
-    /** Adds a track to an item. */
+    /** Adds a track to an item, optionally driving one of its ports. */
     record AddTrack(
             @Param(value = "Item id", required = true) String itemId,
-            @Param("Track name; default the piece name") String name) implements SceneOp {
+            @Param("Track name; default the piece name (or the port name)") String name,
+            @Param("Port of the item (by id or name, already bound to it) the track drives; its clips reach only that port. "
+                    + "Omitted: the clips drive every port of the item playing the action's type") String port) implements SceneOp {
     }
 
     /** Renames a track. */
@@ -94,14 +100,24 @@ public sealed interface SceneOp permits SceneOp.AddLayer, SceneOp.AddItem, Scene
             @Param(value = "New name", required = true) String name) implements SceneOp {
     }
 
+    /** Makes a track drive one port of its item, or every port of the action's type again. */
+    record SetTrackPort(
+            @Param(value = "Track id", required = true) String trackId,
+            @Param("Port of the item (by id or name, already bound to it); omitted or empty = the track drives every port "
+                    + "playing the action's type. Clips of the track must be of a type the port plays") String port) implements SceneOp {
+    }
+
     /** Removes a track and its clips. */
     record RemoveTrack(@Param(value = "Track id", required = true) String trackId) implements SceneOp {
     }
 
-    /** Adds a clip to a track (or to the first track of an item). */
+    /** Adds a clip to a track (or to the first track of an item, or to the item's track of a port). */
     record AddClip(
-            @Param("Item id: the clip goes on the item's first track (created if missing)") String itemId,
+            @Param("Item id: the clip goes on the item's first track without port (created if missing), or on the track of "
+                    + "`port` when given") String itemId,
             @Param("Track id (alternative to itemId)") String trackId,
+            @Param("With itemId: port of the item (by id or name) whose track takes the clip, created if missing; the clip then "
+                    + "drives only that port") String port,
             @Param(value = "Action name or id among the actions of the item's piece types", required = true) String action,
             @Param("Start in ms; omitted = right after the last clip of the track (or 0)") Long startMs,
             @Param("Start right after this clip id (alternative to startMs)") String after,

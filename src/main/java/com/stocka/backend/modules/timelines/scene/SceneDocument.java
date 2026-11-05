@@ -33,7 +33,7 @@ public record SceneDocument(
         @Param("Board size") Board board,
         @Param("Layers") List<Layer> layers,
         @Param("Pieces placed on the board") List<Item> items,
-        @Param("Tracks (one or more per item)") List<Track> tracks,
+        @Param("Tracks (one or more per item; a track may drive one port of the item)") List<Track> tracks,
         @Param("Clips: actions played on a track") List<Clip> clips,
         @Param("Total length in milliseconds: the end of the last clip (the stored value only counts while there are no clips)") long durationMs,
         @Param("Editor frame rate") Integer fps,
@@ -183,9 +183,10 @@ public record SceneDocument(
 
         /**
          * The piece types a bound port plays for this item: the explicit {@code portTypes} entry, else the
-         * port's own type. The actions of each type drive the port. A type drives one port, so a piece
-         * with two types of the same kind (a figure with «Llum» and «Moviment», both relays) gets one
-         * port per type, or the same port for both when it was chosen for both.
+         * port's own type. The actions of each type drive the port. A piece with two types of the same kind
+         * (a figure with «Llum» and «Moviment», both relays) gets one port per type, or the same port for
+         * both when it was chosen for both; a type may also drive several ports (two independent lights),
+         * told apart by the {@link Track#portId()} of the track the clip sits on.
          *
          * @param portId     the port
          * @param portTypeId the port's own piece type ({@code null} for infrastructure ports)
@@ -275,10 +276,22 @@ public record SceneDocument(
         }
     }
 
+    /**
+     * A row of the timeline. Clips of a track without {@code portId} drive every port of the item playing the
+     * action's type; a track with {@code portId} drives only that port (bound to the item), so a piece with two
+     * independent lights of the same type gets one track per relay.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Track(
             @Param("Track id") String id,
             @Param("Item id") String itemId,
-            @Param("Name") String name) {
+            @Param("Name") String name,
+            @Param("Port of the item this track drives; absent = every port playing the action's type") Integer portId) {
+
+        /** @return a copy driving another port ({@code null} = every port of the type) */
+        public Track withPort(Integer portId) {
+            return new Track(id, itemId, name, portId);
+        }
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

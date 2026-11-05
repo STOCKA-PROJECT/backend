@@ -55,7 +55,7 @@ class SceneValidatorTest {
     private Item item(String id, int pieceId, Integer... ports) {
         Item it = new Item(id, pieceId, "layer-1", 0, 0, 100, 100, 0, null, null, List.of(ports), null, null);
         items.add(it);
-        tracks.add(new Track("t-" + id, id, "T"));
+        tracks.add(new Track("t-" + id, id, "T", null));
         return it;
     }
 
@@ -83,7 +83,7 @@ class SceneValidatorTest {
         void structure() {
             items.add(new Item("a", 1, "layer-1", 0, 0, 10, 10, 0, null, null, List.of(), null, null));
             items.add(new Item("a", 1, "layer-9", 0, 0, 10, 10, 0, null, null, List.of(), null, null));
-            tracks.add(new Track("t", "zzz", "T"));
+            tracks.add(new Track("t", "zzz", "T", null));
             clips.add(new Clip("c", "nope", null, -1, 0, Map.of(), null));
             List<String> codes = codes(1000);
             assertThat(codes).contains("E_ID", "E_REF", "E_CLIP_TIME");
@@ -245,7 +245,7 @@ class SceneValidatorTest {
         private Item itemPlaying(String id, int pieceId, List<Integer> ports, Map<Integer, List<Integer>> portTypes) {
             Item it = new Item(id, pieceId, "layer-1", 0, 0, 100, 100, 0, null, null, ports, null, portTypes);
             items.add(it);
-            tracks.add(new Track("t-" + id, id, "T"));
+            tracks.add(new Track("t-" + id, id, "T", null));
             return it;
         }
 
@@ -256,7 +256,7 @@ class SceneValidatorTest {
             clip("a", "m", 503, 0, 1000, Map.of());
             clip("b", "m", 504, 2000, 1000, Map.of());
             assertThat(codes(10_000)).doesNotContain("E_PORT_TYPE_MISMATCH", "E_PORT_KIND_MISMATCH", "W_NO_PORT",
-                    "W_PORT_ROLE_DUPLICATE", "W_PORT_SHARED_ROLES");
+                    "W_PORTS_TOGETHER", "W_PORT_SHARED_ROLES");
         }
 
         @Test
@@ -267,28 +267,39 @@ class SceneValidatorTest {
             clip("b", "m", 504, 2000, 1000, Map.of());
             List<SceneIssue> issues = SceneValidator.validate(doc(10_000), ctx, catalog);
             assertThat(issues).extracting(SceneIssue::code).contains("W_PORT_SHARED_ROLES")
-                    .doesNotContain("W_NO_PORT", "W_PORT_ROLE_DUPLICATE", "E_PORT_TYPE_MISMATCH");
+                    .doesNotContain("W_NO_PORT", "W_PORTS_TOGETHER", "E_PORT_TYPE_MISMATCH");
             SceneIssue shared = issues.stream().filter(i -> i.code().equals("W_PORT_SHARED_ROLES")).findFirst().orElseThrow();
             assertThat(shared.itemId()).isEqualTo("m");
             assertThat(shared.message()).contains("Sortida 2").contains("Llum").contains("Moviment").contains("Molí");
         }
 
         @Test
-        @DisplayName("two ports playing the same type (older scenes) warn: a type drives one port")
-        void duplicateRole() {
+        @DisplayName("two ports playing the same type are fine; clips of that type on a track without port warn they drive both")
+        void severalPortsForType() {
             itemPlaying("m", 3, List.of(101, 102), Map.of(101, List.of(41)));
+            assertThat(codes(10_000)).as("no clip: nothing to warn about").isEmpty();
+            clip("a", "m", 503, 0, 1000, Map.of());
+            assertThat(codes(10_000)).as("a clip of another type does not warn").containsExactly("W_NO_PORT");
+            clip("b", "m", 504, 2000, 1000, Map.of());
             List<SceneIssue> issues = SceneValidator.validate(doc(10_000), ctx, catalog);
-            assertThat(issues).extracting(SceneIssue::code).containsExactly("W_PORT_ROLE_DUPLICATE");
-            assertThat(issues.get(0).itemId()).isEqualTo("m");
-            assertThat(issues.get(0).message()).contains("Focos").contains("Sortida 2").contains("Moviment").contains("Molí");
+            assertThat(issues).extracting(SceneIssue::code).containsExactlyInAnyOrder("W_NO_PORT", "W_PORTS_TOGETHER");
+            SceneIssue together = issues.stream().filter(i -> i.code().equals("W_PORTS_TOGETHER")).findFirst().orElseThrow();
+            assertThat(together.itemId()).isEqualTo("m");
+            assertThat(together.message()).contains("Focos").contains("Sortida 2").contains("Moviment").contains("Molí");
+            // The same clip on a track driving one port: nothing to warn about.
+            clips.clear();
+            tracks.add(new Track("tp", "m", "P", 102));
+            clips.add(new Clip("b", "tp", 504, 2000, 1000, Map.of(), null));
+            assertThat(codes(10_000)).isEmpty();
         }
 
         @Test
         @DisplayName("roles the piece lacks and stale ports do not count as shared or duplicated")
         void cardinalityIgnoresInvalidRoles() {
             itemPlaying("m", 3, List.of(102, 999), Map.of(102, List.of(41, 77), 999, List.of(41)));
+            clip("b", "m", 504, 2000, 1000, Map.of());
             assertThat(codes(10_000)).contains("E_PORT_TYPE_MISMATCH", "W_PORT_STALE")
-                    .doesNotContain("W_PORT_SHARED_ROLES", "W_PORT_ROLE_DUPLICATE");
+                    .doesNotContain("W_PORT_SHARED_ROLES", "W_PORTS_TOGETHER");
         }
 
         @Test
@@ -328,6 +339,85 @@ class SceneValidatorTest {
             itemPlaying("m", 3, List.of(999), Map.of(999, List.of(40)));
             clip("a", "m", 503, 0, 1000, Map.of());
             assertThat(codes(10_000)).contains("W_PORT_STALE", "W_NO_PORT").doesNotContain("E_PORT_TYPE_MISMATCH");
+        }
+    }
+
+    @Nested
+    @DisplayName("track ports (a track driving one port of the item)")
+    class TrackPorts {
+
+        @BeforeEach
+        void twoMotorsOnOnePiece() {
+            ctx.piece(3, "Molí", List.of(40, 41), List.of("Llum", "Moviment"), List.of("relay", "relay"))
+                    .port(102, "Sortida 2", 41, "relay")
+                    .port(103, "Sortida 3", 41, "relay")
+                    .action(503, "turn_on", "Il·luminar", 40, "Llum", "relay")
+                    .action(504, "turn_on", "Moure", 41, "Moviment", "relay");
+            // Two relays playing «Moviment», «Focos» playing «Llum».
+            Item it = new Item("m", 3, "layer-1", 0, 0, 100, 100, 0, null, null, List.of(102, 103, 101), null, Map.of(101, List.of(40)));
+            items.add(it);
+            tracks.add(new Track("t-m", "m", "General", null));
+        }
+
+        private void track(String id, Integer portId) {
+            tracks.add(new Track(id, "m", id, portId));
+        }
+
+        private void clipOn(String id, String trackId, int actionId) {
+            clips.add(new Clip(id, trackId, actionId, clips.size() * 2000L, 1000, Map.of(), null));
+        }
+
+        @Test
+        @DisplayName("a clip on a track driving a port that plays its type is clean, without W_NO_PORT or W_PORTS_TOGETHER")
+        void pinnedClipAccepted() {
+            track("tp2", 102);
+            track("tp3", 103);
+            clipOn("a", "tp2", 504);
+            clipOn("b", "tp3", 504);
+            assertThat(codes(10_000)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("a clip whose type the track's port does not play is E_TRACK_PORT_MISMATCH on the clip")
+        void mismatch() {
+            track("tp2", 102);
+            clipOn("a", "tp2", 503);
+            List<SceneIssue> issues = SceneValidator.validate(doc(10_000), ctx, catalog);
+            assertThat(issues).extracting(SceneIssue::code).containsExactly("E_TRACK_PORT_MISMATCH");
+            assertThat(issues.get(0).clipId()).isEqualTo("a");
+            assertThat(issues.get(0).itemId()).isEqualTo("m");
+            assertThat(issues.get(0).message()).contains("turn_on").contains("Llum").contains("Sortida 2").contains("tp2");
+        }
+
+        @Test
+        @DisplayName("a port playing two types of the piece accepts the clips of both on its track")
+        void sharedPortTrack() {
+            items.set(0, items.get(0).withPorts(List.of(102), Map.of(102, List.of(40, 41))));
+            track("tp2", 102);
+            clipOn("a", "tp2", 503);
+            clipOn("b", "tp2", 504);
+            assertThat(codes(10_000)).containsExactly("W_PORT_SHARED_ROLES");
+        }
+
+        @Test
+        @DisplayName("a track driving a port the item is not bound to, or a stale one, is E_TRACK_PORT_UNBOUND; its clips are not checked against a port nor counted as driving every port")
+        void unbound() {
+            track("tp100", 100);
+            track("tp999", 999);
+            clipOn("a", "tp100", 504);
+            clipOn("b", "tp999", 503);
+            List<SceneIssue> issues = SceneValidator.validate(doc(10_000), ctx, catalog);
+            assertThat(issues).extracting(SceneIssue::code).containsExactly("E_TRACK_PORT_UNBOUND", "E_TRACK_PORT_UNBOUND");
+            assertThat(issues.get(0).message()).contains("tp100").contains("Fondo1").contains("not bound").contains("Molí");
+            assertThat(issues.get(1).message()).contains("tp999").contains("999").contains("no longer exists");
+            assertThat(issues).allMatch(i -> "m".equals(i.itemId()) && i.clipId() == null);
+        }
+
+        @Test
+        @DisplayName("a track of an item or piece that does not exist is reported as a reference error only")
+        void missingItem() {
+            tracks.add(new Track("tz", "zzz", "Z", 102));
+            assertThat(codes(10_000)).containsExactly("E_REF");
         }
     }
 }

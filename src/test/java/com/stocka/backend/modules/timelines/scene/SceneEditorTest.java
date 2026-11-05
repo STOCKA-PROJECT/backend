@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.util.List;
 import java.util.Map;
 
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import com.stocka.backend.modules.piecetypes.entity.AttributeType;
 import com.stocka.backend.modules.timelines.scene.SceneDocument.Clip;
 import com.stocka.backend.modules.timelines.scene.SceneDocument.Item;
+import com.stocka.backend.modules.timelines.scene.SceneDocument.Track;
 import com.stocka.backend.modules.timelines.scene.SceneEditor.Change;
 
 @DisplayName("SceneEditor")
@@ -152,7 +154,7 @@ class SceneEditorTest {
         void portsAndRemoval() {
             apply(new SceneOp.AddItem(2, null, null, null, null, null, null, null, null, null),
                     new SceneOp.SetItemPorts("item-1", List.of("Fondo1"), null),
-                    new SceneOp.AddClip("item-1", null, "clear", 0L, null, null, 1000L, null, null),
+                    new SceneOp.AddClip("item-1", null, null, "clear", 0L, null, null, 1000L, null, null),
                     new SceneOp.SetStripOrder("Fondo1", List.of("item-1")));
             assertThat(doc.items().get(0).ports()).containsExactly(100);
             assertThat(doc.clips()).hasSize(1);
@@ -175,11 +177,11 @@ class SceneEditorTest {
             assertThat(change.createdIds()).containsExactly("layer-2");
             assertThat(doc.layers().get(1).z()).isEqualTo(1);
             apply(new SceneOp.AddItem(1, null, null, null, null, null, null, null, null, null),
-                    new SceneOp.AddTrack("item-1", "Segona"));
+                    new SceneOp.AddTrack("item-1", "Segona", null));
             assertThat(doc.tracks()).extracting(t -> t.name()).containsExactly("Pastor", "Segona");
             apply(new SceneOp.RenameTrack("track-2", "Tercera"));
             assertThat(doc.tracks().get(1).name()).isEqualTo("Tercera");
-            apply(new SceneOp.AddClip(null, "track-2", "wave", 0L, null, null, null, null, null));
+            apply(new SceneOp.AddClip(null, "track-2", null, "wave", 0L, null, null, null, null, null));
             apply(new SceneOp.RemoveTrack("track-2"));
             assertThat(doc.tracks()).hasSize(1);
             assertThat(doc.clips()).isEmpty();
@@ -201,7 +203,7 @@ class SceneEditorTest {
         @Test
         @DisplayName("add_clip by action name on the item's track, default duration, chained starts")
         void addChained() {
-            Change first = apply(new SceneOp.AddClip("item-1", null, "clear", null, null, null, null, null, null));
+            Change first = apply(new SceneOp.AddClip("item-1", null, null, "clear", null, null, null, null, null, null));
             assertThat(first.createdIds()).containsExactly("clip-1");
             Clip c1 = doc.clips().get(0);
             assertThat(c1.trackId()).isEqualTo("track-1");
@@ -209,44 +211,44 @@ class SceneEditorTest {
             assertThat(c1.startMs()).isZero();
             assertThat(c1.durationMs()).isEqualTo(SceneDocument.DEFAULT_CLIP_MS);
 
-            apply(new SceneOp.AddClip("item-1", null, "animate", null, null, null, 3000L, Map.of("color", "[255,0,0]"), "Fosa"));
+            apply(new SceneOp.AddClip("item-1", null, null, "animate", null, null, null, 3000L, Map.of("color", "[255,0,0]"), "Fosa"));
             Clip c2 = doc.clips().get(1);
             assertThat(c2.startMs()).isEqualTo(2000);
             assertThat(c2.paramValues()).containsEntry("color", "[255,0,0]");
             assertThat(c2.label()).isEqualTo("Fosa");
 
-            apply(new SceneOp.AddClip("item-1", null, "500", null, "clip-1", 500L, 1000L, null, null));
+            apply(new SceneOp.AddClip("item-1", null, null, "500", null, "clip-1", 500L, 1000L, null, null));
             assertThat(doc.clips().get(2).startMs()).isEqualTo(2500);
             assertThat(doc.clips().get(2).pieceTypeActionId()).isEqualTo(500);
 
-            apply(new SceneOp.AddClip(null, "track-1", "clear", 10_000L, null, null, 100L, null, null));
+            apply(new SceneOp.AddClip(null, "track-1", null, "clear", 10_000L, null, null, 100L, null, null));
             assertThat(doc.clips().get(3).startMs()).isEqualTo(10_000);
         }
 
         @Test
         @DisplayName("actions must belong to the piece's types; unknown ones list the options")
         void actionRules() {
-            SceneOpException unknown = failure(new SceneOp.AddClip("item-1", null, "wave", 0L, null, null, null, null, null));
+            SceneOpException unknown = failure(new SceneOp.AddClip("item-1", null, null, "wave", 0L, null, null, null, null, null));
             assertThat(unknown.getParams().get("detail").toString()).contains("no action named");
             assertThat(unknown.getParams().get("candidates").toString()).contains("animate").contains("clear");
-            assertThat(failure(new SceneOp.AddClip("item-1", null, "502", 0L, null, null, null, null, null)).getParams()
+            assertThat(failure(new SceneOp.AddClip("item-1", null, null, "502", 0L, null, null, null, null, null)).getParams()
                     .get("detail").toString()).contains("not an action");
-            assertThat(failure(new SceneOp.AddClip("item-1", null, null, 0L, null, null, null, null, null)).getParams()
+            assertThat(failure(new SceneOp.AddClip("item-1", null, null, null, 0L, null, null, null, null, null)).getParams()
                     .get("detail").toString()).contains("required");
-            assertThat(failure(new SceneOp.AddClip(null, null, "clear", 0L, null, null, null, null, null)).getParams()
+            assertThat(failure(new SceneOp.AddClip(null, null, null, "clear", 0L, null, null, null, null, null)).getParams()
                     .get("detail").toString()).contains("itemId or trackId");
-            assertThat(failure(new SceneOp.AddClip("item-1", null, "clear", -5L, null, null, null, null, null)).getParams()
+            assertThat(failure(new SceneOp.AddClip("item-1", null, null, "clear", -5L, null, null, null, null, null)).getParams()
                     .get("detail").toString()).contains("negative");
-            assertThat(failure(new SceneOp.AddClip("item-1", null, "clear", 0L, null, null, 0L, null, null)).getParams()
+            assertThat(failure(new SceneOp.AddClip("item-1", null, null, "clear", 0L, null, null, 0L, null, null)).getParams()
                     .get("detail").toString()).contains("positive");
-            assertThat(failure(new SceneOp.AddClip("item-1", null, "clear", null, "clip-9", null, null, null, null)).getParams()
+            assertThat(failure(new SceneOp.AddClip("item-1", null, null, "clear", null, "clip-9", null, null, null, null)).getParams()
                     .get("detail").toString()).contains("clip not found");
         }
 
         @Test
         @DisplayName("update_clip merges or replaces params, changes action, duration and label")
         void update() {
-            apply(new SceneOp.AddClip("item-1", null, "animate", 0L, null, null, 1000L, Map.of("color", "red", "x", 1), null));
+            apply(new SceneOp.AddClip("item-1", null, null, "animate", 0L, null, null, 1000L, Map.of("color", "red", "x", 1), null));
             apply(new SceneOp.UpdateClip("clip-1", null, 2000L, Map.of("color", "blue"), null, "L"));
             Clip c = doc.clips().get(0);
             assertThat(c.durationMs()).isEqualTo(2000);
@@ -264,8 +266,8 @@ class SceneEditorTest {
         @Test
         @DisplayName("move_clip and remove_clip")
         void moveRemove() {
-            apply(new SceneOp.AddClip("item-1", null, "clear", 0L, null, null, 1000L, null, null),
-                    new SceneOp.AddTrack("item-1", "B"));
+            apply(new SceneOp.AddClip("item-1", null, null, "clear", 0L, null, null, 1000L, null, null),
+                    new SceneOp.AddTrack("item-1", "B", null));
             apply(new SceneOp.MoveClip("clip-1", 5000L, "track-2"));
             assertThat(doc.clips().get(0).startMs()).isEqualTo(5000);
             assertThat(doc.clips().get(0).trackId()).isEqualTo("track-2");
@@ -297,7 +299,7 @@ class SceneEditorTest {
         void durationFollowsTheLastClip() {
             assertThat(doc.durationMs()).isEqualTo(SceneDocument.DEFAULT_DURATION_MS);
             apply(new SceneOp.AddItem(2, null, null, null, null, null, null, null, null, null));
-            Change added = apply(new SceneOp.AddClip("item-1", null, "clear", 90_000L, null, null, 5000L, null, null));
+            Change added = apply(new SceneOp.AddClip("item-1", null, null, "clear", 90_000L, null, null, 5000L, null, null));
             assertThat(doc.durationMs()).isEqualTo(95_000);
             String clipId = added.createdIds().get(added.createdIds().size() - 1);
             apply(new SceneOp.MoveClip(clipId, 1000L, null));
@@ -417,22 +419,20 @@ class SceneEditorTest {
         }
 
         @Test
-        @DisplayName("refuses two ports playing the same type: a type drives one port, and nothing is written")
-        void duplicateRoleRefused() {
+        @DisplayName("several ports may play the same type (two independent lights): both are bound, each with its role")
+        void severalPortsPerType() {
             apply(new SceneOp.AddItem(4, null, null, null, null, null, null, null, List.of("Sortida 2"), Map.of("Sortida 2", "Llum")));
-            // Both ports would play their own type «Moviment».
-            assertThat(detail(new SceneOp.SetItemPorts("item-1", List.of("Sortida 2", "Sortida 3"), null)))
-                    .contains("would both play").contains("Moviment").contains("Sortida 2").contains("Sortida 3");
+            // Both ports play their own type «Moviment».
+            apply(new SceneOp.SetItemPorts("item-1", List.of("Sortida 2", "Sortida 3"), null));
+            assertThat(doc.items().get(0).ports()).containsExactly(102, 103);
+            assertThat(doc.items().get(0).portTypes()).isEmpty();
             // Explicit roles, one of them inside a list.
-            assertThat(detail(new SceneOp.SetItemPorts("item-1", List.of("Sortida 2", "Sortida 3"), Map.of("Sortida 2", "Llum", "Sortida 3", List.of("Moviment", "Llum")))))
-                    .contains("would both play").contains("Llum");
-            assertThat(detail(new SceneOp.AddItem(4, null, null, null, null, null, null, null, List.of("Sortida 2", "Sortida 3"), null)))
-                    .contains("would both play");
+            apply(new SceneOp.SetItemPorts("item-1", List.of("Sortida 2", "Sortida 3"), Map.of("Sortida 2", "Llum", "Sortida 3", List.of("Moviment", "Llum"))));
+            assertThat(doc.items().get(0).portTypes()).containsExactly(Map.entry(102, List.of(40)), Map.entry(103, List.of(41, 40)));
+            apply(new SceneOp.AddItem(4, null, null, null, null, null, null, null, List.of("Sortida 2", "Sortida 3"), null));
+            assertThat(doc.items().get(1).ports()).containsExactly(102, 103);
             assertThat(detail(new SceneOp.SetItemPorts("item-1", List.of("Sortida 2"), Map.of("Sortida 2", List.of()))))
                     .contains("empty");
-            assertThat(doc.items()).hasSize(1);
-            assertThat(doc.items().get(0).ports()).containsExactly(102);
-            assertThat(doc.items().get(0).portTypes()).containsExactly(Map.entry(102, List.of(40)));
         }
 
         @Test
@@ -445,6 +445,132 @@ class SceneEditorTest {
             assertThat(detail(new SceneOp.SetItemPorts("item-1", List.of("Sortida 2"), Map.of("Sortida 3", "Llum")))).contains("not in ports");
             assertThat(detail(new SceneOp.SetItemPorts("item-1", List.of("Sortida 2"), Map.of("Sortida 2", " ")))).contains("empty");
             assertThat(doc.items().get(0).ports()).isEmpty();
+        }
+
+        private String detail(SceneOp op) {
+            return failure(op).getParams().get("detail").toString();
+        }
+    }
+
+    @Nested
+    @DisplayName("track ports (a track driving one port of the item)")
+    class TrackPorts {
+
+        @BeforeEach
+        void twoLightsOnOnePiece() {
+            ctx.piece(4, "Molí", List.of(40, 41), List.of("Llum", "Moviment"), List.of("relay", "relay"))
+                    .port(102, "Sortida 2", 41, "relay")
+                    .port(103, "Sortida 3", 41, "relay")
+                    .action(503, "turn_on", "Il·luminar", 40, "Llum", "relay")
+                    .action(504, "turn_on", "Moure", 41, "Moviment", "relay");
+            // Molí with two relays playing «Moviment» (two independent motors) and «Focos» playing «Llum».
+            apply(new SceneOp.AddItem(4, null, null, null, null, null, null, null, List.of("Sortida 2", "Sortida 3", "Focos"),
+                    Map.of("Focos", "Llum")));
+        }
+
+        private Track track(String id) {
+            return doc.tracks().stream().filter(t -> t.id().equals(id)).findFirst().orElseThrow();
+        }
+
+        @Test
+        @DisplayName("add_track with port drives that port, named after it by default; the port must be bound to the item")
+        void addTrackWithPort() {
+            Change change = apply(new SceneOp.AddTrack("item-1", null, "Sortida 2"), new SceneOp.AddTrack("item-1", "Motor B", "103"));
+            assertThat(change.createdIds()).containsExactly("track-2", "track-3");
+            assertThat(track("track-1").portId()).isNull();
+            assertThat(track("track-2")).extracting(Track::name, Track::portId).containsExactly("Sortida 2", 102);
+            assertThat(track("track-3")).extracting(Track::name, Track::portId).containsExactly("Motor B", 103);
+            assertThat(change.log()).anyMatch(l -> l.contains("driving port Sortida 2"));
+            assertThat(detail(new SceneOp.AddTrack("item-1", null, "Fondo1"))).contains("not bound").contains("Fondo1");
+            assertThat(detail(new SceneOp.AddTrack("item-1", null, "Sortida 9"))).contains("port not found");
+            assertThat(doc.tracks()).hasSize(3);
+        }
+
+        @Test
+        @DisplayName("add_clip with itemId and port goes on the item's track of that port, created once; with trackId it is refused")
+        void addClipWithPort() {
+            Change first = apply(new SceneOp.AddClip("item-1", null, "Sortida 2", "Moure", 0L, null, null, 1000L, null, null));
+            assertThat(first.createdIds()).containsExactly("track-2", "clip-1");
+            assertThat(track("track-2").portId()).isEqualTo(102);
+            assertThat(doc.clips().get(0).trackId()).isEqualTo("track-2");
+            Change second = apply(new SceneOp.AddClip("item-1", null, "102", "Moure", null, null, null, 1000L, null, null));
+            assertThat(second.createdIds()).containsExactly("clip-2");
+            assertThat(doc.clips().get(1)).extracting(Clip::trackId, Clip::startMs).containsExactly("track-2", 1000L);
+            // Without port the clip goes on the first track without port, not on the port track.
+            apply(new SceneOp.AddClip("item-1", null, null, "Moure", 0L, null, null, 1000L, null, null));
+            assertThat(doc.clips().get(2).trackId()).isEqualTo("track-1");
+            assertThat(detail(new SceneOp.AddClip(null, "track-1", "Sortida 2", "Moure", 0L, null, null, null, null, null)))
+                    .contains("port goes with itemId");
+            assertThat(detail(new SceneOp.AddClip("item-1", null, "Fondo1", "Moure", 0L, null, null, null, null, null)))
+                    .contains("not bound");
+        }
+
+        @Test
+        @DisplayName("without a track without port, add_clip by itemId creates one instead of using a port track")
+        void addClipCreatesGeneralTrack() {
+            apply(new SceneOp.RemoveTrack("track-1"), new SceneOp.AddTrack("item-1", null, "Sortida 2"));
+            Change change = apply(new SceneOp.AddClip("item-1", null, null, "Moure", 0L, null, null, null, null, null));
+            assertThat(change.createdIds()).containsExactly("track-3", "clip-1");
+            assertThat(track("track-3").portId()).isNull();
+        }
+
+        @Test
+        @DisplayName("a clip on a port track must be of a type the port plays: add_clip, update_clip and move_clip check it")
+        void clipTypeMustMatchTrackPort() {
+            apply(new SceneOp.AddTrack("item-1", null, "Sortida 2"), new SceneOp.AddTrack("item-1", null, "Focos"));
+            assertThat(detail(new SceneOp.AddClip(null, "track-2", null, "Il·luminar", 0L, null, null, null, null, null)))
+                    .contains("turn_on").contains("\"Llum\"").contains("Sortida 2").contains("does not play").contains("Moviment");
+            assertThat(failure(new SceneOp.AddClip(null, "track-2", null, "Il·luminar", 0L, null, null, null, null, null)).getParams()
+                    .get("candidates")).asInstanceOf(InstanceOfAssertFactories.LIST).containsExactly("Moviment");
+            apply(new SceneOp.AddClip(null, "track-2", null, "Moure", 0L, null, null, 1000L, null, null),
+                    new SceneOp.AddClip(null, "track-3", null, "Il·luminar", 0L, null, null, 1000L, null, null),
+                    new SceneOp.AddClip("item-1", null, null, "Il·luminar", 0L, null, null, 1000L, null, null));
+            assertThat(doc.clips()).hasSize(3);
+            assertThat(detail(new SceneOp.UpdateClip("clip-1", "Il·luminar", null, null, null, null))).contains("does not play");
+            apply(new SceneOp.UpdateClip("clip-1", "504", 500L, null, null, null));
+            assertThat(detail(new SceneOp.MoveClip("clip-1", null, "track-3"))).contains("does not play").contains("Focos");
+            apply(new SceneOp.MoveClip("clip-2", 2000L, "track-1"), new SceneOp.MoveClip("clip-3", null, "track-3"));
+            assertThat(doc.clips().stream().map(Clip::trackId).toList()).containsExactly("track-2", "track-1", "track-3");
+        }
+
+        @Test
+        @DisplayName("set_track_port pins a track to a bound port, unpins it, and refuses a port that does not play the clips' types")
+        void setTrackPort() {
+            apply(new SceneOp.AddClip("item-1", null, null, "Moure", 0L, null, null, 1000L, null, null));
+            Change pinned = apply(new SceneOp.SetTrackPort("track-1", "Sortida 3"));
+            assertThat(track("track-1").portId()).isEqualTo(103);
+            assertThat(pinned.log()).anyMatch(l -> l.contains("now drives port Sortida 3"));
+            SceneOpException refused = failure(new SceneOp.SetTrackPort("track-1", "Focos"));
+            assertThat(refused.getParams().get("detail").toString()).contains("Focos").contains("1 clip(s)").contains("track-1");
+            assertThat(refused.getParams().get("candidates")).asInstanceOf(InstanceOfAssertFactories.LIST)
+                    .containsExactly("clip-1 turn_on (Moviment)");
+            assertThat(track("track-1").portId()).isEqualTo(103);
+            assertThat(detail(new SceneOp.SetTrackPort("track-1", "Fondo1"))).contains("not bound");
+            assertThat(detail(new SceneOp.SetTrackPort("track-9", "Sortida 2"))).contains("track not found");
+            apply(new SceneOp.SetTrackPort("track-1", " "));
+            assertThat(track("track-1").portId()).isNull();
+            apply(new SceneOp.SetTrackPort("track-1", "102"), new SceneOp.SetTrackPort("track-1", null));
+            assertThat(track("track-1").portId()).isNull();
+            // A clip without action does not block the pin.
+            apply(new SceneOp.RemoveClip("clip-1"), new SceneOp.AddClip("item-1", null, null, "Moure", 0L, null, null, 1000L, null, null),
+                    new SceneOp.SetTrackPort("track-1", "Sortida 2"));
+            assertThat(track("track-1").portId()).isEqualTo(102);
+        }
+
+        @Test
+        @DisplayName("rename_track keeps the port; set_item_ports unbinding a port frees the tracks that drove it")
+        void unbindingFreesTracks() {
+            apply(new SceneOp.AddTrack("item-1", null, "Sortida 2"), new SceneOp.AddTrack("item-1", null, "Sortida 3"),
+                    new SceneOp.RenameTrack("track-2", "Motor A"));
+            assertThat(track("track-2")).extracting(Track::name, Track::portId).containsExactly("Motor A", 102);
+            Change change = apply(new SceneOp.SetItemPorts("item-1", List.of("Sortida 2"), null));
+            assertThat(track("track-2").portId()).isEqualTo(102);
+            assertThat(track("track-3").portId()).isNull();
+            assertThat(change.log()).anyMatch(l -> l.contains("[track-3]") && l.contains("lost their port"));
+            apply(new SceneOp.SetItemPorts("item-1", List.of("Sortida 2", "Sortida 3"), null));
+            assertThat(change.log()).noneMatch(l -> l.contains("track-2") && l.contains("lost"));
+            apply(new SceneOp.RemoveItem("item-1"));
+            assertThat(doc.tracks()).isEmpty();
         }
 
         private String detail(SceneOp op) {

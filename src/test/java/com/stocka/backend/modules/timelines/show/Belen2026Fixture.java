@@ -111,7 +111,7 @@ public final class Belen2026Fixture {
     public static List<Track> tracks() {
         List<Track> out = new ArrayList<>();
         for (Item i : items()) {
-            out.add(new Track("t-" + i.id(), i.id(), i.id()));
+            out.add(new Track("t-" + i.id(), i.id(), i.id(), null));
         }
         return out;
     }

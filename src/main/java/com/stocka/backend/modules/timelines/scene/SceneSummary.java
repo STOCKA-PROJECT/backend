@@ -10,6 +10,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.stocka.backend.modules.common.schema.Param;
 import com.stocka.backend.modules.timelines.scene.SceneContext.ActionRef;
 import com.stocka.backend.modules.timelines.scene.SceneContext.PieceRef;
+import com.stocka.backend.modules.timelines.scene.SceneContext.PortRef;
 import com.stocka.backend.modules.timelines.scene.SceneDocument.Clip;
 import com.stocka.backend.modules.timelines.scene.SceneDocument.Item;
 import com.stocka.backend.modules.timelines.scene.SceneDocument.Track;
@@ -46,7 +47,12 @@ public record SceneSummary(
             @Param("Height in cm") double heightCm) {
     }
 
-    public record TrackSummary(@Param("Track id") String id, @Param("Item id") String itemId, @Param("Name") String name) {
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record TrackSummary(
+            @Param("Track id") String id,
+            @Param("Item id") String itemId,
+            @Param("Name") String name,
+            @Param("Port the track drives (name), absent when its clips drive every port of their type") String port) {
     }
 
     public record ClipSummary(
@@ -94,7 +100,9 @@ public record SceneSummary(
         List<TrackSummary> trackSummaries = new ArrayList<>();
         for (Track track : doc.tracks()) {
             tracks.put(track.id(), track);
-            trackSummaries.add(new TrackSummary(track.id(), track.itemId(), track.name()));
+            String port = track.portId() == null ? null
+                    : context.portById(track.portId()).map(PortRef::name).orElse("#" + track.portId());
+            trackSummaries.add(new TrackSummary(track.id(), track.itemId(), track.name(), port));
         }
         List<Clip> sorted = new ArrayList<>(doc.clips());
         sorted.sort((a, b) -> Long.compare(a.startMs(), b.startMs()));

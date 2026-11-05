@@ -67,6 +67,15 @@ public class SceneJsonCodec {
             mergeById(source, result, "layers");
             mergeById(source, result, "items");
             mergeById(source, result, "tracks");
+            // Modelled field: a track without port means "drives every port of its type", not "keep the stored port".
+            if (result.get("tracks") instanceof ArrayNode tracks) {
+                for (JsonNode node : tracks) {
+                    if (node instanceof ObjectNode track && document.tracks().stream()
+                            .anyMatch(t -> t.portId() == null && t.id() != null && t.id().equals(track.path("id").asText()))) {
+                        track.remove("portId");
+                    }
+                }
+            }
             mergeById(source, result, "clips");
             if (source.get("board") instanceof ObjectNode sb && result.get("board") instanceof ObjectNode rb) {
                 copyUnknown(sb, rb);

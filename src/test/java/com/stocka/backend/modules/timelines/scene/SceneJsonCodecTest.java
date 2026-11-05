@@ -196,4 +196,35 @@ class SceneJsonCodecTest {
             assertThat(parse("null").items().get(0).portTypes()).isEmpty();
         }
     }
+
+    @Nested
+    @DisplayName("track portId")
+    class TrackPort {
+
+        @Test
+        @DisplayName("the port a track drives is read and written back next to the editor's own fields; absent stays absent")
+        void roundTrip() {
+            JsonNode original = codec.mapper().readTree(EDITOR_DOCUMENT.replace("\"name\":\"A\",\"muted\":false", "\"name\":\"A\",\"muted\":false,\"portId\":7"));
+            SceneDocument doc = codec.parse(original);
+            assertThat(doc.tracks().get(0).portId()).isEqualTo(7);
+            JsonNode track = codec.toJson(doc, original).path("tracks").get(0);
+            assertThat(track.path("portId").asInt()).isEqualTo(7);
+            assertThat(track.path("muted").asBoolean()).isFalse();
+
+            SceneDocument plain = codec.parse(codec.mapper().readTree(EDITOR_DOCUMENT));
+            assertThat(plain.tracks().get(0).portId()).isNull();
+            assertThat(codec.toJson(plain, null).path("tracks").get(0).has("portId")).isFalse();
+            assertThat(plain.tracks().get(0).withPort(3).portId()).isEqualTo(3);
+        }
+
+        @Test
+        @DisplayName("removing the port through the model removes the key even though the original tree had it")
+        void unpinned() {
+            JsonNode original = codec.mapper().readTree(EDITOR_DOCUMENT.replace("\"name\":\"A\",\"muted\":false", "\"name\":\"A\",\"muted\":false,\"portId\":7"));
+            SceneDocument doc = codec.parse(original);
+            SceneDocument freed = new SceneDocument(doc.schemaVersion(), doc.board(), doc.layers(), doc.items(),
+                    List.of(doc.tracks().get(0).withPort(null)), doc.clips(), doc.durationMs(), doc.fps(), doc.stripOrder(), doc.schedule());
+            assertThat(codec.toJson(freed, original).path("tracks").get(0).has("portId")).isFalse();
+        }
+    }
 }

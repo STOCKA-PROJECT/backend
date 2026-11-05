@@ -50,6 +50,7 @@ public final class SceneValidator {
         Map<String, Track> tracks = new HashMap<>();
         doc.tracks().forEach(t -> tracks.put(t.id(), t));
         Map<String, PieceRef> pieces = new HashMap<>();
+        Map<String, Set<Integer>> typesOnGeneralTracks = typesOnGeneralTracks(doc, tracks, context);
 
         for (Item item : doc.items()) {
             Optional<PieceRef> piece = item.pieceId() == null ? Optional.empty() : context.pieceById(item.pieceId());
@@ -79,7 +80,18 @@ public final class SceneValidator {
                     }
                 }
             }
-            validateRoleCardinality(item, piece.get(), context, issues);
+            validateRoleCardinality(item, piece.get(), context, typesOnGeneralTracks.getOrDefault(item.id(), Set.of()), issues);
+        }
+        for (Track track : doc.tracks()) {
+            Item item = items.get(track.itemId());
+            if (item == null || track.portId() == null || pieces.get(item.id()) == null) continue;
+            Optional<PortRef> port = context.portById(track.portId());
+            if (port.isEmpty() || !item.ports().contains(track.portId())) {
+                issues.add(SceneIssue.error("E_TRACK_PORT_UNBOUND", "Track \"" + track.name() + "\" (" + track.id()
+                        + ") drives port " + port.map(p -> "\"" + p.name() + "\"").orElse(String.valueOf(track.portId()))
+                        + ", which " + (port.isEmpty() ? "no longer exists" : "\"" + pieces.get(item.id()).name() + "\" is not bound to")
+                        + "; bind it or let the track drive every port of its type.", item.id(), null));
+            }
         }
 
         Map<String, List<Clip>> clipsByTrack = new HashMap<>();
@@ -90,7 +102,7 @@ public final class SceneValidator {
             Item item = items.get(track.itemId());
             PieceRef piece = item == null ? null : pieces.get(item.id());
             if (item == null || piece == null) continue;
-            validateClip(clip, item, piece, context, catalog, issues);
+            validateClip(clip, track, item, piece, context, catalog, issues);
         }
         validateOverlaps(clipsByTrack, context, issues);
         issues.sort((a, b) -> Boolean.compare(b.isError(), a.isError()));
@@ -152,8 +164,8 @@ public final class SceneValidator {
         return seen;
     }
 
-    private static void validateClip(Clip clip, Item item, PieceRef piece, SceneContext context, OutputCatalog catalog,
-                                     List<SceneIssue> issues) {
+    private static void validateClip(Clip clip, Track track, Item item, PieceRef piece, SceneContext context,
+                                     OutputCatalog catalog, List<SceneIssue> issues) {
         String where = " (clip " + clip.id() + " on \"" + piece.name() + "\" at " + clip.startMs() + " ms)";
         if (clip.pieceTypeActionId() == null) {
             issues.add(SceneIssue.warning("W_CLIP_NO_ACTION", "The clip has no action and will be ignored" + where + ".",
@@ -172,7 +184,17 @@ public final class SceneValidator {
                     + action.typeName() + "\", which the piece does not have" + where + ".", item.id(), clip.id()));
             return;
         }
-        if (action.kind() != null && !reachesPort(item, action.typeId(), context)) {
+        Optional<PortRef> trackPort = track.portId() == null || !item.ports().contains(track.portId()) ? Optional.empty()
+                : context.portById(track.portId());
+        if (trackPort.isPresent()) {
+            // The track drives one port: the clip must be of a type that port plays for the item.
+            if (!item.portRoles(trackPort.get().id(), trackPort.get().pieceTypeId()).contains(action.typeId())) {
+                issues.add(SceneIssue.error("E_TRACK_PORT_MISMATCH", "Action \"" + action.name() + "\" belongs to type \""
+                        + action.typeName() + "\", which port \"" + trackPort.get().name() + "\" of track \"" + track.name()
+                        + "\" does not play" + where + "; move the clip to a track without port or to the track of a port playing that type.",
+                        item.id(), clip.id()));
+            }
+        } else if (action.kind() != null && !reachesPort(item, action.typeId(), context)) {
             issues.add(SceneIssue.warning("W_NO_PORT", item.ports().isEmpty()
                     ? "The item is not bound to any port, so this action cannot reach hardware" + where + "."
                     : "No port of the item plays type \"" + action.typeName() + "\", so this action cannot reach hardware"
@@ -239,11 +261,30 @@ public final class SceneValidator {
     }
 
     /**
-     * A type of the piece drives one port: several ports playing the same type (scenes saved before
-     * the editor enforced it) and one port playing several types of the piece (chosen on purpose: the
-     * tracks of both types drive it) are warned about, not refused.
+     * Piece types that have clips on a track without port, by item id: those clips drive every port
+     * playing the type.
      */
-    private static void validateRoleCardinality(Item item, PieceRef piece, SceneContext context, List<SceneIssue> issues) {
+    private static Map<String, Set<Integer>> typesOnGeneralTracks(SceneDocument doc, Map<String, Track> tracks, SceneContext context) {
+        Map<String, Set<Integer>> out = new HashMap<>();
+        for (Clip clip : doc.clips()) {
+            Track track = tracks.get(clip.trackId());
+            if (track == null || track.portId() != null || clip.pieceTypeActionId() == null) continue;
+            context.actionById(clip.pieceTypeActionId())
+                    .ifPresent(a -> out.computeIfAbsent(track.itemId(), k -> new HashSet<>()).add(a.typeId()));
+        }
+        return out;
+    }
+
+    /**
+     * Several ports may play the same type of the piece (two independent lights): the clips of a track
+     * without port drive all of them at once, which is warned about so the author adds a track per port
+     * when they should move separately. One port playing several types of the piece (chosen on purpose:
+     * the tracks of both types drive it) is warned about too, not refused.
+     *
+     * @param typesOnGeneralTracks types of the piece with clips on a track of the item without port
+     */
+    private static void validateRoleCardinality(Item item, PieceRef piece, SceneContext context, Set<Integer> typesOnGeneralTracks,
+                                                List<SceneIssue> issues) {
         Map<Integer, List<String>> portsByType = new LinkedHashMap<>();
         Map<String, List<String>> typesByPort = new LinkedHashMap<>();
         for (Integer portId : item.ports()) {
@@ -257,10 +298,11 @@ public final class SceneValidator {
             }
         }
         portsByType.forEach((typeId, ports) -> {
-            if (ports.size() > 1) {
-                issues.add(SceneIssue.warning("W_PORT_ROLE_DUPLICATE", "Ports " + quoted(ports) + " all play type \""
-                        + piece.typeNames().get(piece.typeIds().indexOf(typeId)) + "\" of \"" + piece.name()
-                        + "\"; a type drives one port.", item.id(), null));
+            if (ports.size() > 1 && typesOnGeneralTracks.contains(typeId)) {
+                issues.add(SceneIssue.warning("W_PORTS_TOGETHER", "Clips of type \""
+                        + piece.typeNames().get(piece.typeIds().indexOf(typeId)) + "\" on a track without port drive ports "
+                        + quoted(ports) + " of \"" + piece.name() + "\" at once; add a track per port (add_track with port) to move them separately.",
+                        item.id(), null));
             }
         });
         typesByPort.forEach((port, types) -> {

@@ -43,8 +43,9 @@ who are not Stocka users: `contacts_list` / `contact_create`.
 ## Timelines
 
 A timeline has a **scene**: a board (cm), layers, **items** (a piece placed on the board, optionally
-bound to hardware ports), **tracks** (one per item) and **clips** (an action of the item's piece type
-played at `startMs` for `durationMs` with `params`). Read `stocka://schema/scene` for the fields.
+bound to hardware ports), **tracks** (one or more per item; a track may drive one port of the item) and
+**clips** (an action of the item's piece type played at `startMs` for `durationMs` with `params`). Read
+`stocka://schema/scene` for the fields.
 
 Workflow:
 
@@ -59,20 +60,26 @@ Workflow:
    `timeline_scenes.version_conflict` re-read with `timeline_scene_get` and retry.
    Operations: `add_layer`, `add_item` (pieceId or pieceName; x/y/width/height in cm, auto-placed when
    omitted; `ports` by id or name), `update_item`, `set_item_ports` (`ports` by id or name, any port of the
-   kind of one of the piece's types; a type drives one port, so two ports playing the same type are refused;
-   when the piece has several types of the same kind, e.g. «Llum» and «Moviment» both relays, `portTypes`
-   `{"Sortida 3": "Llum", "Sortida 4": "Moviment"}` says which type each port plays, and the actions of each
-   type drive only its port; `{"Sortida 3": ["Llum", "Moviment"]}` makes one port play both (the tracks of
-   both types drive it, warned as `W_PORT_SHARED_ROLES`); a port without an entry plays its own
-   type), `remove_item`, `add_track`,
-   `rename_track`, `remove_track`, `add_clip` (itemId or trackId; action by name or id; `startMs` or
-   `after: clipId`; `durationMs`; `params` by name), `update_clip`, `move_clip`, `remove_clip`,
+   kind of one of the piece's types; when the piece has several types of the same kind, e.g. «Llum» and
+   «Moviment» both relays, `portTypes` `{"Sortida 3": "Llum", "Sortida 4": "Moviment"}` says which type each
+   port plays, and the actions of each type drive only its port; `{"Sortida 3": ["Llum", "Moviment"]}` makes
+   one port play both (the tracks of both types drive it, warned as `W_PORT_SHARED_ROLES`); a port without an
+   entry plays its own type), `remove_item`, `add_track` (`itemId`, optional `name` and `port`),
+   `rename_track`, `set_track_port`, `remove_track`, `add_clip` (itemId or trackId; action by name or id;
+   `startMs` or `after: clipId`; `durationMs`; `params` by name), `update_clip`, `move_clip`, `remove_clip`,
    `set_board`, `set_strip_order`, `set_schedule` (when the start button works:
    `{"rule": "allow"|"block", "windows": [{"days": ["mon", …], "from": "17:00", "to": "21:00"}]}`;
    `allow` = only inside a window, `block` = never inside one; local time of the Pi, `to` may be `24:00` and a
    `to` not after `from` crosses midnight; `schedule: null` removes it). It travels as `mode.schedule` of the
    package and only affects a short press of an `onActive: play` sensor; stop, panic and long presses always work,
    and the Pi ignores it until it knows the time (a phone or the editor connecting gives it).
+   **Several ports for one type** (a piece with two independent lights, or two motors): bind both ports to
+   the item (`set_item_ports` with `portTypes` when they are not of the type already) and give each one its
+   own track: `add_track {itemId, port: "Llum dreta"}` or directly `add_clip {itemId, port: "Llum dreta",
+   action: "turn_on"}` (the track is created). A clip on a track with a port drives only that port and must
+   be of a type the port plays (`E_TRACK_PORT_MISMATCH` otherwise); a clip on a track without port drives
+   every port playing the action's type, warned as `W_PORTS_TOGETHER` when there are several. Unbinding a
+   port from the item frees the tracks that drove it. The `show.json` does not change: events are per port.
 4. `timeline_validate` reports errors (must fix) and warnings (mention them).
 5. `timeline_show_export` builds the `stocka-show` package the Raspberry Pi plays (hardware, events,
    assets, `meta.hash`); with blocking errors it fails with `timeline_shows.invalid` and lists them.

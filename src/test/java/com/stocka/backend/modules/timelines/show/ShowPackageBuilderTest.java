@@ -46,7 +46,7 @@ class ShowPackageBuilderTest {
     private static SceneDocument doc(List<Item> items, List<Clip> clips) {
         List<Track> tracks = new ArrayList<>();
         for (Item i : items) {
-            tracks.add(new Track("t-" + i.id(), i.id(), i.id()));
+            tracks.add(new Track("t-" + i.id(), i.id(), i.id(), null));
         }
         return Belen2026Fixture.document(items, tracks, clips);
     }
@@ -274,7 +274,7 @@ class ShowPackageBuilderTest {
 
         private SceneDocument stripDoc(List<Clip> clips, Map<String, List<String>> stripOrder) {
             List<Item> items = List.of(Belen2026Fixture.item("i-casa1", 9, 12), Belen2026Fixture.item("i-casa2", 10, 12));
-            List<Track> tracks = items.stream().map(i -> new Track("t-" + i.id(), i.id(), i.id())).toList();
+            List<Track> tracks = items.stream().map(i -> new Track("t-" + i.id(), i.id(), i.id(), null)).toList();
             return new SceneDocument(1, new SceneDocument.Board(1280, 720, null),
                     List.of(new SceneDocument.Layer("layer-1", "Capa 1", 0, true, false, 1)), items, tracks, clips, 122000, 30, stripOrder, null);
         }
@@ -889,20 +889,105 @@ class ShowPackageBuilderTest {
             assertThat(shared).hasSize(1);
             assertThat(shared.get(0).port()).isEqualTo("Focos");
             assertThat(shared.get(0).message()).contains("«Tipus 1»").contains("«Llum»").contains("«Focos»");
-            assertThat(assembled.issues()).extracting(ShowIssue::code).doesNotContain("W_PORT_ROLE_DUPLICATE");
+            assertThat(assembled.issues()).extracting(ShowIssue::code).doesNotContain("W_PORTS_TOGETHER");
         }
 
         @Test
-        @DisplayName("two ports playing the same type (older scenes) warn once and both still receive the action")
-        void duplicateRole() {
+        @DisplayName("two ports playing the same type both receive a clip of a track without port, with one W_PORTS_TOGETHER")
+        void portsTogether() {
             Assembled assembled = builder.assemble(ShowBuildInput.of(docWithRoles(Map.of(2, List.of(Belen2026Fixture.RELAY_TYPE))),
                     context(), Belen2026Fixture.ports()));
             assertThat(assembled.timeline().stream().filter(e -> e.t() == 0).map(ShowEvent::target).toList())
                     .containsExactly("Focos", "Sembra");
-            List<ShowIssue> dup = assembled.issues().stream().filter(i -> i.code().equals("W_PORT_ROLE_DUPLICATE")).toList();
-            assertThat(dup).hasSize(1);
-            assertThat(dup.get(0).message()).contains("2 ports").contains("Focos, Sembra").contains("«Tipus 1»");
+            List<ShowIssue> together = assembled.issues().stream().filter(i -> i.code().equals("W_PORTS_TOGETHER")).toList();
+            assertThat(together).hasSize(1);
+            assertThat(together.get(0).message()).contains("2 ports").contains("Focos, Sembra").contains("«Tipus 1»").contains("pista per port");
             assertThat(assembled.issues()).extracting(ShowIssue::code).doesNotContain("W_PORT_SHARED_ROLES");
+        }
+    }
+
+    @Nested
+    @DisplayName("track ports (a track driving one port of the item)")
+    class TrackPorts {
+
+        private static final int LLUM = Belen2026Fixture.TIMED_RELAY_TYPE;
+
+        private StubSceneContext context() {
+            return Belen2026Fixture.context().piece(1, "Focos", List.of(Belen2026Fixture.RELAY_TYPE, LLUM),
+                    List.of("Tipus 1", "Llum"), List.of("relay", "relay"));
+        }
+
+        /** Focos bound to relays 1 and 2 with the given roles, Sembra removed, the given tracks and clips. */
+        private SceneDocument docWith(Map<Integer, List<Integer>> roles, List<Track> extraTracks, List<Clip> clips) {
+            List<Item> items = items();
+            replace(items, i -> i.id().equals("i-focos"), i -> i.withPorts(List.of(1, 2), roles));
+            items.removeIf(i -> i.id().equals("i-sembra"));
+            List<Track> tracks = new ArrayList<>();
+            for (Item i : items) tracks.add(new Track("t-" + i.id(), i.id(), i.id(), null));
+            tracks.addAll(extraTracks);
+            return Belen2026Fixture.document(items, tracks, new ArrayList<>(clips));
+        }
+
+        @Test
+        @DisplayName("a step of a track driving one port reaches only that port; the general track reaches both and warns once")
+        void routesPerTrack() {
+            SceneDocument doc = docWith(Map.of(2, List.of(Belen2026Fixture.RELAY_TYPE)),
+                    List.of(new Track("tp1", "i-focos", "Focos", 1), new Track("tp2", "i-focos", "Sembra", 2)),
+                    List.of(new Clip("k1", "tp1", 13, 0, 1000, Map.of(), null),
+                            new Clip("k2", "tp2", 13, 500, 1000, Map.of(), null),
+                            new Clip("k3", "t-i-focos", 14, 1000, 1000, Map.of(), null)));
+            Assembled assembled = builder.assemble(ShowBuildInput.of(doc, context(), Belen2026Fixture.ports()));
+            assertThat(errors(assembled)).isEmpty();
+            assertThat(assembled.timeline().stream().map(e -> e.t() + " " + e.target() + "." + e.action()).toList())
+                    .containsExactly("0 Focos.turn_on", "500 Sembra.turn_on", "1000 Focos.turn_off", "1000 Sembra.turn_off");
+            assertThat(codes(warnings(assembled))).containsOnlyOnce("W_PORTS_TOGETHER");
+            assertThat(assembled.pieces()).containsEntry("Focos", List.of("Focos")).containsEntry("Sembra", List.of("Focos"));
+        }
+
+        @Test
+        @DisplayName("without clips on the general track two ports of one type do not warn; the hash follows the events only")
+        void noWarningWhenEveryClipIsPinned() {
+            SceneDocument pinned = docWith(Map.of(2, List.of(Belen2026Fixture.RELAY_TYPE)),
+                    List.of(new Track("tp1", "i-focos", "Focos", 1), new Track("tp2", "i-focos", "Sembra", 2)),
+                    List.of(new Clip("k1", "tp1", 13, 0, 1000, Map.of(), null), new Clip("k2", "tp2", 13, 500, 1000, Map.of(), null)));
+            ShowBuildResult result = builder.build(ShowBuildInput.of(pinned, context(), Belen2026Fixture.ports()));
+            assertThat(result.ok()).isTrue();
+            assertThat(codes(result.warnings())).doesNotContain("W_PORTS_TOGETHER");
+            // The same events from the original Focos + Sembra items give the same hash: the Pi sees no difference.
+            List<Item> items = items();
+            replace(items, i -> i.id().equals("i-sembra"), i -> i);
+            List<Clip> clips = List.of(new Clip("k1", "t-i-focos", 13, 0, 1000, Map.of(), null),
+                    new Clip("k2", "t-i-sembra", 13, 500, 1000, Map.of(), null));
+            ShowBuildResult twoItems = builder.build(Belen2026Fixture.input(doc(items, clips)));
+            assertThat(result.pkg().meta().hash()).isEqualTo(twoItems.pkg().meta().hash());
+        }
+
+        @Test
+        @DisplayName("a clip whose type the track's port does not play is E_TRACK_PORT_MISMATCH and emits nothing")
+        void mismatch() {
+            SceneDocument doc = docWith(Map.of(2, List.of(LLUM)),
+                    List.of(new Track("tp2", "i-focos", "Sembra", 2)),
+                    List.of(new Clip("k1", "tp2", 13, 0, 1000, Map.of(), null)));
+            Assembled assembled = builder.assemble(ShowBuildInput.of(doc, context(), Belen2026Fixture.ports()));
+            assertThat(codes(errors(assembled))).containsExactly("E_TRACK_PORT_MISMATCH");
+            ShowIssue issue = errors(assembled).get(0);
+            assertThat(issue.clipId()).isEqualTo("k1");
+            assertThat(issue.port()).isEqualTo("Sembra");
+            assertThat(issue.message()).contains("«Sembra»").contains("«Tipus 1»").contains("«Encendre»");
+            assertThat(assembled.timeline()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("a track driving a port the item is not bound to is E_TRACK_PORT_UNBOUND on its clips")
+        void unbound() {
+            SceneDocument doc = docWith(Map.of(2, List.of(LLUM)),
+                    List.of(new Track("tp3", "i-focos", "LlumsE", 3)),
+                    List.of(new Clip("k1", "tp3", 41, 0, 1000, Map.of(), null)));
+            Assembled assembled = builder.assemble(ShowBuildInput.of(doc, context(), Belen2026Fixture.ports()));
+            assertThat(codes(errors(assembled))).containsExactly("E_TRACK_PORT_UNBOUND");
+            assertThat(errors(assembled).get(0).clipId()).isEqualTo("k1");
+            assertThat(errors(assembled).get(0).message()).contains("«Focos»").contains("ja no té");
+            assertThat(assembled.timeline()).isEmpty();
         }
     }
 }

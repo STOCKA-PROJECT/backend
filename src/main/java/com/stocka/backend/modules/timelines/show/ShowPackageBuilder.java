@@ -166,11 +166,27 @@ public class ShowPackageBuilder {
             if (item == null) continue;
             String label = step.label() != null ? step.label() : step.action().displayName();
             String itemName = item.pieceName() != null ? item.pieceName() : item.itemId();
-            // Each port plays one type of the piece (its `portTypes` role, else its own type): the action
-            // reaches the ports playing the action's type, so a piece with two relay types drives one
-            // relay per type.
+            // Each port plays one or more types of the piece (its `portTypes` roles, else its own type): the
+            // action reaches the ports playing the action's type, so a piece with two relay types drives one
+            // relay per type. A step of a track driving one port reaches only that port.
             List<ShowPort> targets = item.ports().stream()
-                    .filter(p -> Objects.equals(p.pieceTypeId(), step.action().pieceTypeId())).toList();
+                    .filter(p -> Objects.equals(p.pieceTypeId(), step.action().pieceTypeId()))
+                    .filter(p -> step.portId() == null || p.id() == step.portId())
+                    .toList();
+            if (targets.isEmpty() && step.portId() != null) {
+                String typeName = typeNameOf(input.context(), item.pieceId(), step.action().pieceTypeId());
+                ShowPort trackPort = item.ports().stream().filter(p -> p.id() == step.portId()).findFirst().orElse(null);
+                if (trackPort == null) {
+                    issues.add(ShowIssue.error("E_TRACK_PORT_UNBOUND", "La pista del clip «" + label + "» (" + step.startMs()
+                            + " ms) va a un port que «" + itemName + "» ja no té: torna a lligar-lo o treu-lo de la pista.",
+                            step.clipId(), null));
+                } else {
+                    issues.add(ShowIssue.error("E_TRACK_PORT_MISMATCH", "El port «" + trackPort.name() + "» de la pista del clip «"
+                            + label + "» (" + step.startMs() + " ms) no fa de «" + (typeName != null ? typeName : "el tipus de l'acció")
+                            + "»: mou el clip a la pista general o a la d'un port que en faci.", step.clipId(), trackPort.name()));
+                }
+                continue;
+            }
             if (targets.isEmpty()) {
                 String typeName = typeNameOf(input.context(), item.pieceId(), step.action().pieceTypeId());
                 issues.add(ShowIssue.error("E_NO_PORT", typeName != null

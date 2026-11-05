@@ -74,6 +74,7 @@ public final class SceneEditor {
             case SceneOp.RemoveItem o -> removeItem(i, o);
             case SceneOp.AddTrack o -> addTrack(i, o);
             case SceneOp.RenameTrack o -> renameTrack(i, o);
+            case SceneOp.SetTrackPort o -> setTrackPort(i, o);
             case SceneOp.RemoveTrack o -> removeTrack(i, o);
             case SceneOp.AddClip o -> addClip(i, o);
             case SceneOp.UpdateClip o -> updateClip(i, o);
@@ -130,7 +131,7 @@ public final class SceneEditor {
                 op.rotation() == null ? 0 : op.rotation(), null, null, bindings.ports(), null, bindings.portTypes());
         doc.items().add(item);
         created.add(item.id());
-        Track track = new Track(uniqueId("track"), item.id(), piece.name());
+        Track track = new Track(uniqueId("track"), item.id(), piece.name(), null);
         doc.tracks().add(track);
         created.add(track.id());
         log.add("item " + item.id() + " (" + piece.name() + ") added with track " + track.id());
@@ -163,8 +164,18 @@ public final class SceneEditor {
         PieceRef piece = context.pieceById(it.pieceId() == null ? -1 : it.pieceId()).orElse(null);
         Bindings bindings = resolvePorts(i, "set_item_ports", piece, op.ports(), op.portTypes());
         doc.items().set(index, it.withPorts(bindings.ports(), bindings.portTypes()));
+        // A track driving a port the item no longer has drives every port of its type again.
+        List<String> unpinned = new ArrayList<>();
+        for (int k = 0; k < doc.tracks().size(); k++) {
+            Track t = doc.tracks().get(k);
+            if (it.id().equals(t.itemId()) && t.portId() != null && !bindings.ports().contains(t.portId())) {
+                doc.tracks().set(k, t.withPort(null));
+                unpinned.add(t.id());
+            }
+        }
         log.add("item " + it.id() + " ports set to " + bindings.ports()
-                + (bindings.portTypes().isEmpty() ? "" : " playing " + bindings.portTypes()));
+                + (bindings.portTypes().isEmpty() ? "" : " playing " + bindings.portTypes())
+                + (unpinned.isEmpty() ? "" : "; track(s) " + unpinned + " lost their port and drive every port of their type"));
     }
 
     private void removeItem(int i, SceneOp.RemoveItem op) {
@@ -181,13 +192,19 @@ public final class SceneEditor {
 
     private void addTrack(int i, SceneOp.AddTrack op) {
         Item it = doc.items().get(indexOfItem(i, "add_track", op.itemId()));
-        String name = op.name() == null || op.name().isBlank()
-                ? context.pieceById(it.pieceId() == null ? -1 : it.pieceId()).map(PieceRef::name).orElse("Pista")
-                : op.name().trim();
-        Track track = new Track(uniqueId("track"), it.id(), name);
+        PortRef port = op.port() == null || op.port().isBlank() ? null : boundPort(i, "add_track", it, op.port());
+        String name;
+        if (op.name() != null && !op.name().isBlank()) {
+            name = op.name().trim();
+        } else if (port != null) {
+            name = port.name();
+        } else {
+            name = context.pieceById(it.pieceId() == null ? -1 : it.pieceId()).map(PieceRef::name).orElse("Pista");
+        }
+        Track track = new Track(uniqueId("track"), it.id(), name, port == null ? null : port.id());
         doc.tracks().add(track);
         created.add(track.id());
-        log.add("track " + track.id() + " added to item " + it.id());
+        log.add("track " + track.id() + " added to item " + it.id() + (port == null ? "" : " driving port " + port.name()));
     }
 
     private void renameTrack(int i, SceneOp.RenameTrack op) {
@@ -196,8 +213,35 @@ public final class SceneEditor {
             throw new SceneOpException(i, "rename_track", "name is required");
         }
         Track t = doc.tracks().get(index);
-        doc.tracks().set(index, new Track(t.id(), t.itemId(), op.name().trim()));
+        doc.tracks().set(index, new Track(t.id(), t.itemId(), op.name().trim(), t.portId()));
         log.add("track " + t.id() + " renamed");
+    }
+
+    private void setTrackPort(int i, SceneOp.SetTrackPort op) {
+        int index = indexOfTrack(i, "set_track_port", op.trackId());
+        Track t = doc.tracks().get(index);
+        if (op.port() == null || op.port().isBlank()) {
+            doc.tracks().set(index, t.withPort(null));
+            log.add("track " + t.id() + " drives every port of its type again");
+            return;
+        }
+        Item item = doc.items().get(indexOfItem(i, "set_track_port", t.itemId()));
+        PortRef port = boundPort(i, "set_track_port", item, op.port());
+        List<Integer> roles = item.portRoles(port.id(), port.pieceTypeId());
+        List<String> rejected = new ArrayList<>();
+        for (Clip clip : doc.clips()) {
+            if (!t.id().equals(clip.trackId()) || clip.pieceTypeActionId() == null) continue;
+            Optional<ActionRef> action = context.actionById(clip.pieceTypeActionId());
+            if (action.isPresent() && !roles.contains(action.get().typeId())) {
+                rejected.add(clip.id() + " " + action.get().name() + " (" + action.get().typeName() + ")");
+            }
+        }
+        if (!rejected.isEmpty()) {
+            throw new SceneOpException(i, "set_track_port", "port \"" + port.name() + "\" does not play the type of "
+                    + rejected.size() + " clip(s) of track " + t.id() + "; move them to another track first", rejected);
+        }
+        doc.tracks().set(index, t.withPort(port.id()));
+        log.add("track " + t.id() + " now drives port " + port.name());
     }
 
     private void removeTrack(int i, SceneOp.RemoveTrack op) {
@@ -210,9 +254,10 @@ public final class SceneEditor {
     // ---------- clips ----------
 
     private void addClip(int i, SceneOp.AddClip op) {
-        Track track = resolveTrack(i, "add_clip", op.itemId(), op.trackId(), true);
+        Track track = resolveTrack(i, "add_clip", op.itemId(), op.trackId(), op.port());
         Item item = doc.items().get(indexOfItem(i, "add_clip", track.itemId()));
         ActionRef action = resolveAction(i, "add_clip", item, op.action());
+        checkTrackAccepts(i, "add_clip", track, item, action);
         long duration = op.durationMs() == null ? SceneDocument.DEFAULT_CLIP_MS : op.durationMs();
         if (duration <= 0) {
             throw new SceneOpException(i, "add_clip", "durationMs must be positive");
@@ -243,7 +288,9 @@ public final class SceneEditor {
         if (op.action() != null && !op.action().isBlank()) {
             Track track = doc.tracks().get(indexOfTrack(i, "update_clip", c.trackId()));
             Item item = doc.items().get(indexOfItem(i, "update_clip", track.itemId()));
-            actionId = resolveAction(i, "update_clip", item, op.action()).id();
+            ActionRef action = resolveAction(i, "update_clip", item, op.action());
+            checkTrackAccepts(i, "update_clip", track, item, action);
+            actionId = action.id();
         }
         long duration = c.durationMs();
         if (op.durationMs() != null) {
@@ -265,7 +312,11 @@ public final class SceneEditor {
         Clip c = doc.clips().get(index);
         String trackId = c.trackId();
         if (op.trackId() != null && !op.trackId().isBlank()) {
-            indexOfTrack(i, "move_clip", op.trackId());
+            Track target = doc.tracks().get(indexOfTrack(i, "move_clip", op.trackId()));
+            if (target.portId() != null && c.pieceTypeActionId() != null) {
+                Item item = doc.items().get(indexOfItem(i, "move_clip", target.itemId()));
+                context.actionById(c.pieceTypeActionId()).ifPresent(action -> checkTrackAccepts(i, "move_clip", target, item, action));
+            }
             trackId = op.trackId();
         }
         long start = op.startMs() == null ? c.startMs() : op.startMs();
@@ -345,15 +396,15 @@ public final class SceneEditor {
     /**
      * Resolves port references and the types each one plays: the {@code portTypes} entry (by port id or
      * name → type id or name of the piece, or a list of them), else the port's own type. Every role must
-     * be a type of the piece and of the port's kind, as the validator and the export require, and a type
-     * drives one port: two ports playing the same type are refused.
+     * be a type of the piece and of the port's kind, as the validator and the export require. Several
+     * ports may play the same type (a piece with two independent lights): a track per port drives them
+     * separately, a track without port drives all of them.
      */
     private Bindings resolvePorts(int i, String op, PieceRef piece, List<String> refs, Map<String, Object> typeRefs) {
         List<Integer> ports = new ArrayList<>();
         Map<Integer, List<Integer>> roles = new LinkedHashMap<>();
         if (refs == null) return new Bindings(ports, roles);
         Map<String, Object> pendingTypeRefs = typeRefs == null ? new LinkedHashMap<>() : new LinkedHashMap<>(typeRefs);
-        Map<Integer, PortRef> portOfType = new LinkedHashMap<>();
         for (String ref : refs) {
             PortRef port = resolvePort(i, op, ref);
             List<Integer> portRoles = port.pieceTypeId() == null ? List.of() : List.of(port.pieceTypeId());
@@ -375,12 +426,6 @@ public final class SceneEditor {
                                 + " output and cannot play type \"" + piece.typeNames().get(typeIndex) + "\" ("
                                 + piece.typeKinds().get(typeIndex) + ")");
                     }
-                }
-                PortRef other = portOfType.putIfAbsent(role, port);
-                if (other != null && other.id() != port.id()) {
-                    String typeName = piece == null ? "type " + role : "type \"" + piece.typeNames().get(piece.typeIds().indexOf(role)) + "\"";
-                    throw new SceneOpException(i, op, "ports \"" + other.name() + "\" and \"" + port.name() + "\" would both play "
-                            + typeName + "; a type drives one port, so bind one of them or give the other a different type in portTypes");
                 }
             }
             if (!ports.contains(port.id())) ports.add(port.id());
@@ -473,24 +518,64 @@ public final class SceneEditor {
                 matches.stream().map(a -> a.id() + " " + a.name() + " (" + a.typeName() + ")").toList());
     }
 
-    private Track resolveTrack(int i, String op, String itemId, String trackId, boolean createIfMissing) {
+    /**
+     * The track a clip goes on: the given track; else, with a port, the item's track driving that port
+     * (created if missing); else the item's first track without port (created if missing).
+     */
+    private Track resolveTrack(int i, String op, String itemId, String trackId, String portRef) {
         if (trackId != null && !trackId.isBlank()) {
+            if (portRef != null && !portRef.isBlank()) {
+                throw new SceneOpException(i, op, "port goes with itemId, not with trackId");
+            }
             return doc.tracks().get(indexOfTrack(i, op, trackId));
         }
         if (itemId == null || itemId.isBlank()) {
             throw new SceneOpException(i, op, "itemId or trackId is required");
         }
         Item item = doc.items().get(indexOfItem(i, op, itemId));
-        Optional<Track> existing = doc.tracks().stream().filter(t -> item.id().equals(t.itemId())).findFirst();
+        PortRef port = portRef == null || portRef.isBlank() ? null : boundPort(i, op, item, portRef);
+        Integer portId = port == null ? null : port.id();
+        Optional<Track> existing = doc.tracks().stream()
+                .filter(t -> item.id().equals(t.itemId()) && Objects.equals(t.portId(), portId)).findFirst();
         if (existing.isPresent()) return existing.get();
-        if (!createIfMissing) {
-            throw new SceneOpException(i, op, "item " + itemId + " has no track");
-        }
-        String name = context.pieceById(item.pieceId() == null ? -1 : item.pieceId()).map(PieceRef::name).orElse("Pista");
-        Track track = new Track(uniqueId("track"), item.id(), name);
+        String name = port != null ? port.name()
+                : context.pieceById(item.pieceId() == null ? -1 : item.pieceId()).map(PieceRef::name).orElse("Pista");
+        Track track = new Track(uniqueId("track"), item.id(), name, portId);
         doc.tracks().add(track);
         created.add(track.id());
+        log.add("track " + track.id() + " added to item " + item.id() + (port == null ? "" : " driving port " + port.name()));
         return track;
+    }
+
+    /** A port bound to the item, by id or name. */
+    private PortRef boundPort(int i, String op, Item item, String ref) {
+        PortRef port = resolvePort(i, op, ref);
+        if (!item.ports().contains(port.id())) {
+            throw new SceneOpException(i, op, "port \"" + port.name() + "\" is not bound to item " + item.id()
+                    + "; bind it first with set_item_ports", item.ports().stream().map(String::valueOf).toList());
+        }
+        return port;
+    }
+
+    /**
+     * A clip on a track driving one port must be of a type that port plays for the item (a type the piece
+     * has, else the validator reports it anyway).
+     */
+    private void checkTrackAccepts(int i, String op, Track track, Item item, ActionRef action) {
+        if (track.portId() == null) return;
+        PortRef port = context.portById(track.portId()).orElseThrow(() -> new SceneOpException(i, op, "track " + track.id()
+                + " drives port " + track.portId() + ", which no longer exists; fix it with set_track_port"));
+        List<Integer> roles = item.portRoles(port.id(), port.pieceTypeId());
+        if (roles.contains(action.typeId())) return;
+        PieceRef piece = context.pieceById(item.pieceId() == null ? -1 : item.pieceId()).orElse(null);
+        List<String> plays = roles.stream().map(role -> {
+            int typeIndex = piece == null ? -1 : piece.typeIds().indexOf(role);
+            return typeIndex < 0 ? "type " + role : piece.typeNames().get(typeIndex);
+        }).toList();
+        throw new SceneOpException(i, op, "action \"" + action.name() + "\" belongs to type \"" + action.typeName()
+                + "\", which port \"" + port.name() + "\" of track " + track.id() + " does not play"
+                + (plays.isEmpty() ? "" : " (it plays " + String.join(", ", plays) + ")")
+                + "; use a track without port or the track of a port playing that type", plays);
     }
 
     /** Asks the context for ids until one is unused anywhere in the document. */

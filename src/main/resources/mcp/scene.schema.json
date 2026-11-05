@@ -65,14 +65,15 @@
     },
     "tracks": {
       "type": "array",
-      "description": "One track per item; clips live on tracks.",
+      "description": "One or more tracks per item; clips live on tracks. A track with portId drives only that port of the item (a piece with two independent lights gets a track per relay); without it, its clips drive every port of the item playing the action's type.",
       "items": {
         "type": "object",
         "required": ["id", "itemId", "name"],
         "properties": {
           "id": { "type": "string" },
           "itemId": { "type": "string" },
-          "name": { "type": "string" }
+          "name": { "type": "string" },
+          "portId": { "type": "integer", "description": "Port of the item (in item.ports) this track drives; absent = every port playing the action's type." }
         }
       }
     },

@@ -83,7 +83,7 @@ class McpToolsIntegrationTest {
                 if (t.path("name").asText().equals("timeline_scene_edit")) edit = t;
             }
             assertThat(edit).isNotNull();
-            assertThat(edit.path("inputSchema").path("properties").path("ops").path("items").path("oneOf").size()).isEqualTo(15);
+            assertThat(edit.path("inputSchema").path("properties").path("ops").path("items").path("oneOf").size()).isEqualTo(16);
             assertThat(edit.path("annotations").path("readOnlyHint").asBoolean()).isFalse();
             assertThat(edit.path("inputSchema").path("required").toString()).contains("org");
 
