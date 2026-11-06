@@ -25,7 +25,11 @@ body:json {
     "pieceTypeId": {{pieceTypeId}},
     "config": {
       "profile": "varytec-hero-wash-712z",
-      "address": 1
+      "address": 1,
+      "positions": [
+        { "name": "Portal", "pan": 212, "tilt": 48, "zoom": 12, "intensity": 80, "color": [255, 200, 120] },
+        { "name": "Estrella", "pan": 300, "tilt": 150 }
+      ]
     }
   }
 }
@@ -33,6 +37,15 @@ body:json {
 docs {
   Cabezal móvil DMX (Varytec Hero Wash 712 Z, 15 canales) con dirección inicial 1. Requiere un tipo con
   kind=moving_head. `address + canales - 1` debe caber en 512 (ports.dmx_address_range) y no solapar con otro
-  cabezal (ports.dmx_address_conflict). Acciones del tipo: `set(color, white, intensity, pan, tilt, zoom, time)` y
-  `blackout(time)`; las posiciones con nombre se guardan como acciones con pan/tilt estáticos.
+  cabezal (ports.dmx_address_conflict). Acciones del tipo: `set(position?, color, white, intensity, pan, tilt,
+  zoom, time)` y `blackout(time)`.
+
+  `positions` (opcional): posiciones con nombre de ESTE cabezal, `{name, pan?, tilt?, zoom?, intensity?, color?,
+  white?}` en las unidades de `set`; nombre único por puerto (sin distinguir mayúsculas), al menos un valor y
+  dentro de los rangos del perfil → 400 ports.position_invalid con params.reason (not_list, not_object,
+  name_required, name_duplicate, empty, unknown_key, <campo>_invalid, <campo>_out_of_range + min/max) e index/name.
+  Un clip de `set` con `position: "Portal"` se exporta con los valores de la posición de cada puerto (los
+  parámetros explícitos del clip mandan); si el puerto no la tiene, E_POSITION_UNKNOWN. Con `from_position`
+  el clip es una animación de una posición a otra: se exporta un `set` inmediato a la partida y otro con `time`. Normalmente se guardan
+  desde la página del dispositivo (modo prueba → «Desa com a posició»), no a mano.
 }

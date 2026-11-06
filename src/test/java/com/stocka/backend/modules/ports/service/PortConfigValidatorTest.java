@@ -600,6 +600,81 @@ class PortConfigValidatorTest {
             assertCode(() -> sut.normalize(OutputKind.MOVING_HEAD, Map.of("profile", "varytec-hero-wash-712z", "address", 0)), ErrorCodes.PORTS_CONFIG_OUT_OF_RANGE);
             assertCode(() -> sut.normalize(OutputKind.MOVING_HEAD, Map.of("profile", "varytec-hero-wash-712z", "address", 513)), ErrorCodes.PORTS_CONFIG_OUT_OF_RANGE);
         }
+
+        private Map<String, Object> head(Object positions) {
+            Map<String, Object> cfg = new LinkedHashMap<>();
+            cfg.put("profile", "varytec-hero-wash-712z");
+            cfg.put("address", 1);
+            cfg.put("positions", positions);
+            return cfg;
+        }
+
+        private void assertPosition(Object positions, String reason) {
+            assertThatThrownBy(() -> sut.normalize(OutputKind.MOVING_HEAD, head(positions)))
+                    .isInstanceOfSatisfying(ApiException.class, ex -> {
+                        assertThat(ex.getCode()).isEqualTo(ErrorCodes.PORTS_POSITION_INVALID);
+                        assertThat(ex.getParams()).containsEntry("reason", reason);
+                    });
+        }
+
+        @Test
+        @DisplayName("positions are normalized: trimmed names, integral numbers as ints, keys in catalog order")
+        void should_normalizePositions() {
+            Map<String, Object> raw = new LinkedHashMap<>();
+            raw.put("white", 10.0);
+            raw.put("name", "  Portal ");
+            raw.put("intensity", 80);
+            raw.put("color", List.of(255, 200.0, 120));
+            raw.put("pan", 212.5);
+            raw.put("tilt", 48);
+            Map<String, Object> estrella = new LinkedHashMap<>(Map.of("name", "Estrella", "zoom", 6));
+            Map<String, Object> out = sut.normalize(OutputKind.MOVING_HEAD, head(List.of(raw, estrella)));
+            assertThat(out.keySet()).containsExactly("profile", "address", "positions");
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> positions = (List<Map<String, Object>>) out.get("positions");
+            assertThat(positions).hasSize(2);
+            assertThat(positions.get(0)).containsExactly(Map.entry("name", "Portal"), Map.entry("pan", 212.5), Map.entry("tilt", 48),
+                    Map.entry("intensity", 80), Map.entry("color", List.of(255, 200, 120)), Map.entry("white", 10));
+            assertThat(positions.get(1)).containsExactly(Map.entry("name", "Estrella"), Map.entry("zoom", 6));
+            assertThat(sut.normalize(OutputKind.MOVING_HEAD, head(List.of()))).containsEntry("positions", List.of());
+        }
+
+        @Test
+        @DisplayName("positions: shape errors carry the reason and the index")
+        void should_rejectMalformedPositions() {
+            assertPosition("Portal", "not_list");
+            assertPosition(List.of("Portal"), "not_object");
+            assertPosition(List.of(Map.of("pan", 1)), "name_required");
+            assertPosition(List.of(Map.of("name", "  ", "pan", 1)), "name_required");
+            assertPosition(List.of(Map.of("name", "Portal", "pan", 1), Map.of("name", "portal ", "tilt", 2)), "name_duplicate");
+            assertPosition(List.of(Map.of("name", "Portal")), "empty");
+            assertPosition(List.of(Map.of("name", "Portal", "speed", 3)), "unknown_key");
+            assertThatThrownBy(() -> sut.normalize(OutputKind.MOVING_HEAD, head(List.of(Map.of("name", "A", "pan", 1), Map.of("name", "B")))))
+                    .isInstanceOfSatisfying(ApiException.class, ex -> assertThat(ex.getParams()).containsEntry("index", 1).containsEntry("name", "B"));
+        }
+
+        @Test
+        @DisplayName("positions: values must be numbers inside the profile ranges, colours [r, g, b]")
+        void should_rejectPositionValues() {
+            assertPosition(List.of(Map.of("name", "P", "pan", "100")), "pan_invalid");
+            assertPosition(List.of(Map.of("name", "P", "pan", true)), "pan_invalid");
+            assertPosition(List.of(Map.of("name", "P", "pan", 541)), "pan_out_of_range");
+            assertPosition(List.of(Map.of("name", "P", "pan", -1)), "pan_out_of_range");
+            assertPosition(List.of(Map.of("name", "P", "tilt", 190.5)), "tilt_out_of_range");
+            assertPosition(List.of(Map.of("name", "P", "zoom", 5)), "zoom_out_of_range");
+            assertPosition(List.of(Map.of("name", "P", "zoom", 37)), "zoom_out_of_range");
+            assertPosition(List.of(Map.of("name", "P", "intensity", 101)), "intensity_out_of_range");
+            assertPosition(List.of(Map.of("name", "P", "white", 256)), "white_out_of_range");
+            assertPosition(List.of(Map.of("name", "P", "white", 2.5)), "white_out_of_range");
+            assertPosition(List.of(Map.of("name", "P", "color", List.of(1, 2))), "color_invalid");
+            assertPosition(List.of(Map.of("name", "P", "color", List.of(1, 2, 300))), "color_invalid");
+            assertPosition(List.of(Map.of("name", "P", "color", "#ff0000")), "color_invalid");
+            assertThatThrownBy(() -> sut.normalize(OutputKind.MOVING_HEAD, head(List.of(Map.of("name", "P", "tilt", 191)))))
+                    .isInstanceOfSatisfying(ApiException.class, ex -> assertThat(ex.getParams()).containsEntry("min", "0").containsEntry("max", "190"));
+            // Boundaries of the Varytec profile are accepted.
+            assertThat(sut.normalize(OutputKind.MOVING_HEAD, head(List.of(Map.of("name", "P", "pan", 540, "tilt", 0, "zoom", 36, "intensity", 100, "white", 255)))))
+                    .containsKey("positions");
+        }
     }
 
     @Nested

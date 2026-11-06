@@ -71,6 +71,8 @@ public final class ShowCoerce {
             case RGB -> "un color [r, g, b]";
             case RGB_LIST -> "una llista de colors";
             case ENUM -> "un valor de la llista";
+            case POSITION -> "el nom d'una posició del port";
+            case POSITIONS -> "una llista de posicions";
         };
     }
 
@@ -228,6 +230,15 @@ public final class ShowCoerce {
                     return CoerceResult.of(ShowNumbers.toJsString((Number) value));
                 }
                 return CoerceResult.fail(Reason.TYPE, typeLabel(CatalogType.STRING));
+            }
+            case POSITION -> {
+                if (value instanceof String s && !s.isBlank()) {
+                    return CoerceResult.of(s.trim());
+                }
+                return CoerceResult.fail(Reason.TYPE, typeLabel(CatalogType.POSITION));
+            }
+            case POSITIONS -> {
+                return value instanceof List<?> ? CoerceResult.of(value) : CoerceResult.fail(Reason.TYPE, typeLabel(CatalogType.POSITIONS));
             }
             case RGB -> {
                 List<Integer> rgb = parseRgb(value);

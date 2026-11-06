@@ -123,6 +123,8 @@ public class ActionCatalogValidator {
             case STRING -> !v.isEmpty();
             case RGB -> parseRgb(v) != null;
             case RGB_LIST -> parseRgbList(v) != null;
+            case POSITION -> !v.isEmpty();
+            case POSITIONS -> false;
         };
     }
 

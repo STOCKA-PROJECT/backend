@@ -37,6 +37,12 @@ public class StubSceneContext implements SceneContext {
         return this;
     }
 
+    /** A moving head with the names of its saved positions. */
+    public StubSceneContext head(int id, String name, Integer pieceTypeId, String... positions) {
+        ports.put(id, new PortRef(id, name, pieceTypeId, "moving_head", List.of(positions)));
+        return this;
+    }
+
     public StubSceneContext action(int id, String name, int typeId, String typeName, String kind, ActionParameterDto... params) {
         return action(id, name, name, typeId, typeName, kind, params);
     }

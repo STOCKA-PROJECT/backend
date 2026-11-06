@@ -64,7 +64,8 @@ class TimelineSceneServiceTest {
         sut = new TimelineSceneService(
                 sceneRepository, timelineService, codec, new com.stocka.backend.modules.timelines.scene.SceneJsonCodec(),
                 pieceRepository, actionRepository, portRepository, pieceTypeService, actionService,
-                new com.stocka.backend.modules.contract.OutputCatalog());
+                new com.stocka.backend.modules.contract.OutputCatalog(),
+                new com.stocka.backend.modules.ports.service.PortConfigJsonCodec());
         lenient().when(timelineService.findInOrg(1, 10)).thenReturn(timeline);
         lenient().when(pieceRepository.findAllById(anyIterable())).thenReturn(List.of());
         lenient().when(actionRepository.findAllById(anyIterable())).thenReturn(List.of());

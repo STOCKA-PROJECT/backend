@@ -14,6 +14,8 @@ import java.util.Set;
 
 import com.stocka.backend.modules.contract.CatalogAction;
 import com.stocka.backend.modules.contract.CatalogParam;
+import com.stocka.backend.modules.contract.CatalogType;
+import com.stocka.backend.modules.contract.HeadPositions;
 import com.stocka.backend.modules.contract.OutputCatalog;
 import com.stocka.backend.modules.contract.OutputKind;
 import com.stocka.backend.modules.piecetypes.dto.ActionParameterDto;
@@ -241,6 +243,8 @@ public final class SceneValidator {
                 if (catalogError != null) {
                     issues.add(SceneIssue.error("E_PARAM_RANGE", "Parameter \"" + p.getName() + "\" " + catalogError + where + ".",
                             item.id(), clip.id()));
+                } else if (cp.type() == CatalogType.POSITION) {
+                    validatePosition((String) value, action, item, trackPort.orElse(null), context, where, clip, issues);
                 }
             } else if (catalogAction != null && animation != null && catalogAction.allParams().containsKey(p.getName())) {
                 issues.add(SceneIssue.warning("W_ANIMATION_PARAM", "Parameter \"" + p.getName() + "\" does not apply to animation \""
@@ -257,6 +261,31 @@ public final class SceneValidator {
                 && declared.containsKey("from_color")) {
             issues.add(SceneIssue.warning("W_FADE_FROM_BLACK", "The fade has no from_color: it will start from black" + where + ".",
                     item.id(), clip.id()));
+        }
+    }
+
+    /**
+     * A clip naming a saved position must find it on every port it drives: the track's port, or every
+     * port of the item playing the action's type. Each port without it is one {@code E_POSITION_UNKNOWN}.
+     */
+    private static void validatePosition(String name, ActionRef action, Item item, PortRef trackPort, SceneContext context,
+                                         String where, Clip clip, List<SceneIssue> issues) {
+        List<PortRef> targets = new ArrayList<>();
+        if (trackPort != null) {
+            targets.add(trackPort);
+        } else {
+            for (Integer portId : item.ports()) {
+                context.portById(portId)
+                        .filter(port -> item.portRoles(port.id(), port.pieceTypeId()).contains(action.typeId()))
+                        .ifPresent(targets::add);
+            }
+        }
+        for (PortRef port : targets) {
+            if (!HeadPositions.contains(port.positions(), name)) {
+                issues.add(SceneIssue.error("E_POSITION_UNKNOWN", "Port \"" + port.name() + "\" has no position named \""
+                        + name.trim() + "\"" + where + (port.positions().isEmpty() ? "; save one from the device page."
+                        : "; it has: " + String.join(", ", port.positions()) + "."), item.id(), clip.id()));
+            }
         }
     }
 
@@ -430,6 +459,9 @@ public final class SceneValidator {
                     return null;
                 }
                 return value instanceof String ? null : "must be a list of RGB colours";
+            }
+            case POSITION -> {
+                return value instanceof String s && !s.isBlank() ? null : "must be the name of a position of the port";
             }
             default -> {
                 return null;

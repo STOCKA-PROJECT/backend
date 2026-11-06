@@ -8,6 +8,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.stocka.backend.modules.contract.HeadPositions;
+import com.stocka.backend.modules.contract.OutputKind;
 import com.stocka.backend.modules.organizations.entity.Organization;
 import com.stocka.backend.modules.pieces.entity.Piece;
 import com.stocka.backend.modules.pieces.repository.PieceRepository;
@@ -18,6 +20,7 @@ import com.stocka.backend.modules.piecetypes.service.PieceTypeActionService;
 import com.stocka.backend.modules.piecetypes.service.PieceTypeService;
 import com.stocka.backend.modules.ports.entity.Port;
 import com.stocka.backend.modules.ports.repository.PortRepository;
+import com.stocka.backend.modules.ports.service.PortConfigJsonCodec;
 
 /**
  * {@link SceneContext} over the organization's JPA data, caching what it loads for the duration of
@@ -31,6 +34,7 @@ public class JpaSceneContext implements SceneContext {
     private final PieceTypeActionRepository actions;
     private final PieceTypeService typeService;
     private final PieceTypeActionService actionService;
+    private final PortConfigJsonCodec portConfigCodec;
 
     private final Map<Integer, Optional<PieceRef>> pieceCache = new HashMap<>();
     private final Map<Integer, Optional<ActionRef>> actionCache = new HashMap<>();
@@ -40,13 +44,14 @@ public class JpaSceneContext implements SceneContext {
 
     public JpaSceneContext(Organization org, PieceRepository pieces, PortRepository ports,
                            PieceTypeActionRepository actions, PieceTypeService typeService,
-                           PieceTypeActionService actionService) {
+                           PieceTypeActionService actionService, PortConfigJsonCodec portConfigCodec) {
         this.org = org;
         this.pieces = pieces;
         this.ports = ports;
         this.actions = actions;
         this.typeService = typeService;
         this.actionService = actionService;
+        this.portConfigCodec = portConfigCodec;
     }
 
     @Override
@@ -74,13 +79,13 @@ public class JpaSceneContext implements SceneContext {
 
     @Override
     public Optional<PortRef> portById(int id) {
-        return loadPorts().stream().filter(p -> p.getId().equals(id)).findFirst().map(JpaSceneContext::ref);
+        return loadPorts().stream().filter(p -> p.getId().equals(id)).findFirst().map(this::portRef);
     }
 
     @Override
     public Optional<PortRef> portByName(String name) {
         return loadPorts().stream().filter(p -> p.getName() != null && p.getName().equalsIgnoreCase(name)).findFirst()
-                .map(JpaSceneContext::ref);
+                .map(this::portRef);
     }
 
     @Override
@@ -146,8 +151,10 @@ public class JpaSceneContext implements SceneContext {
         return new PieceRef(piece.getId(), piece.getName(), typeIds, typeNames, kinds);
     }
 
-    private static PortRef ref(Port port) {
+    private PortRef portRef(Port port) {
+        List<String> positions = port.getKind() == OutputKind.MOVING_HEAD
+                ? HeadPositions.names(portConfigCodec.deserialize(port.getConfigJson())) : List.of();
         return new PortRef(port.getId(), port.getName(), port.getPieceTypeId(),
-                port.getKind() == null ? null : port.getKind().catalogId());
+                port.getKind() == null ? null : port.getKind().catalogId(), positions);
     }
 }

@@ -389,6 +389,120 @@ class ShowPackageBuilderTest {
     }
 
     @Nested
+    @DisplayName("head positions")
+    class HeadPositionsResolution {
+
+        private static final int HEAD_TYPE = 7;
+        private static final int SET = 70;
+
+        private StubSceneContext context() {
+            return new StubSceneContext().piece(50, "Cap", HEAD_TYPE, "Cabezal", "moving_head")
+                    .action(SET, "set", "Posició", HEAD_TYPE, "Cabezal", "moving_head",
+                            StubSceneContext.param("position", AttributeType.TEXT, false, true, null, false),
+                            StubSceneContext.param("from_position", AttributeType.TEXT, false, true, null, false),
+                            StubSceneContext.param("intensity", AttributeType.DECIMAL, false, true, null, false),
+                            StubSceneContext.param("time", AttributeType.DECIMAL, false, true, null, true));
+        }
+
+        private List<ShowPort> ports() {
+            List<ShowPort> out = new ArrayList<>();
+            out.add(Belen2026Fixture.port(60, "Cap1", "moving_head", HEAD_TYPE, null, Belen2026Fixture.config(
+                    "profile", "varytec-hero-wash-712z", "address", 1,
+                    "positions", List.of(
+                            Map.of("name", "Portal", "pan", 212, "tilt", 48, "zoom", 12, "intensity", 80, "color", List.of(255, 200, 120)),
+                            Map.of("name", "Estrella", "pan", 300, "tilt", 150)))));
+            out.add(Belen2026Fixture.port(61, "Cap2", "moving_head", HEAD_TYPE, null, Belen2026Fixture.config(
+                    "profile", "varytec-hero-wash-712z", "address", 16,
+                    "positions", List.of(Map.of("name", "portal", "pan", 100, "tilt", 20, "white", 40)))));
+            return out;
+        }
+
+        private SceneDocument docWith(List<Track> extraTracks, List<Clip> clips) {
+            List<Item> items = List.of(Belen2026Fixture.item("i-cap", 50, 60, 61));
+            List<Track> tracks = new ArrayList<>(List.of(new Track("t-cap", "i-cap", "Cap", null)));
+            tracks.addAll(extraTracks);
+            return Belen2026Fixture.document(new ArrayList<>(items), tracks, new ArrayList<>(clips));
+        }
+
+        @Test
+        @DisplayName("each head goes to its own position; the clip's own values win and the name never reaches the show")
+        void resolvesPerPort() {
+            SceneDocument doc = docWith(List.of(), List.of(
+                    new Clip("k1", "t-cap", SET, 0, 3000, Map.of("position", " Portal "), null),
+                    new Clip("k2", "t-cap", SET, 5000, 1000, Map.of("position", "Portal", "intensity", 50), null)));
+            Assembled assembled = builder.assemble(ShowBuildInput.of(doc, context(), ports()));
+            assertThat(errors(assembled)).isEmpty();
+            assertThat(codes(warnings(assembled))).containsOnly("W_PORTS_TOGETHER");
+            ShowEvent cap1 = find(assembled.timeline(), "Cap1", 0);
+            assertThat(cap1.action()).isEqualTo("set");
+            assertThat(cap1.params()).containsOnly(Map.entry("pan", 212L), Map.entry("tilt", 48L), Map.entry("zoom", 12L),
+                    Map.entry("intensity", 80L), Map.entry("color", List.of(255, 200, 120)), Map.entry("time", 3L));
+            ShowEvent cap2 = find(assembled.timeline(), "Cap2", 0);
+            assertThat(cap2.params()).containsOnly(Map.entry("pan", 100L), Map.entry("tilt", 20L), Map.entry("white", 40L), Map.entry("time", 3L));
+            assertThat(find(assembled.timeline(), "Cap1", 5000).params()).containsEntry("intensity", 50L).containsEntry("pan", 212L);
+            assertThat(assembled.timeline()).allMatch(e -> !e.params().containsKey("position"));
+            // The hardware carries the positions as the rest of the config.
+            assertThat(assembled.hardware().get("Cap1")).containsKey("positions");
+        }
+
+        @Test
+        @DisplayName("a head without the position is E_POSITION_UNKNOWN naming the port and its positions; the others still export")
+        void unknownPosition() {
+            SceneDocument doc = docWith(List.of(new Track("tp", "i-cap", "Cap2", 61)), List.of(
+                    new Clip("k1", "t-cap", SET, 0, 1000, Map.of("position", "Estrella"), null),
+                    new Clip("k2", "tp", SET, 2000, 1000, Map.of("position", "Nada"), null),
+                    new Clip("k3", "t-cap", SET, 4000, 1000, Map.of("position", "", "intensity", 10), null)));
+            Assembled assembled = builder.assemble(ShowBuildInput.of(doc, context(), ports()));
+            List<ShowIssue> errors = errors(assembled);
+            assertThat(codes(errors)).containsExactly("E_POSITION_UNKNOWN", "E_POSITION_UNKNOWN");
+            assertThat(errors.get(0).clipId()).isEqualTo("k1");
+            assertThat(errors.get(0).port()).isEqualTo("Cap2");
+            assertThat(errors.get(0).message()).contains("Cap2").contains("Estrella").contains("portal");
+            assertThat(errors.get(1).clipId()).isEqualTo("k2");
+            assertThat(find(assembled.timeline(), "Cap1", 0).params()).containsEntry("pan", 300L);
+            // A blank position is no position: the clip exports its own values only.
+            assertThat(find(assembled.timeline(), "Cap1", 4000).params()).containsOnly(Map.entry("intensity", 10L), Map.entry("time", 1L));
+            assertThat(assembled.timeline().stream().filter(e -> e.target().equals("Cap2"))).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("from_position becomes an immediate cue to the start position right before the move, per head")
+        void fromPosition() {
+            SceneDocument doc = docWith(List.of(), List.of(
+                    new Clip("k1", "t-cap", SET, 1000, 4000, Map.of("from_position", "portal", "position", "Estrella"), null),
+                    new Clip("k2", "t-cap", SET, 9000, 1000, Map.of("from_position", "Estrella", "intensity", 0), null)));
+            Assembled assembled = builder.assemble(ShowBuildInput.of(doc, context(), ports()));
+            // Cap2 has no Estrella: both clips fail there, Cap1 exports both as snap + move.
+            assertThat(errors(assembled)).extracting(ShowIssue::code).containsExactly("E_POSITION_UNKNOWN", "E_POSITION_UNKNOWN");
+            assertThat(errors(assembled)).allMatch(e -> e.port().equals("Cap2"));
+            List<ShowEvent> cap1 = assembled.timeline().stream().filter(e -> e.target().equals("Cap1")).toList();
+            assertThat(cap1).hasSize(4);
+            assertThat(cap1.get(0).t()).isEqualTo(1000);
+            assertThat(cap1.get(0).params()).containsOnly(Map.entry("pan", 212L), Map.entry("tilt", 48L), Map.entry("zoom", 12L),
+                    Map.entry("intensity", 80L), Map.entry("color", List.of(255, 200, 120)));
+            assertThat(cap1.get(1).t()).isEqualTo(1000);
+            assertThat(cap1.get(1).params()).containsOnly(Map.entry("pan", 300L), Map.entry("tilt", 150L), Map.entry("time", 4L));
+            assertThat(cap1.get(2).params()).containsOnly(Map.entry("pan", 300L), Map.entry("tilt", 150L));
+            assertThat(cap1.get(3).params()).containsOnly(Map.entry("intensity", 0L), Map.entry("time", 1L));
+            assertThat(assembled.timeline()).allMatch(e -> !e.params().containsKey("from_position"));
+            assertThat(assembled.timeline().stream().filter(e -> e.target().equals("Cap2"))).isEmpty();
+        }
+
+        @Test
+        @DisplayName("resolvePosition keeps the clip's non-blank values over the saved ones and drops the name")
+        void mergeRule() {
+            Map<String, Object> saved = new LinkedHashMap<>(Map.of("name", "P", "pan", 1, "intensity", 80));
+            Map<String, Object> step = new LinkedHashMap<>();
+            step.put("position", "P");
+            step.put("intensity", "");
+            step.put("tilt", 5);
+            step.put("time", 2);
+            assertThat(ShowPackageBuilder.resolvePosition(step, saved))
+                    .containsExactly(Map.entry("pan", 1), Map.entry("intensity", 80), Map.entry("tilt", 5), Map.entry("time", 2));
+        }
+    }
+
+    @Nested
     @DisplayName("events")
     class Events {
 

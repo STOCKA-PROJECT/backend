@@ -19,6 +19,7 @@ import com.stocka.backend.modules.piecetypes.repository.PieceTypeActionRepositor
 import com.stocka.backend.modules.piecetypes.service.PieceTypeActionService;
 import com.stocka.backend.modules.piecetypes.service.PieceTypeService;
 import com.stocka.backend.modules.ports.repository.PortRepository;
+import com.stocka.backend.modules.ports.service.PortConfigJsonCodec;
 import com.stocka.backend.modules.timelines.dto.UpsertTimelineSceneDto;
 import com.stocka.backend.modules.timelines.entity.Timeline;
 import com.stocka.backend.modules.timelines.entity.TimelineScene;
@@ -67,6 +68,7 @@ public class TimelineSceneService {
     private final PieceTypeService pieceTypeService;
     private final PieceTypeActionService actionService;
     private final OutputCatalog catalog;
+    private final PortConfigJsonCodec portConfigCodec;
 
     public TimelineSceneService(
             TimelineSceneRepository sceneRepository,
@@ -78,7 +80,8 @@ public class TimelineSceneService {
             PortRepository portRepository,
             PieceTypeService pieceTypeService,
             PieceTypeActionService actionService,
-            OutputCatalog catalog
+            OutputCatalog catalog,
+            PortConfigJsonCodec portConfigCodec
     ) {
         this.sceneRepository = sceneRepository;
         this.timelineService = timelineService;
@@ -90,6 +93,7 @@ public class TimelineSceneService {
         this.pieceTypeService = pieceTypeService;
         this.actionService = actionService;
         this.catalog = catalog;
+        this.portConfigCodec = portConfigCodec;
     }
 
     /**
@@ -205,7 +209,7 @@ public class TimelineSceneService {
     }
 
     private SceneContext context(Organization org) {
-        return new JpaSceneContext(org, pieceRepository, portRepository, actionRepository, pieceTypeService, actionService);
+        return new JpaSceneContext(org, pieceRepository, portRepository, actionRepository, pieceTypeService, actionService, portConfigCodec);
     }
 
     private TimelineScene persist(Timeline timeline, JsonNode document, Integer expectedVersion, int schemaVersion) {

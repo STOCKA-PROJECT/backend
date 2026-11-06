@@ -8,7 +8,11 @@ import com.stocka.backend.modules.piecetypes.entity.AttributeType;
  * array of colours (each in any notation {@code RGB} accepts), used by the fade waypoints.
  */
 public enum CatalogType {
-    INT, NUMBER, BOOL, STRING, RGB, RGB_LIST, ENUM;
+    INT, NUMBER, BOOL, STRING, RGB, RGB_LIST, ENUM,
+    /** The name of a position saved in the {@code moving_head} port the clip drives ({@link HeadPositions}). */
+    POSITION,
+    /** Config of a {@code moving_head}: the list of its named positions; never an action parameter. */
+    POSITIONS;
 
     /**
      * Parses the lowercase identifier used in {@code catalog.json}.
@@ -36,9 +40,10 @@ public enum CatalogType {
             case INT -> attributeType == AttributeType.INTEGER;
             case NUMBER -> attributeType == AttributeType.DECIMAL || attributeType == AttributeType.INTEGER;
             case BOOL -> attributeType == AttributeType.BOOLEAN;
-            case STRING, RGB -> attributeType == AttributeType.TEXT;
+            case STRING, RGB, POSITION -> attributeType == AttributeType.TEXT;
             case RGB_LIST -> attributeType == AttributeType.TEXT || attributeType == AttributeType.LONGTEXT;
             case ENUM -> attributeType == AttributeType.SELECT;
+            case POSITIONS -> false;
         };
     }
 
@@ -52,9 +57,10 @@ public enum CatalogType {
             case INT -> "INTEGER";
             case NUMBER -> "DECIMAL, INTEGER";
             case BOOL -> "BOOLEAN";
-            case STRING, RGB -> "TEXT";
+            case STRING, RGB, POSITION -> "TEXT";
             case RGB_LIST -> "TEXT, LONGTEXT";
             case ENUM -> "SELECT";
+            case POSITIONS -> "(config only)";
         };
     }
 }

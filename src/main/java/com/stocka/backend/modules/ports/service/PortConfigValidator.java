@@ -17,6 +17,8 @@ import com.stocka.backend.modules.common.error.ApiException;
 import com.stocka.backend.modules.common.error.ErrorCodes;
 import com.stocka.backend.modules.contract.CatalogParam;
 import com.stocka.backend.modules.contract.CatalogType;
+import com.stocka.backend.modules.contract.FixtureProfile;
+import com.stocka.backend.modules.contract.HeadPositions;
 import com.stocka.backend.modules.contract.OutputCatalog;
 import com.stocka.backend.modules.contract.OutputKind;
 import com.stocka.backend.modules.contract.SensorProfile;
@@ -138,7 +140,113 @@ public class PortConfigValidator {
         if (kind == OutputKind.MOTOR) {
             validateMotorOutputs(out);
         }
+        if (kind == OutputKind.MOVING_HEAD) {
+            validateHeadPositions(out);
+        }
         return out;
+    }
+
+    /**
+     * Checks {@code positions} of a moving head: a list of objects with a unique, non-blank {@code name},
+     * at least one value among {@link HeadPositions#VALUE_KEYS} and every value inside the ranges of the
+     * port's profile (pan/tilt/zoom) or of the {@code set} action (intensity 0–100, white 0–255, rgb colour).
+     * Names and numbers are normalized in place.
+     *
+     * @param out normalized config (holds {@code profile})
+     * @throws ApiException 400 {@link ErrorCodes#PORTS_POSITION_INVALID} with {@code params.reason}
+     */
+    private void validateHeadPositions(Map<String, Object> out) {
+        if (!out.containsKey(HeadPositions.CONFIG_KEY)) {
+            return;
+        }
+        if (!(out.get(HeadPositions.CONFIG_KEY) instanceof List<?> raw)) {
+            throw positionInvalid("not_list", null, null, null);
+        }
+        FixtureProfile profile = catalog.movingHeadProfile(out.get("profile") instanceof String s ? s : null).orElse(null);
+        List<Map<String, Object>> positions = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (int i = 0; i < raw.size(); i++) {
+            if (!(raw.get(i) instanceof Map<?, ?> entry)) {
+                throw positionInvalid("not_object", i, null, null);
+            }
+            if (!(entry.get("name") instanceof String name) || name.isBlank()) {
+                throw positionInvalid("name_required", i, null, null);
+            }
+            String trimmed = name.trim();
+            if (!seen.add(HeadPositions.normalize(trimmed))) {
+                throw positionInvalid("name_duplicate", i, trimmed, null);
+            }
+            Map<String, Object> position = new LinkedHashMap<>();
+            position.put("name", trimmed);
+            boolean any = false;
+            for (Object key : entry.keySet()) {
+                if (!"name".equals(key) && !HeadPositions.VALUE_KEYS.contains(String.valueOf(key))) {
+                    throw positionInvalid("unknown_key", i, trimmed, Map.of("key", String.valueOf(key)));
+                }
+            }
+            for (String key : HeadPositions.VALUE_KEYS) {
+                Object value = entry.get(key);
+                if (value == null) {
+                    continue;
+                }
+                any = true;
+                position.put(key, coercePositionValue(key, value, profile, i, trimmed));
+            }
+            if (!any) {
+                throw positionInvalid("empty", i, trimmed, null);
+            }
+            positions.add(position);
+        }
+        out.put(HeadPositions.CONFIG_KEY, positions);
+    }
+
+    private static Object coercePositionValue(String key, Object value, FixtureProfile profile, int index, String name) {
+        if ("color".equals(key)) {
+            if (!(value instanceof List<?> list) || list.size() != 3
+                    || !list.stream().allMatch(c -> c instanceof Number n && !(c instanceof Double d && d.isNaN())
+                            && n.doubleValue() == Math.rint(n.doubleValue()) && n.intValue() >= 0 && n.intValue() <= 255)) {
+                throw positionInvalid("color_invalid", index, name, null);
+            }
+            return list.stream().map(c -> ((Number) c).intValue()).toList();
+        }
+        if (value instanceof Boolean || !(value instanceof Number n)) {
+            throw positionInvalid(key + "_invalid", index, name, null);
+        }
+        double d = n.doubleValue();
+        double min;
+        double max;
+        switch (key) {
+            case "pan" -> { min = 0; max = profile != null ? profile.panMax() : 540; }
+            case "tilt" -> { min = 0; max = profile != null ? profile.tiltMax() : 270; }
+            case "zoom" -> { min = profile != null ? profile.zoomMin() : 0; max = profile != null ? profile.zoomMax() : 100; }
+            case "intensity" -> { min = 0; max = 100; }
+            default -> { min = 0; max = 255; }
+        }
+        if (Double.isNaN(d) || d < min || d > max || ("white".equals(key) && d != Math.rint(d))) {
+            Map<String, Object> extra = new LinkedHashMap<>();
+            extra.put("min", new BigDecimal(String.valueOf(min)).stripTrailingZeros().toPlainString());
+            extra.put("max", new BigDecimal(String.valueOf(max)).stripTrailingZeros().toPlainString());
+            throw positionInvalid(key + "_out_of_range", index, name, extra);
+        }
+        if ("white".equals(key)) {
+            return n.intValue();
+        }
+        return d == Math.rint(d) && Math.abs(d) < Integer.MAX_VALUE ? (Object) (int) d : (Object) d;
+    }
+
+    private static ApiException positionInvalid(String reason, Integer index, String name, Map<String, Object> extra) {
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put("reason", reason);
+        if (index != null) {
+            p.put("index", index);
+        }
+        if (name != null) {
+            p.put("name", name);
+        }
+        if (extra != null) {
+            p.putAll(extra);
+        }
+        return new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.PORTS_POSITION_INVALID, p);
     }
 
     /**
@@ -419,6 +527,15 @@ public class PortConfigValidator {
                     throw typeMismatch(key, "rgb");
                 }
                 return list.stream().map(c -> ((Number) c).intValue()).toList();
+            }
+            case POSITION -> {
+                if (!(value instanceof String s) || s.isBlank()) {
+                    throw typeMismatch(key, "position");
+                }
+                return s.trim();
+            }
+            case POSITIONS -> {
+                return value; // shape and ranges: validateHeadPositions
             }
         }
         return value;

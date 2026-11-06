@@ -1,0 +1,40 @@
+meta {
+  name: Update Port (moving_head positions)
+  type: http
+  seq: 15
+}
+
+patch {
+  url: {{baseUrl}}/organizations/{{orgId}}/ports/{{portId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{JWTtoken}}
+}
+
+body:json {
+  {
+    "config": {
+      "profile": "varytec-hero-wash-712z",
+      "address": 1,
+      "positions": [
+        { "name": "Portal", "pan": 212.5, "tilt": 48, "zoom": 12, "intensity": 80, "color": [255, 200, 120], "white": 0 },
+        { "name": "Estrella", "pan": 300, "tilt": 150 },
+        { "name": "Foc obert", "zoom": 36 }
+      ]
+    }
+  }
+}
+
+docs {
+  `config` reemplaza toda la configuración del cabezal, posiciones incluidas: para añadir una posición hay que
+  mandar la lista completa (es lo que hace la página del dispositivo tras «Desa com a posició»). Pruebas de error:
+  dos nombres iguales → ports.position_invalid reason=name_duplicate; `{"name": "X"}` sin valores → empty;
+  `tilt: 191` → tilt_out_of_range (min 0, max 190); `color: "#ff0000"` → color_invalid.
+}

@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 import com.stocka.backend.modules.contract.CatalogAction;
 import com.stocka.backend.modules.contract.CatalogKind;
 import com.stocka.backend.modules.contract.CatalogParam;
+import com.stocka.backend.modules.contract.HeadPositions;
 import com.stocka.backend.modules.contract.OutputCatalog;
 import com.stocka.backend.modules.contract.OutputKind;
 import com.stocka.backend.modules.timelines.scene.SceneContext;
@@ -212,9 +213,33 @@ public class ShowPackageBuilder {
                 Object rawAnimation = step.params().get("animation_type");
                 String animation = !action.animations().isEmpty() && rawAnimation instanceof String a ? a : null;
                 Map<String, CatalogParam> allowed = animation != null ? action.paramsFor(animation) : action.allParams();
+                Map<String, Object> stepParams = step.params();
+                // A saved position of this port fills the parameters the clip does not give (the clip's own win);
+                // the show carries the resolved values, never the name.
+                if (allowed.containsKey(HeadPositions.PARAM) && !ShowCoerce.isBlank(stepParams.get(HeadPositions.PARAM))) {
+                    Map<String, Object> saved = findPosition(port, stepParams.get(HeadPositions.PARAM), step, label, issues);
+                    if (saved == null) continue;
+                    stepParams = resolvePosition(stepParams, saved);
+                }
+                // The position the head starts from: an immediate cue to it right before this one.
+                ShowEvent snapTo = null;
+                if (allowed.containsKey(HeadPositions.FROM_PARAM) && !ShowCoerce.isBlank(stepParams.get(HeadPositions.FROM_PARAM))) {
+                    Map<String, Object> from = findPosition(port, stepParams.get(HeadPositions.FROM_PARAM), step, label, issues);
+                    if (from == null) continue;
+                    Map<String, Object> fromParams = new LinkedHashMap<>();
+                    for (String key : HeadPositions.VALUE_KEYS) {
+                        CatalogParam pspec = allowed.get(key);
+                        if (from.get(key) == null || pspec == null) continue;
+                        CoerceResult res = ShowCoerce.coerceParam(from.get(key), pspec);
+                        if (res.ok() && !res.omitted()) fromParams.put(key, res.value());
+                    }
+                    snapTo = new ShowEvent(step.startMs(), targetName, step.action().name(), fromParams);
+                    stepParams = new LinkedHashMap<>(stepParams);
+                    stepParams.remove(HeadPositions.FROM_PARAM);
+                }
                 Map<String, Object> params = new LinkedHashMap<>();
                 boolean valid = true;
-                for (Map.Entry<String, Object> p : step.params().entrySet()) {
+                for (Map.Entry<String, Object> p : stepParams.entrySet()) {
                     String name = p.getKey();
                     Object raw = p.getValue();
                     CatalogParam pspec = allowed.get(name);
@@ -286,13 +311,14 @@ public class ShowPackageBuilder {
                     }
                 }
                 for (String name : ShowValidator.requiredParams(action, animation)) {
-                    if (!params.containsKey(name) && !step.params().containsKey(name)) {
+                    if (!params.containsKey(name) && !stepParams.containsKey(name)) {
                         valid = false;
                         issues.add(ShowIssue.error("E_PARAM_REQUIRED", "Falta el paràmetre obligatori «" + name + "» al clip «"
                                 + label + "» (" + step.startMs() + " ms).", step.clipId(), port.name()));
                     }
                 }
                 if (!valid) continue;
+                if (snapTo != null) events.add(snapTo);
                 events.add(new ShowEvent(step.startMs(), targetName, step.action().name(), params));
             }
         }
@@ -313,6 +339,46 @@ public class ShowPackageBuilder {
      * Items without a known piece are skipped; a piece on a strip names the strip and its own segment.
      */
     /** @return the name of a type of the piece, or {@code null} when the piece or the type is unknown */
+    /** The position named by a clip parameter on this port, or {@code null} after adding {@code E_POSITION_UNKNOWN}. */
+    private static Map<String, Object> findPosition(ShowPort port, Object raw, ExecutionStep step, String label, List<ShowIssue> issues) {
+        String positionName = String.valueOf(raw);
+        Map<String, Object> saved = HeadPositions.find(port.config(), positionName).orElse(null);
+        if (saved == null) {
+            List<String> names = HeadPositions.names(port.config());
+            issues.add(ShowIssue.error("E_POSITION_UNKNOWN", "El port «" + port.name() + "» no té cap posició «"
+                    + positionName.trim() + "» (clip «" + label + "», " + step.startMs() + " ms)"
+                    + (names.isEmpty() ? ": desa-la des de la pàgina del dispositiu." : "; en té: " + String.join(", ", names) + "."),
+                    step.clipId(), port.name()));
+        }
+        return saved;
+    }
+
+    /**
+     * The step parameters with a saved position applied: its values first, then the clip's own
+     * non-blank parameters on top; {@code position} itself disappears.
+     *
+     * @param stepParams parameters of the step, {@code position} included
+     * @param saved      the position found on the port
+     * @return the merged parameters
+     */
+    static Map<String, Object> resolvePosition(Map<String, Object> stepParams, Map<String, Object> saved) {
+        Map<String, Object> merged = new LinkedHashMap<>();
+        for (String key : HeadPositions.VALUE_KEYS) {
+            if (saved.get(key) != null) {
+                merged.put(key, saved.get(key));
+            }
+        }
+        for (Map.Entry<String, Object> p : stepParams.entrySet()) {
+            if (HeadPositions.PARAM.equals(p.getKey())) {
+                continue;
+            }
+            if (!ShowCoerce.isBlank(p.getValue()) || !merged.containsKey(p.getKey())) {
+                merged.put(p.getKey(), p.getValue());
+            }
+        }
+        return merged;
+    }
+
     private static String typeNameOf(SceneContext context, Integer pieceId, Integer typeId) {
         if (context == null || pieceId == null || typeId == null) return null;
         return context.pieceById(pieceId).map(piece -> {

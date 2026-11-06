@@ -15,8 +15,15 @@ public interface SceneContext {
     record PieceRef(int id, String name, List<Integer> typeIds, List<String> typeNames, List<String> typeKinds) {
     }
 
-    /** A hardware port of the organization. */
-    record PortRef(int id, String name, Integer pieceTypeId, String kind) {
+    /**
+     * A hardware port of the organization.
+     *
+     * @param positions names of the saved positions of a {@code moving_head} (empty for other kinds)
+     */
+    record PortRef(int id, String name, Integer pieceTypeId, String kind, List<String> positions) {
+        public PortRef(int id, String name, Integer pieceTypeId, String kind) {
+            this(id, name, pieceTypeId, kind, List.of());
+        }
     }
 
     /** An action of a piece type. */

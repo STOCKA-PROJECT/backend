@@ -136,6 +136,7 @@ public final class ErrorCodes {
     public static final String PORTS_I2C_PIN_RESERVED = "ports.i2c_pin_reserved";
     public static final String PORTS_DMX_ADDRESS_RANGE = "ports.dmx_address_range";
     public static final String PORTS_DMX_ADDRESS_CONFLICT = "ports.dmx_address_conflict";
+    public static final String PORTS_POSITION_INVALID = "ports.position_invalid";
 
     // ---- devices (belén players + heartbeat) -----------------------------
     public static final String DEVICES_NOT_FOUND = "devices.not_found";

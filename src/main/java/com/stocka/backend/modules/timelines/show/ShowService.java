@@ -144,7 +144,7 @@ public class ShowService {
         TimelineScene scene = scenes.find(org.getId(), timeline.getId())
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.TIMELINE_SHOWS_SCENE_NOT_FOUND));
         SceneDocument doc = sceneCodec.parse(scenes.documentOf(scene));
-        SceneContext context = new JpaSceneContext(org, pieces, ports, actions, typeService, actionService);
+        SceneContext context = new JpaSceneContext(org, pieces, ports, actions, typeService, actionService, portConfigCodec);
 
         List<ShowPort> orgPorts = new ArrayList<>();
         for (Port port : ports.findByOrganizationOrderByPositionAscIdAsc(org)) {

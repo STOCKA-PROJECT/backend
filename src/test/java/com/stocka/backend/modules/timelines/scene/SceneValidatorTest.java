@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import com.stocka.backend.modules.contract.OutputCatalog;
+import com.stocka.backend.modules.contract.OutputKind;
 import com.stocka.backend.modules.piecetypes.entity.AttributeType;
 import com.stocka.backend.modules.timelines.scene.SceneDocument.Board;
 import com.stocka.backend.modules.timelines.scene.SceneDocument.Clip;
@@ -187,6 +188,37 @@ class SceneValidatorTest {
             assertThat(SceneValidator.isRgb("#abc")).isTrue();
             assertThat(SceneValidator.isRgb("300,0,0")).isFalse();
             assertThat(SceneValidator.isRgb(List.of(1, 2))).isFalse();
+        }
+
+        @Test
+        @DisplayName("a position must exist on every head the clip drives (track port or every port playing the type)")
+        void positions() {
+            ctx.piece(3, "Cap", 40, "Cabezal", "moving_head")
+                    .head(110, "Cap1", 40, "Portal", "Estrella")
+                    .head(111, "Cap2", 40, "Portal")
+                    .action(503, "set", 40, "Cabezal", "moving_head",
+                            StubSceneContext.param("position", AttributeType.TEXT, false, true, null, false),
+                            StubSceneContext.param("from_position", AttributeType.TEXT, false, true, null, false),
+                            StubSceneContext.param("intensity", AttributeType.DECIMAL, false, true, null, false),
+                            StubSceneContext.param("time", AttributeType.DECIMAL, false, true, null, true));
+            item("i1", 3, 110, 111);
+            clip("from", "i1", 503, 6000, 1000, Map.of("from_position", "Estrella", "position", "Portal"));
+            clip("both", "i1", 503, 0, 1000, Map.of("position", " portal "));
+            clip("one", "i1", 503, 1000, 1000, Map.of("position", "Estrella"));
+            clip("none", "i1", 503, 2000, 1000, Map.of("position", "Nada"));
+            clip("blank", "i1", 503, 3000, 1000, Map.of("position", "  ", "intensity", 50));
+            clip("plain", "i1", 503, 4000, 1000, Map.of("intensity", 50));
+            tracks.add(new Track("tp", "i1", "Cap2", 111));
+            clips.add(new Clip("track", "tp", 503, 5000, 1000, Map.of("position", "Estrella"), null));
+            List<SceneIssue> issues = SceneValidator.validate(doc(10000), ctx, catalog);
+            List<SceneIssue> unknown = issues.stream().filter(i -> i.code().equals("E_POSITION_UNKNOWN")).toList();
+            assertThat(unknown).extracting(SceneIssue::clipId).containsExactly("from", "one", "none", "none", "track");
+            assertThat(unknown.get(1).message()).contains("Cap2").contains("Estrella").contains("Portal");
+            assertThat(unknown).allMatch(i -> i.itemId().equals("i1"));
+            assertThat(issues).filteredOn(i -> i.clipId() != null && List.of("both", "blank", "plain").contains(i.clipId()))
+                    .extracting(SceneIssue::code).doesNotContain("E_POSITION_UNKNOWN", "E_PARAM_RANGE", "E_PARAM_TYPE");
+            assertThat(SceneValidator.checkCatalogValue(catalog.action(OutputKind.MOVING_HEAD, "set").orElseThrow().allParams().get("position"), 3))
+                    .contains("position");
         }
 
         @Test

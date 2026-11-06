@@ -177,7 +177,17 @@ I2C device exists. V26 converts old motors
 `start_up`/`start_down` to `forward`/`reverse`. Moving heads (`moving_head`: `profile`
 `varytec-hero-wash-712z`, `address` 1–512) must fit `profiles.moving_head.<id>.channels` inside the 512-channel
 universe without overlapping (`ports.dmx_address_range` / `ports.dmx_address_conflict`); piece types may declare a `kind`, in which
-case their actions are validated against the catalog by `ActionCatalogValidator`. The catalog JSON
+case their actions are validated against the catalog by `ActionCatalogValidator`. Since 2026-11-06 a moving head also
+keeps its **named positions** (`config.positions`, catalog type `positions`: list of `{name, pan?, tilt?, zoom?,
+intensity?, color?, white?}` in the units of `set`; `HeadPositions`, validated against the profile ranges by
+`PortConfigValidator` → `ports.position_invalid` + `params.reason`), and `set` takes a `position` param (catalog type
+`position`): the clip names a position and each port the clip drives goes to **its own** values, so one piece type
+"Cabezal" serves every head. `ShowPackageBuilder.resolvePosition` writes the resolved values into the show (explicit
+clip params win, the name never travels; `E_POSITION_UNKNOWN` when a port lacks it, also in `SceneValidator` through
+`PortRef.positions`); `hardware.<head>.positions` travels with the config and the Pi resolves `set(position=)` too
+(test mode). `set.from_position` (same type) animates **from one position to another in one clip**: the export writes an
+immediate `set` to the start position right before the timed one (same `t`, stable order). The frontend saves them from the device page («Desa com a posició» after moving the head with sliders).
+Plan: `../timeline-editor/docs/plan/posiciones-cabezal.md`. The catalog JSON
 is a byte-identical copy of `rpi4-system/contract/catalog.json` (also copied to
 `timeline-editor/app/data/catalog.json`): change it there first.
 

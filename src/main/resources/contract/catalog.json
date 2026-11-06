@@ -1,7 +1,7 @@
 {
   "format": "stocka-catalog",
   "version": 3,
-  "types": ["int", "number", "bool", "string", "rgb", "rgb_list", "enum"],
+  "types": ["int", "number", "bool", "string", "rgb", "rgb_list", "enum", "position", "positions"],
   "kinds": {
     "relay": {
       "controller": "RelayController",
@@ -317,13 +317,16 @@
       "legacy": { "addressing": "name" },
       "config": {
         "profile": { "type": "enum", "required": true, "values": ["varytec-hero-wash-712z"] },
-        "address": { "type": "int", "required": true, "min": 1, "max": 512, "notes": "Primer canal DMX (1–512); address + canals − 1 ≤ 512." }
+        "address": { "type": "int", "required": true, "min": 1, "max": 512, "notes": "Primer canal DMX (1–512); address + canals − 1 ≤ 512." },
+        "positions": { "type": "positions", "notes": "Posicions amb nom d'aquest cap, calibrades des de la pàgina del dispositiu: llista de {name, pan?, tilt?, zoom?, intensity?, color?, white?} en les unitats de set (graus, percentatge, RGB 0–255). name únic per port; cada posició porta com a mínim un valor, dins dels rangs del perfil. set amb position les aplica: l'exportació de Stocka les resol per port (el show porta valors concrets) i el reproductor també si li arriba el nom." }
       },
       "actions": {
         "set": {
           "transition": true,
-          "notes": "Un cue: porta els paràmetres indicats des del valor actual al nou en time segons (sense time, immediat). Els no indicats no canvien.",
+          "notes": "Un cue: porta els paràmetres indicats des del valor actual al nou en time segons (sense time, immediat). Els no indicats no canvien. Amb position, els valors de la posició omplen els paràmetres que el cue no indica (els indicats manen). Amb from_position, el cap salta primer a aquesta posició i des d'allà fa la transició: un moviment d'una posició a una altra en un sol clip.",
           "params": {
+            "position": { "type": "position", "notes": "Nom d'una posició de config.positions del port que mou el clip. L'exportació la resol per port i escriu els valors al show." },
+            "from_position": { "type": "position", "notes": "Posició de partida: el cap hi salta a l'instant i en time segons arriba a la posició (o als valors) del cue. L'exportació l'escriu com un set immediat just abans; sense from_position, el moviment surt d'on sigui el cap." },
             "color": { "type": "rgb" },
             "white": { "type": "int", "min": 0, "max": 255 },
             "intensity": { "type": "number", "min": 0, "max": 100, "notes": "Percentatge del dimmer." },
