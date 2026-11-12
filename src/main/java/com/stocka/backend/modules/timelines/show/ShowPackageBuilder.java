@@ -41,6 +41,9 @@ import com.stocka.backend.modules.timelines.show.StripLayout.StripSlot;
 @Component
 public class ShowPackageBuilder {
 
+    /** Between a piece and the type one of its ports plays, in {@code meta.pieces}. */
+    private static final String PIECE_ROLE_SEPARATOR = " · ";
+
     private final OutputCatalog catalog;
 
     public ShowPackageBuilder(OutputCatalog catalog) {
@@ -331,14 +334,9 @@ public class ShowPackageBuilder {
         issues.addAll(ShowValidator.validate(hardware, timeline, input.board(), doc.durationMs(), assets, catalog));
         issues.addAll(ShowValidator.validateSchedule(modeOf(input), hardware));
         return new Assembled(hardware, timeline, assets, issues, new ArrayList<>(assetRefs.values()),
-                piecesByPort(plan, segmentOf, hardware));
+                piecesByPort(plan, segmentOf, hardware, input.context()));
     }
 
-    /**
-     * Which pieces each hardware port drives, for the player to show next to the port ({@code meta.pieces}).
-     * Items without a known piece are skipped; a piece on a strip names the strip and its own segment.
-     */
-    /** @return the name of a type of the piece, or {@code null} when the piece or the type is unknown */
     /** The position named by a clip parameter on this port, or {@code null} after adding {@code E_POSITION_UNKNOWN}. */
     private static Map<String, Object> findPosition(ShowPort port, Object raw, ExecutionStep step, String label, List<ShowIssue> issues) {
         String positionName = String.valueOf(raw);
@@ -379,6 +377,7 @@ public class ShowPackageBuilder {
         return merged;
     }
 
+    /** @return the name of a type of the piece, or {@code null} when the piece or the type is unknown */
     private static String typeNameOf(SceneContext context, Integer pieceId, Integer typeId) {
         if (context == null || pieceId == null || typeId == null) return null;
         return context.pieceById(pieceId).map(piece -> {
@@ -387,17 +386,35 @@ public class ShowPackageBuilder {
         }).orElse(null);
     }
 
+    /**
+     * Which pieces each hardware port drives, for the player to show next to the port ({@code meta.pieces}).
+     * Items without a known piece are skipped; a piece on a strip names the strip and its own segment. A piece
+     * whose ports play different types is told apart on each one by the type the port plays («Ferrer · Llum»,
+     * «Ferrer · Moviment»; «A / B» when the port plays several); with a single port, or ports of one type,
+     * the piece name is enough.
+     */
     static Map<String, List<String>> piecesByPort(ExecutionPlan plan, Map<String, Map<Integer, String>> segmentOf,
-                                                  Map<String, Map<String, Object>> hardware) {
+                                                  Map<String, Map<String, Object>> hardware, SceneContext context) {
         Map<String, Set<String>> byPort = new LinkedHashMap<>();
         for (ExecutionItem item : plan.items()) {
             if (item.pieceName() == null) continue;
-            List<String> ports = new ArrayList<>();
-            item.ports().forEach(port -> ports.add(port.name()));
-            ports.addAll(segmentOf.getOrDefault(item.itemId(), Map.of()).values());
-            for (String port : ports) {
-                if (hardware.containsKey(port)) {
-                    byPort.computeIfAbsent(port, k -> new LinkedHashSet<>()).add(item.pieceName());
+            // The item lists a port once per type it plays: gather the types of each port.
+            Map<String, Set<String>> rolesByPort = new LinkedHashMap<>();
+            for (ShowPort port : item.ports()) {
+                if (!hardware.containsKey(port.name())) continue;
+                Set<String> roles = rolesByPort.computeIfAbsent(port.name(), k -> new LinkedHashSet<>());
+                String typeName = typeNameOf(context, item.pieceId(), port.pieceTypeId());
+                if (typeName != null) roles.add(typeName);
+            }
+            // The type only tells ports apart when the piece has several ports and they play different types.
+            Set<String> allRoles = new LinkedHashSet<>();
+            rolesByPort.values().forEach(allRoles::addAll);
+            boolean tellApart = rolesByPort.size() > 1 && allRoles.size() > 1;
+            rolesByPort.forEach((port, roles) -> byPort.computeIfAbsent(port, k -> new LinkedHashSet<>())
+                    .add(tellApart && !roles.isEmpty() ? item.pieceName() + PIECE_ROLE_SEPARATOR + String.join(" / ", roles) : item.pieceName()));
+            for (String segment : segmentOf.getOrDefault(item.itemId(), Map.of()).values()) {
+                if (hardware.containsKey(segment)) {
+                    byPort.computeIfAbsent(segment, k -> new LinkedHashSet<>()).add(item.pieceName());
                 }
             }
         }

@@ -395,7 +395,7 @@ refused by `/mcp`, MCP tokens by the REST API.
   `E_SCHEDULE_INVALID` / `W_SCHEDULE_UNUSED` in `ShowValidator.validateSchedule`): the Pi only lets a short press of an
   `onActive: play` sensor start the show inside the schedule, once it knows the time; `meta.pieces` (2026-10-26, outside
   the hash, omitted when empty) names the pieces bound to each hardware port (a piece on a strip also names its segment)
-  so the player and the belén app show them next to each port; `ShowBundleWriter` streams the
+  so the player and the belén app show them next to each port (since 2026-11-12 a piece whose ports play different types is written «Piece · Type» on each one, «A / B» when a port plays several; mirrored in the editor's `piecesByPort`); `ShowBundleWriter` streams the
   `stocka-bundle` zip (`StreamingResponseBody`, assets STORED, manifest last). MCP tool: `timeline_show_export`.
 - Config: `stocka.oauth.*` (`OAUTH_*`), `stocka.mcp.*` (`MCP_*`), `spring.ai.mcp.server.*` (protocol `STATELESS`,
   annotation scanner off). Tests enable everything through `src/test/resources/application.properties` and

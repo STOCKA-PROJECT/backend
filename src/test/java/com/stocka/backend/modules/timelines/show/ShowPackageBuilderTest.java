@@ -967,7 +967,22 @@ class ShowPackageBuilderTest {
             assertThat(assembled.timeline().stream().map(e -> e.t() + " " + e.target() + "." + e.action()).toList())
                     .containsExactly("0 Focos.turn_on", "500 Sembra.turn_on");
             assertThat(assembled.timeline().get(1).params()).containsKey("time");
-            assertThat(assembled.pieces()).containsEntry("Sembra", List.of("Focos"));
+            assertThat(assembled.pieces()).containsEntry("Focos", List.of("Focos · Tipus 1")).containsEntry("Sembra", List.of("Focos · Llum"));
+        }
+
+        @Test
+        @DisplayName("meta.pieces adds the type each port plays only when the ports of the piece play different types")
+        void pieceLabelsPerRole() {
+            Assembled single = builder.assemble(ShowBuildInput.of(docWithRoles(List.of(1), Map.of()), context(), Belen2026Fixture.ports()));
+            assertThat(single.pieces()).containsEntry("Focos", List.of("Focos"));
+
+            Assembled sameType = builder.assemble(ShowBuildInput.of(docWithRoles(Map.of(2, List.of(Belen2026Fixture.RELAY_TYPE))), context(),
+                    Belen2026Fixture.ports()));
+            assertThat(sameType.pieces()).containsEntry("Focos", List.of("Focos")).containsEntry("Sembra", List.of("Focos"));
+
+            Assembled both = builder.assemble(ShowBuildInput.of(docWithRoles(Map.of(2, List.of(Belen2026Fixture.RELAY_TYPE, LLUM))), context(),
+                    Belen2026Fixture.ports()));
+            assertThat(both.pieces()).containsEntry("Focos", List.of("Focos · Tipus 1")).containsEntry("Sembra", List.of("Focos · Tipus 1 / Llum"));
         }
 
         @Test
